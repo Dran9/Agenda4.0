@@ -536,11 +536,261 @@ El terapeuta NO tiene que cambiar status a mano — el sistema lo calcula. Pero 
 **Repo anterior:** `Dran9/whatsapp-reminder-engine` (se conserva funcionando "a media fuerza", no se borra)
 **Nueva MySQL:** Crear nueva base de datos en otro site/entorno de Hostinger. La DB anterior queda intacta para el repo viejo.
 
+---
+
+## Schema MySQL completo (10 tablas)
+
+Todas las tablas tienen `tenant_id` para multi-tenant desde el inicio.
+
+### 1. `tenants`
+```sql
+CREATE TABLE IF NOT EXISTS tenants (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  name VARCHAR(255) NOT NULL,
+  slug VARCHAR(100) UNIQUE NOT NULL,
+  logo_key VARCHAR(50),
+  primary_color VARCHAR(7) DEFAULT '#2563eb',
+  secondary_color VARCHAR(7) DEFAULT '#1e40af',
+  welcome_text TEXT,
+  domain VARCHAR(255),
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+);
+```
+
+### 2. `clients`
+```sql
+CREATE TABLE IF NOT EXISTS clients (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  tenant_id INT NOT NULL,
+  phone VARCHAR(20) NOT NULL,
+  first_name VARCHAR(100) NOT NULL,
+  last_name VARCHAR(100) NOT NULL,
+  age INT,
+  city ENUM('Cochabamba','Santa Cruz','La Paz','Sucre','Otro') DEFAULT 'Cochabamba',
+  country VARCHAR(50) DEFAULT 'Bolivia',
+  timezone VARCHAR(50) DEFAULT 'America/La_Paz',
+  modality ENUM('Presencial','Online','Mixto') DEFAULT 'Presencial',
+  frequency ENUM('Semanal','Quincenal','Mensual','Irregular') DEFAULT 'Semanal',
+  source ENUM('Instagram','Referido','Google','Sitio web','Otro') DEFAULT 'Otro',
+  referred_by VARCHAR(200),
+  fee DECIMAL(10,2) DEFAULT 250.00,
+  payment_method ENUM('QR','Efectivo','Transferencia') DEFAULT 'QR',
+  rating TINYINT DEFAULT 0,
+  diagnosis TEXT,
+  notes TEXT,
+  status_override VARCHAR(20),
+  deleted_at DATETIME DEFAULT NULL,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  UNIQUE KEY unique_phone_tenant (phone, tenant_id),
+  KEY idx_tenant (tenant_id),
+  KEY idx_deleted (deleted_at),
+  FOREIGN KEY (tenant_id) REFERENCES tenants(id)
+);
+```
+**Status se CALCULA en server** (Nuevo/Activo/En pausa/Inactivo/Recurrente). Solo `status_override` permite forzar "Archivado".
+
+### 3. `appointments`
+```sql
+CREATE TABLE IF NOT EXISTS appointments (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  tenant_id INT NOT NULL,
+  client_id INT NOT NULL,
+  date_time DATETIME NOT NULL,
+  duration INT DEFAULT 60,
+  gcal_event_id VARCHAR(255),
+  status ENUM('Confirmada','Reagendada','Cancelada','Completada','No-show') DEFAULT 'Confirmada',
+  is_first BOOLEAN DEFAULT FALSE,
+  session_number INT DEFAULT 1,
+  phone VARCHAR(20),
+  notes TEXT,
+  user_agent VARCHAR(500),
+  confirmed_at DATETIME,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  KEY idx_tenant (tenant_id),
+  KEY idx_client (client_id),
+  KEY idx_datetime (date_time),
+  KEY idx_status (status),
+  FOREIGN KEY (tenant_id) REFERENCES tenants(id),
+  FOREIGN KEY (client_id) REFERENCES clients(id)
+);
+```
+
+### 4. `config` (una fila por tenant)
+```sql
+CREATE TABLE IF NOT EXISTS config (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  tenant_id INT NOT NULL UNIQUE,
+  available_hours JSON,
+  available_days JSON,
+  window_days INT DEFAULT 10,
+  buffer_hours INT DEFAULT 3,
+  appointment_duration INT DEFAULT 60,
+  break_start VARCHAR(5) DEFAULT '13:00',
+  break_end VARCHAR(5) DEFAULT '14:00',
+  min_age INT DEFAULT 12,
+  max_age INT DEFAULT 80,
+  default_fee DECIMAL(10,2) DEFAULT 250.00,
+  capital_fee DECIMAL(10,2) DEFAULT 300.00,
+  capital_cities VARCHAR(255) DEFAULT 'Santa Cruz,La Paz',
+  reminder_time VARCHAR(5) DEFAULT '18:40',
+  reminder_enabled BOOLEAN DEFAULT TRUE,
+  auto_reply_confirm TEXT DEFAULT 'Perfecto {{nombre}}, te esperamos el {{dia}} a las {{hora}}',
+  auto_reply_reschedule TEXT DEFAULT 'Puedes reagendar tu cita aquí: {{link}}',
+  auto_reply_contact TEXT DEFAULT 'Daniel te contactará pronto',
+  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  FOREIGN KEY (tenant_id) REFERENCES tenants(id)
+);
+```
+
+### 5. `payments`
+```sql
+CREATE TABLE IF NOT EXISTS payments (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  tenant_id INT NOT NULL,
+  client_id INT NOT NULL,
+  appointment_id INT,
+  amount DECIMAL(10,2) NOT NULL,
+  method ENUM('QR','Efectivo','Transferencia') DEFAULT 'QR',
+  status ENUM('Pendiente','Confirmado','Rechazado') DEFAULT 'Pendiente',
+  receipt_file_key VARCHAR(50),
+  ocr_extracted_amount DECIMAL(10,2),
+  ocr_extracted_ref VARCHAR(100),
+  notes TEXT,
+  confirmed_at DATETIME,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  KEY idx_tenant (tenant_id),
+  KEY idx_client (client_id),
+  KEY idx_status (status),
+  FOREIGN KEY (tenant_id) REFERENCES tenants(id),
+  FOREIGN KEY (client_id) REFERENCES clients(id),
+  FOREIGN KEY (appointment_id) REFERENCES appointments(id)
+);
+```
+
+### 6. `deductions`
+```sql
+CREATE TABLE IF NOT EXISTS deductions (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  tenant_id INT NOT NULL,
+  name VARCHAR(200) NOT NULL,
+  percentage DECIMAL(5,2) NOT NULL,
+  is_active BOOLEAN DEFAULT TRUE,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  KEY idx_tenant (tenant_id),
+  FOREIGN KEY (tenant_id) REFERENCES tenants(id)
+);
+```
+
+### 7. `financial_goals`
+```sql
+CREATE TABLE IF NOT EXISTS financial_goals (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  tenant_id INT NOT NULL,
+  type ENUM('meta_mensual','deuda') NOT NULL,
+  name VARCHAR(200) NOT NULL,
+  target_amount DECIMAL(10,2) NOT NULL,
+  monthly_payment DECIMAL(10,2),
+  is_active BOOLEAN DEFAULT TRUE,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  KEY idx_tenant (tenant_id),
+  FOREIGN KEY (tenant_id) REFERENCES tenants(id)
+);
+```
+
+### 8. `files` (QR, recibos, logos — MySQL BLOB)
+```sql
+CREATE TABLE IF NOT EXISTS files (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  tenant_id INT NOT NULL,
+  file_key VARCHAR(100) NOT NULL,
+  data MEDIUMBLOB NOT NULL,
+  mime_type VARCHAR(50) NOT NULL,
+  original_name VARCHAR(255),
+  size_bytes INT,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE KEY unique_key_tenant (file_key, tenant_id),
+  KEY idx_tenant (tenant_id),
+  FOREIGN KEY (tenant_id) REFERENCES tenants(id)
+);
+```
+
+### 9. `webhooks_log` (actividad + dedup de reminders)
+```sql
+CREATE TABLE IF NOT EXISTS webhooks_log (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  tenant_id INT NOT NULL,
+  event VARCHAR(100) NOT NULL,
+  type ENUM('reminder_sent','button_reply','message_sent','booking','reschedule','cancel','client_new','status_change') NOT NULL,
+  payload JSON,
+  status ENUM('enviado','recibido','error','procesado') DEFAULT 'enviado',
+  client_phone VARCHAR(20),
+  client_id INT,
+  appointment_id INT,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  KEY idx_tenant (tenant_id),
+  KEY idx_type (type),
+  KEY idx_phone (client_phone),
+  KEY idx_created (created_at),
+  FOREIGN KEY (tenant_id) REFERENCES tenants(id)
+);
+```
+
+### 10. `wa_conversations` (inbox WhatsApp)
+```sql
+CREATE TABLE IF NOT EXISTS wa_conversations (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  tenant_id INT NOT NULL,
+  client_id INT,
+  client_phone VARCHAR(20) NOT NULL,
+  direction ENUM('inbound','outbound') NOT NULL,
+  message_type ENUM('text','button_reply','template','auto_reply') NOT NULL,
+  content TEXT,
+  button_payload VARCHAR(50),
+  wa_message_id VARCHAR(100),
+  is_read BOOLEAN DEFAULT FALSE,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  KEY idx_tenant (tenant_id),
+  KEY idx_client (client_id),
+  KEY idx_phone (client_phone),
+  KEY idx_read (is_read),
+  KEY idx_created (created_at),
+  FOREIGN KEY (tenant_id) REFERENCES tenants(id),
+  FOREIGN KEY (client_id) REFERENCES clients(id)
+);
+```
+
+### Relaciones
+```
+tenants (1) → (N) clients, appointments, payments, deductions,
+                   financial_goals, files, webhooks_log, wa_conversations
+tenants (1) → (1) config
+clients (1) → (N) appointments, payments, wa_conversations
+appointments (1) → (0..1) payments
+```
+
+### Seed data (Daniel como primer tenant)
+```sql
+INSERT INTO tenants (name, slug, domain) VALUES ('Daniel MacLean', 'daniel', 'tumvp.in');
+
+INSERT INTO config (tenant_id, available_hours, available_days) VALUES (
+  1,
+  '{"lunes":["08:00","09:00","10:00","11:00","12:00","16:00","17:00","18:00","19:00","20:00"],"martes":["08:00","09:00","10:00","11:00","12:00","16:00","17:00","18:00","19:00","20:00"],"miercoles":["08:00","09:00","10:00","11:00","12:00","16:00","17:00","18:00","19:00","20:00"],"jueves":["08:00","09:00","10:00","11:00","12:00","16:00","17:00","18:00","19:00","20:00"],"viernes":["08:00","09:00","10:00","11:00","12:00","16:00","17:00","18:00","19:00","20:00"]}',
+  '["lunes","martes","miercoles","jueves","viernes"]'
+);
+```
+
+---
+
 ## Siguiente paso
 
-La otra instancia de Claude toma este documento como especificación completa. Necesita:
-1. Clonar `Dran9/agenda3.0`
-2. Acceso al repo anterior para copiar: `calendar.js`, `whatsapp.js`, `timezones.js`, `Calendar.jsx`, lógica de `createBooking()`, schema DB
-3. Las mismas env vars de Hostinger (GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, GOOGLE_REFRESH_TOKEN, WA_TOKEN, WA_PHONE_ID, WABA_ID, JWT_SECRET, DB credentials)
-4. Configurar deploy en Hostinger apuntando al nuevo repo
-5. Verificar que webhook de Meta apunte al URL correcto
+La otra instancia de Claude toma este documento como especificación completa:
+1. Implementar `server/db.js` con el schema de arriba (10 tablas + seed)
+2. Copiar del repo anterior: `calendar.js`, `whatsapp.js`, `timezones.js`, `Calendar.jsx`
+3. Exportar env vars del site anterior y configurar en el nuevo site de Hostinger
+4. Crear nueva MySQL en el nuevo site de Hostinger
+5. Verificar que webhook de Meta apunte al nuevo URL (tumvp.in)

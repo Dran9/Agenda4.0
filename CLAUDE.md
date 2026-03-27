@@ -170,5 +170,11 @@ Recordatorio (18:40 diario):
 - **WhatsApp Cloud API:** template `recordatorionovum26` con header imagen + body (nombre, día, hora) + 3 quick_reply buttons
 - **ipapi.co:** detección de timezone por IP (gratis)
 
+## URLs
+- **Producción:** https://tumvp.in/
+- **API health:** https://tumvp.in/api/health
+- **Dev mode:** https://tumvp.in/?devmode=1
+- **Repo anterior:** https://skyblue-rabbit-531241.hostingersite.com/
+
 ## Variables de entorno
 Ver `.env.example` para la lista completa. Se configuran en hPanel de Hostinger.

@@ -1,0 +1,119 @@
+import { useState, useEffect } from 'react';
+import AdminLayout from '../../components/AdminLayout';
+import { api } from '../../utils/api';
+import { formatTimeBolivia } from '../../utils/dates';
+
+export default function Dashboard() {
+  const [todayAppts, setTodayAppts] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    api.get('/appointments/today')
+      .then(setTodayAppts)
+      .catch(err => console.error(err))
+      .finally(() => setLoading(false));
+  }, []);
+
+  async function handleStatusChange(id, status) {
+    try {
+      await api.put(`/appointments/${id}/status`, { status });
+      setTodayAppts(prev => prev.map(a => a.id === id ? { ...a, status } : a));
+    } catch (err) {
+      console.error(err);
+    }
+  }
+
+  async function handleTriggerReminder(date) {
+    try {
+      const result = await api.get(`/admin/test-reminder?date=${date}`);
+      alert(`Enviados: ${result.sent}, Omitidos: ${result.skipped}, Total eventos: ${result.total}`);
+    } catch (err) {
+      alert('Error: ' + err.message);
+    }
+  }
+
+  return (
+    <AdminLayout title="Dashboard">
+      {/* KPI Cards placeholder */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+        {['Sesiones esta semana', 'Clientes activos', 'Tasa asistencia', 'Ingresos del mes'].map(label => (
+          <div key={label} className="bg-white rounded-xl border border-gray-200 p-4">
+            <div className="text-xs text-gray-500 font-medium">{label}</div>
+            <div className="text-2xl font-bold mt-1">--</div>
+          </div>
+        ))}
+      </div>
+
+      {/* Today's appointments */}
+      <div className="bg-white rounded-xl border border-gray-200">
+        <div className="p-4 border-b border-gray-100 flex items-center justify-between">
+          <h3 className="font-semibold">Citas de hoy</h3>
+          <div className="flex gap-2">
+            <button type="button" onClick={() => handleTriggerReminder('today')} className="text-xs px-3 py-1.5 bg-gray-100 rounded-lg hover:bg-gray-200 font-medium">
+              Recordatorio hoy
+            </button>
+            <button type="button" onClick={() => handleTriggerReminder('tomorrow')} className="text-xs px-3 py-1.5 bg-gray-100 rounded-lg hover:bg-gray-200 font-medium">
+              Recordatorio mañana
+            </button>
+          </div>
+        </div>
+
+        {loading ? (
+          <div className="p-8 text-center text-gray-400">Cargando...</div>
+        ) : todayAppts.length === 0 ? (
+          <div className="p-8 text-center text-gray-400">No hay sesiones programadas para hoy</div>
+        ) : (
+          <table className="w-full">
+            <thead>
+              <tr className="text-xs text-gray-500 border-b border-gray-100">
+                <th className="text-left p-3 font-medium">Hora</th>
+                <th className="text-left p-3 font-medium">Cliente</th>
+                <th className="text-left p-3 font-medium">Teléfono</th>
+                <th className="text-left p-3 font-medium">Status</th>
+                <th className="text-left p-3 font-medium">Acción</th>
+              </tr>
+            </thead>
+            <tbody>
+              {todayAppts.map(appt => (
+                <tr key={appt.id} className="border-b border-gray-50 hover:bg-gray-50">
+                  <td className="p-3 text-sm font-medium">
+                    {formatTimeBolivia(appt.date_time)}
+                  </td>
+                  <td className="p-3 text-sm">{appt.first_name} {appt.last_name}</td>
+                  <td className="p-3 text-sm">
+                    <a href={`https://wa.me/${appt.client_phone}`} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">
+                      {appt.client_phone}
+                    </a>
+                  </td>
+                  <td className="p-3">
+                    <span className={`text-xs px-2 py-1 rounded-full font-medium ${
+                      appt.status === 'Confirmada' ? 'bg-green-100 text-green-700' :
+                      appt.status === 'Completada' ? 'bg-blue-100 text-blue-700' :
+                      appt.status === 'No-show' ? 'bg-red-100 text-red-700' :
+                      appt.status === 'Cancelada' ? 'bg-gray-100 text-gray-600' :
+                      'bg-yellow-100 text-yellow-700'
+                    }`}>
+                      {appt.status}
+                    </span>
+                  </td>
+                  <td className="p-3">
+                    <select
+                      value=""
+                      onChange={e => { if (e.target.value) handleStatusChange(appt.id, e.target.value); }}
+                      className="text-xs border border-gray-200 rounded px-2 py-1 bg-white"
+                    >
+                      <option value="">Cambiar...</option>
+                      <option value="Completada">Completada</option>
+                      <option value="No-show">No-show</option>
+                      <option value="Cancelada">Cancelada</option>
+                    </select>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+    </AdminLayout>
+  );
+}

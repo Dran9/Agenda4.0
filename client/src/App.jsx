@@ -1,10 +1,79 @@
+import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import BookingFlow from './pages/BookingFlow';
+
+// Admin pages - lazy loaded to reduce initial bundle
+import { lazy, Suspense } from 'react';
+const AdminLogin = lazy(() => import('./pages/Admin/Login'));
+const AdminDashboard = lazy(() => import('./pages/Admin/Dashboard'));
+const AdminClients = lazy(() => import('./pages/Admin/Clients'));
+const AdminAppointments = lazy(() => import('./pages/Admin/Appointments'));
+const AdminConfig = lazy(() => import('./pages/Admin/Config'));
+const AdminAnalytics = lazy(() => import('./pages/Admin/Analytics'));
+const AdminWhatsApp = lazy(() => import('./pages/Admin/WhatsApp'));
+const AdminFinance = lazy(() => import('./pages/Admin/Finance'));
+
+function AdminFallback() {
+  return (
+    <div className="min-h-screen flex items-center justify-center">
+      <div className="text-gray-400">Cargando...</div>
+    </div>
+  );
+}
+
 export default function App() {
   return (
-    <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '100vh', fontFamily: 'Inter, sans-serif' }}>
-      <div style={{ textAlign: 'center' }}>
-        <h1 style={{ fontSize: '2rem', marginBottom: '0.5rem' }}>Agenda 3.0</h1>
-        <p style={{ color: '#666' }}>Plataforma en desarrollo</p>
-      </div>
-    </div>
+    <BrowserRouter>
+      <Routes>
+        {/* Public: Booking Flow */}
+        <Route path="/" element={<BookingFlow />} />
+
+        {/* Admin login */}
+        <Route path="/admin/login" element={
+          <Suspense fallback={<AdminFallback />}>
+            <AdminLogin />
+          </Suspense>
+        } />
+
+        {/* Admin routes */}
+        <Route path="/admin" element={
+          <Suspense fallback={<AdminFallback />}>
+            <AdminDashboard />
+          </Suspense>
+        } />
+        <Route path="/admin/clients" element={
+          <Suspense fallback={<AdminFallback />}>
+            <AdminClients />
+          </Suspense>
+        } />
+        <Route path="/admin/appointments" element={
+          <Suspense fallback={<AdminFallback />}>
+            <AdminAppointments />
+          </Suspense>
+        } />
+        <Route path="/admin/config" element={
+          <Suspense fallback={<AdminFallback />}>
+            <AdminConfig />
+          </Suspense>
+        } />
+        <Route path="/admin/analytics" element={
+          <Suspense fallback={<AdminFallback />}>
+            <AdminAnalytics />
+          </Suspense>
+        } />
+        <Route path="/admin/whatsapp" element={
+          <Suspense fallback={<AdminFallback />}>
+            <AdminWhatsApp />
+          </Suspense>
+        } />
+        <Route path="/admin/finance" element={
+          <Suspense fallback={<AdminFallback />}>
+            <AdminFinance />
+          </Suspense>
+        } />
+
+        {/* Catch-all */}
+        <Route path="*" element={<Navigate to="/" replace />} />
+      </Routes>
+    </BrowserRouter>
   );
 }

@@ -1,0 +1,160 @@
+const { Router } = require('express');
+const { pool } = require('../db');
+const { authMiddleware } = require('../middleware/auth');
+const { validate, clientSchema } = require('../middleware/validate');
+
+const router = Router();
+
+// Helper: calculate client status based on rules from SPECS
+function calculateStatus(client, lastAppt, futureAppt, completedCount) {
+  if (client.status_override === 'Archivado') return 'Archivado';
+  if (client.status_override) return client.status_override;
+  if (completedCount === 0) return 'Nuevo';
+  if (futureAppt || (lastAppt && daysSince(lastAppt.date_time) < 21)) {
+    return completedCount >= 10 ? 'Recurrente' : 'Activo';
+  }
+  if (lastAppt && daysSince(lastAppt.date_time) <= 56) return 'En pausa';
+  return 'Inactivo';
+}
+
+function daysSince(dateTime) {
+  return Math.floor((Date.now() - new Date(dateTime).getTime()) / (1000 * 60 * 60 * 24));
+}
+
+// GET /api/clients — list all (admin)
+router.get('/', authMiddleware, async (req, res) => {
+  try {
+    const [clients] = await pool.query(
+      `SELECT c.*,
+        (SELECT COUNT(*) FROM appointments WHERE client_id = c.id AND status = 'Completada') as completed_sessions,
+        (SELECT MAX(date_time) FROM appointments WHERE client_id = c.id AND status = 'Completada') as last_session,
+        (SELECT MIN(date_time) FROM appointments WHERE client_id = c.id AND status = 'Completada') as first_session,
+        (SELECT COUNT(*) FROM appointments WHERE client_id = c.id) as total_appointments,
+        (SELECT COUNT(*) FROM appointments WHERE client_id = c.id AND status = 'Reagendada') as reschedule_count
+       FROM clients c WHERE c.tenant_id = ? AND c.deleted_at IS NULL
+       ORDER BY c.created_at DESC`,
+      [req.tenantId]
+    );
+
+    // Calculate status and future appointment for each
+    for (const client of clients) {
+      const [futureAppts] = await pool.query(
+        `SELECT id, date_time FROM appointments WHERE client_id = ? AND status = 'Confirmada' AND date_time > NOW() LIMIT 1`,
+        [client.id]
+      );
+      const lastAppt = client.last_session ? { date_time: client.last_session } : null;
+      client.calculated_status = calculateStatus(client, lastAppt, futureAppts[0], client.completed_sessions);
+      client.next_appointment = futureAppts[0] || null;
+    }
+
+    res.json(clients);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/clients/:id — single client detail (admin)
+router.get('/:id', authMiddleware, async (req, res) => {
+  try {
+    const [clients] = await pool.query(
+      'SELECT * FROM clients WHERE id = ? AND tenant_id = ? AND deleted_at IS NULL',
+      [req.params.id, req.tenantId]
+    );
+    if (clients.length === 0) return res.status(404).json({ error: 'Cliente no encontrado' });
+
+    const client = clients[0];
+
+    // Appointments history
+    const [appointments] = await pool.query(
+      'SELECT * FROM appointments WHERE client_id = ? AND tenant_id = ? ORDER BY date_time DESC',
+      [client.id, req.tenantId]
+    );
+
+    // Payments history
+    const [payments] = await pool.query(
+      'SELECT * FROM payments WHERE client_id = ? AND tenant_id = ? ORDER BY created_at DESC',
+      [client.id, req.tenantId]
+    );
+
+    res.json({ client, appointments, payments });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/clients — create client (admin)
+router.post('/', authMiddleware, validate(clientSchema), async (req, res) => {
+  try {
+    const data = req.validated;
+    const [existing] = await pool.query(
+      'SELECT id FROM clients WHERE phone = ? AND tenant_id = ? AND deleted_at IS NULL',
+      [data.phone, req.tenantId]
+    );
+    if (existing.length > 0) return res.json({ client_id: existing[0].id, existing: true });
+
+    const [result] = await pool.query(
+      `INSERT INTO clients (tenant_id, phone, first_name, last_name, age, city, country, modality, frequency, source, referred_by, fee, payment_method, rating, diagnosis, notes)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [req.tenantId, data.phone, data.first_name, data.last_name, data.age || null,
+       data.city || 'Cochabamba', data.country || 'Bolivia', data.modality || 'Presencial',
+       data.frequency || 'Semanal', data.source || 'Otro', data.referred_by || null,
+       data.fee || 250, data.payment_method || 'QR', data.rating || 0,
+       data.diagnosis || null, data.notes || null]
+    );
+    res.json({ client_id: result.insertId, existing: false });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// PUT /api/clients/:id — update client (admin)
+router.put('/:id', authMiddleware, async (req, res) => {
+  try {
+    const allowed = [
+      'first_name', 'last_name', 'age', 'city', 'country', 'modality', 'frequency',
+      'source', 'referred_by', 'fee', 'payment_method', 'rating', 'diagnosis', 'notes',
+      'status_override', 'phone'
+    ];
+    const updates = {};
+    for (const key of allowed) {
+      if (req.body[key] !== undefined) updates[key] = req.body[key];
+    }
+    if (Object.keys(updates).length === 0) return res.status(400).json({ error: 'No hay campos para actualizar' });
+
+    const setClauses = Object.keys(updates).map(k => `${k} = ?`).join(', ');
+    const values = [...Object.values(updates), req.params.id, req.tenantId];
+    await pool.query(`UPDATE clients SET ${setClauses} WHERE id = ? AND tenant_id = ?`, values);
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// DELETE /api/clients/:id — soft delete (admin)
+router.delete('/:id', authMiddleware, async (req, res) => {
+  try {
+    await pool.query(
+      'UPDATE clients SET deleted_at = NOW(), status_override = ? WHERE id = ? AND tenant_id = ?',
+      ['Archivado', req.params.id, req.tenantId]
+    );
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/client/check — public phone check (no auth)
+router.post('/check', async (req, res) => {
+  try {
+    const { phone } = req.body;
+    if (!phone) return res.status(400).json({ error: 'Campo requerido: phone' });
+    const { checkClientByPhone } = require('../services/booking');
+    const tenantId = req.tenantId || 1;
+    const result = await checkClientByPhone(phone, tenantId);
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+module.exports = router;

@@ -1,0 +1,161 @@
+import { useState, useEffect } from 'react';
+import { useBookingReducer } from '../hooks/useBookingReducer';
+import { useSlots } from '../hooks/useSlots';
+import { useConfig } from '../hooks/useConfig';
+import { api } from '../utils/api';
+import { DEFAULT_TZ, detectTimezoneFromIP } from '../utils/timezones';
+
+import CalendarScreen from '../components/booking/CalendarScreen';
+import PhoneScreen from '../components/booking/PhoneScreen';
+import ConfirmScreen from '../components/booking/ConfirmScreen';
+import SuccessScreen from '../components/booking/SuccessScreen';
+import ExistingApptScreen from '../components/booking/ExistingApptScreen';
+import RescheduleConfirm from '../components/booking/RescheduleConfirm';
+
+export default function BookingFlow() {
+  const [state, dispatch] = useBookingReducer();
+  const { config, loading: configLoading } = useConfig();
+  const { slots, loading: slotsLoading, daysWithSlots, fetchSlots, prefetchDays } = useSlots();
+  const [timezone, setTimezone] = useState(DEFAULT_TZ);
+
+  // Detect timezone from IP on mount
+  useEffect(() => {
+    fetch('https://ipapi.co/json/')
+      .then(r => r.json())
+      .then(data => setTimezone(detectTimezoneFromIP(data)))
+      .catch(() => {});
+  }, []);
+
+  // Dev mode detection
+  const isDevMode = new URLSearchParams(window.location.search).get('devmode') === '1';
+
+  // Handle phone submission → POST /api/book
+  async function handleSubmitPhone(phone) {
+    dispatch({ type: 'SUBMIT_PHONE', phone });
+    try {
+      const data = await api.post('/book', {
+        phone,
+        date_time: `${state.selectedDate}T${state.selectedSlot.time}`,
+      });
+
+      if (data.status === 'needs_onboarding') {
+        dispatch({ type: 'NEEDS_ONBOARDING' });
+      } else if (data.status === 'booked') {
+        dispatch({ type: 'BOOKED', result: data, clientName: data.client_name });
+      } else if (data.status === 'has_appointment') {
+        dispatch({
+          type: 'HAS_APPOINTMENT',
+          clientId: data.client_id,
+          clientName: data.client_name,
+          appointment: data.appointment,
+        });
+      }
+    } catch (err) {
+      dispatch({ type: 'SET_ERROR', error: err.message });
+    }
+  }
+
+  // Handle onboarding submission → POST /api/book with onboarding
+  async function handleSubmitOnboarding(onboarding) {
+    dispatch({ type: 'SET_LOADING', loading: true });
+    try {
+      const data = await api.post('/book', {
+        phone: state.phone,
+        date_time: `${state.selectedDate}T${state.selectedSlot.time}`,
+        onboarding,
+      });
+
+      if (data.status === 'booked') {
+        dispatch({ type: 'BOOKED', result: data, clientName: onboarding.first_name });
+      } else {
+        dispatch({ type: 'SET_ERROR', error: 'Error inesperado al agendar' });
+      }
+    } catch (err) {
+      dispatch({ type: 'SET_ERROR', error: err.message });
+    }
+  }
+
+  // Handle reschedule confirmation → POST /api/reschedule
+  async function handleConfirmReschedule() {
+    dispatch({ type: 'SET_LOADING', loading: true });
+    try {
+      const data = await api.post('/reschedule', {
+        client_id: state.clientId,
+        old_appointment_id: state.oldAppointmentId,
+        date_time: `${state.selectedDate}T${state.selectedSlot.time}`,
+      });
+      dispatch({ type: 'RESCHEDULED', result: data });
+    } catch (err) {
+      dispatch({ type: 'SET_ERROR', error: err.message });
+    }
+  }
+
+  if (configLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="text-gray-400">Cargando...</div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen bg-white">
+      {isDevMode && (
+        <div className="bg-yellow-100 text-yellow-800 text-xs text-center py-1 font-medium">
+          MODO DESARROLLO
+        </div>
+      )}
+
+      <div className="max-w-md mx-auto px-3 py-6 sm:px-6">
+        {state.screen === 'calendar' && (
+          <CalendarScreen
+            state={state}
+            dispatch={dispatch}
+            config={config}
+            slots={slots}
+            slotsLoading={slotsLoading}
+            fetchSlots={fetchSlots}
+            prefetchDays={prefetchDays}
+            daysWithSlots={daysWithSlots}
+            timezone={timezone}
+          />
+        )}
+
+        {state.screen === 'phone' && (
+          <PhoneScreen
+            state={state}
+            dispatch={dispatch}
+            onSubmitPhone={handleSubmitPhone}
+          />
+        )}
+
+        {state.screen === 'confirm' && (
+          <ConfirmScreen
+            state={state}
+            dispatch={dispatch}
+            onSubmitOnboarding={handleSubmitOnboarding}
+          />
+        )}
+
+        {state.screen === 'success' && (
+          <SuccessScreen state={state} />
+        )}
+
+        {state.screen === 'existing' && (
+          <ExistingApptScreen
+            state={state}
+            dispatch={dispatch}
+          />
+        )}
+
+        {state.screen === 'reschedule_confirm' && (
+          <RescheduleConfirm
+            state={state}
+            dispatch={dispatch}
+            onConfirmReschedule={handleConfirmReschedule}
+          />
+        )}
+      </div>
+    </div>
+  );
+}

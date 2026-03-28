@@ -1,60 +1,40 @@
 import { formatDateTimeBolivia } from '../../utils/dates';
-import { api } from '../../utils/api';
 
 export default function ExistingApptScreen({ state, dispatch, onReschedule }) {
   const { clientName, existingAppointment, selectedDate, selectedSlot, loading, error } = state;
 
-  function handleKeep() {
-    dispatch({ type: 'RESET' });
-  }
-
   return (
-    <div>
-      <div className="text-xs font-mono text-gray-400 mb-2">Step 4</div>
-      <h2 className="text-lg font-semibold mb-1">Ya tienes una cita, {clientName}</h2>
-      <p className="text-sm text-gray-500 mb-4">Puedes reagendar o conservar tu cita actual.</p>
+    <div style={{ width: '100%' }}>
+      <h2 style={{ fontSize: 20, fontWeight: 600, marginBottom: 4 }}>Ya tienes una cita, {clientName}</h2>
+      <p style={{ fontSize: 14, color: 'var(--gris-medio)', marginBottom: 20 }}>Puedes reagendar o conservar tu cita actual.</p>
 
-      <div className="space-y-3">
-        <div className="p-4 bg-gray-50 rounded-xl">
-          <div className="text-xs font-medium text-gray-400 uppercase mb-1">Tu cita actual</div>
-          <div className="font-medium capitalize">
-            {existingAppointment?.date_time
-              ? formatDateTimeBolivia(existingAppointment.date_time)
-              : 'Sin fecha'}
-          </div>
+      <div className="card" style={{ marginBottom: 12 }}>
+        <div className="field-label" style={{ fontSize: 11, marginBottom: 4 }}>Tu cita actual</div>
+        <div style={{ fontWeight: 600, fontSize: 16, textTransform: 'capitalize' }}>
+          {existingAppointment?.date_time ? formatDateTimeBolivia(existingAppointment.date_time) : 'Sin fecha'}
         </div>
-
-        {selectedSlot && (
-          <div className="p-4 bg-blue-50 border border-blue-200 rounded-xl">
-            <div className="text-xs font-medium text-blue-500 uppercase mb-1">Nuevo horario</div>
-            <div className="font-medium text-blue-900">
-              {formatDateTimeBolivia(`${selectedDate}T${selectedSlot.time}:00-04:00`)}
-            </div>
-          </div>
-        )}
       </div>
 
+      {selectedSlot && (
+        <div style={{ padding: 16, background: 'var(--cian-light)', border: '1px solid var(--turquesa)', borderRadius: 16, marginBottom: 12 }}>
+          <div style={{ fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: 1.5, color: 'var(--petroleo)', marginBottom: 4 }}>Nuevo horario</div>
+          <div style={{ fontWeight: 600, fontSize: 16, color: 'var(--petroleo)', textTransform: 'capitalize' }}>
+            {formatDateTimeBolivia(`${selectedDate}T${selectedSlot.time}:00-04:00`)}
+          </div>
+        </div>
+      )}
+
       {error && (
-        <div className="mt-3 p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">
+        <div style={{ marginBottom: 12, padding: 12, background: '#FEF2F2', border: '1px solid #FECACA', borderRadius: 12, fontSize: 14, color: 'var(--terracota)' }}>
           {error}
         </div>
       )}
 
-      <div className="mt-6 space-y-2">
-        <button
-          type="button"
-          onClick={onReschedule}
-          disabled={loading}
-          className="w-full py-3 bg-gray-900 text-white rounded-lg font-medium hover:bg-gray-800 transition-colors disabled:opacity-40"
-        >
+      <div style={{ marginTop: 24, display: 'flex', flexDirection: 'column', gap: 8 }}>
+        <button type="button" onClick={onReschedule} disabled={loading} className="btn-primary">
           {loading ? 'Reagendando...' : 'Reagendar'}
         </button>
-        <button
-          type="button"
-          onClick={handleKeep}
-          disabled={loading}
-          className="w-full py-3 bg-white text-gray-700 border border-gray-200 rounded-lg font-medium hover:bg-gray-50 transition-colors"
-        >
+        <button type="button" onClick={() => dispatch({ type: 'RESET' })} disabled={loading} className="btn-secondary">
           Conservar mi cita actual
         </button>
       </div>

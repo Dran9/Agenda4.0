@@ -8,12 +8,9 @@ export default function CalendarScreen({ state, dispatch, config, slots, slotsLo
   const [showTzDropdown, setShowTzDropdown] = useState(false);
   const [tzSearch, setTzSearch] = useState('');
 
-  // Close dropdown on outside click
   useEffect(() => {
     if (!showTzDropdown) return;
-    function close(e) {
-      if (!e.target.closest('.tz-dropdown-container')) setShowTzDropdown(false);
-    }
+    function close(e) { if (!e.target.closest('.tz-dropdown-container')) setShowTzDropdown(false); }
     document.addEventListener('click', close);
     return () => document.removeEventListener('click', close);
   }, [showTzDropdown]);
@@ -22,25 +19,19 @@ export default function CalendarScreen({ state, dispatch, config, slots, slotsLo
     if (!config) return;
     const dates = [];
     const daysInMonth = new Date(year, month + 1, 0).getDate();
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const maxDate = new Date(today);
-    maxDate.setDate(maxDate.getDate() + (config.window_days || 10));
-
+    const today = new Date(); today.setHours(0,0,0,0);
+    const maxDate = new Date(today); maxDate.setDate(maxDate.getDate() + (config.window_days || 10));
     for (let d = 1; d <= daysInMonth; d++) {
       const date = new Date(year, month, d);
       const dow = date.getDay();
       if (dow >= 1 && dow <= 5 && date >= today && date <= maxDate) {
-        const str = `${year}-${String(month + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
-        dates.push(str);
+        dates.push(`${year}-${String(month + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`);
       }
     }
     if (dates.length > 0) prefetchDays(dates);
   }, [config, prefetchDays]);
 
-  useEffect(() => {
-    if (selectedDate) fetchSlots(selectedDate);
-  }, [selectedDate]);
+  useEffect(() => { if (selectedDate) fetchSlots(selectedDate); }, [selectedDate]);
 
   function handleSelectDate(dateStr) {
     dispatch({ type: 'SELECT_DATE_ONLY', date: dateStr });
@@ -73,58 +64,54 @@ export default function CalendarScreen({ state, dispatch, config, slots, slotsLo
   const isNotBolivia = timezone?.tz !== 'America/La_Paz';
 
   return (
-    <div>
-      <div className="text-xs font-mono text-gray-400 mb-2">Step {isReschedule ? '1 (reschedule)' : '1'}</div>
+    <div style={{ width: '100%' }}>
       {isReschedule && (
-        <div className="mb-4 p-3 bg-amber-50 border border-amber-200 rounded-lg text-sm text-amber-800">
-          Selecciona un nuevo horario para reagendar tu cita
+        <div className="notice-box" style={{ marginBottom: 16, background: 'var(--crema)' }}>
+          <span style={{ fontSize: 14, color: '#92400e' }}>Selecciona un nuevo horario para reagendar tu cita</span>
         </div>
       )}
 
       {/* Timezone selector */}
-      <div className="flex justify-center mb-4 tz-dropdown-container relative">
+      <div className="tz-dropdown-container" style={{ position: 'relative', display: 'flex', justifyContent: 'center', marginBottom: 16 }}>
         <button
           type="button"
           onClick={e => { e.stopPropagation(); setShowTzDropdown(!showTzDropdown); }}
-          className="flex items-center gap-2 px-3 py-1.5 rounded-full border border-gray-200 text-sm text-gray-600 hover:bg-gray-50 transition-colors"
+          className="timezone-selector"
         >
-          <Globe size={14} />
-          <span>{timezone?.flag} {timezone?.label} ({getCurrentTimeInTz(timezone?.tz || 'America/La_Paz')})</span>
-          <ChevronDown size={12} />
+          <Globe size={14} style={{ opacity: 0.5 }} />
+          <span>{timezone?.flag} {timezone?.label}</span>
+          <span style={{ marginLeft: 'auto', fontWeight: 600, color: 'var(--negro)', fontSize: 13 }}>
+            {getCurrentTimeInTz(timezone?.tz || 'America/La_Paz')}
+          </span>
+          <ChevronDown size={12} style={{ color: 'var(--gris-medio)' }} />
         </button>
 
         {showTzDropdown && (
-          <div className="absolute top-full mt-1 left-1/2 -translate-x-1/2 w-80 bg-white border border-gray-200 rounded-xl shadow-lg z-50 overflow-hidden">
-            <div className="p-2 border-b border-gray-100">
-              <div className="relative">
-                <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400" />
+          <div className="timezone-dropdown" style={{ position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 50 }}>
+            <div style={{ padding: 8, borderBottom: '1px solid var(--platino)' }}>
+              <div style={{ position: 'relative' }}>
+                <Search size={14} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--gris-medio)' }} />
                 <input
-                  type="text"
-                  value={tzSearch}
-                  onChange={e => setTzSearch(e.target.value)}
+                  type="text" value={tzSearch} onChange={e => setTzSearch(e.target.value)}
                   placeholder="Buscar zona horaria..."
-                  className="w-full pl-8 pr-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-gray-300"
+                  className="timezone-search"
+                  style={{ paddingLeft: 32 }}
                   autoFocus
                 />
               </div>
             </div>
-            <div className="max-h-[340px] overflow-y-auto">
+            <div className="timezone-list" style={{ maxHeight: 300 }}>
               {filteredGroups.map(group => (
                 <div key={group.label}>
-                  <div className="px-3 py-1.5 text-[10px] font-bold text-gray-400 uppercase bg-gray-50 sticky top-0">
-                    {group.label}
-                  </div>
+                  <div className="timezone-group-label">{group.label}</div>
                   {group.zones.map(z => (
                     <button
-                      key={z.tz}
-                      type="button"
-                      onClick={() => handleSelectTz(z)}
-                      className={`w-full text-left px-3 py-2 text-sm flex items-center justify-between hover:bg-gray-50 ${
-                        timezone?.tz === z.tz ? 'bg-gray-100 font-medium' : ''
-                      }`}
+                      key={z.tz} type="button" onClick={() => handleSelectTz(z)}
+                      className={`timezone-item${timezone?.tz === z.tz ? ' active' : ''}`}
+                      style={{ width: '100%', textAlign: 'left', border: 'none', background: 'none', justifyContent: 'space-between' }}
                     >
                       <span>{z.flag} {z.label}</span>
-                      <span className="text-xs text-gray-400">{getCurrentTimeInTz(z.tz)}</span>
+                      <span style={{ fontSize: 12, color: 'var(--gris-medio)' }}>{getCurrentTimeInTz(z.tz)}</span>
                     </button>
                   ))}
                 </div>
@@ -144,32 +131,28 @@ export default function CalendarScreen({ state, dispatch, config, slots, slotsLo
       />
 
       {selectedDate && (
-        <div className="mt-6">
+        <div style={{ marginTop: 24, width: '100%' }}>
           {slotsLoading ? (
-            <div className="text-center text-gray-400 py-4">Cargando horarios...</div>
+            <div style={{ textAlign: 'center', color: 'var(--gris-medio)', padding: '16px 0', fontSize: 14 }}>Cargando horarios...</div>
           ) : slots.length === 0 ? (
-            <div className="text-center text-gray-400 py-4">No hay horarios disponibles este día</div>
+            <div style={{ textAlign: 'center', color: 'var(--gris-medio)', padding: '16px 0', fontSize: 14 }}>No hay horarios disponibles este día</div>
           ) : (
             <>
               {isNotBolivia && (
-                <div className="text-xs text-gray-400 text-center mb-3">
+                <div style={{ fontSize: 12, color: 'var(--gris-medio)', textAlign: 'center', marginBottom: 12 }}>
                   Horarios en tu zona ({timezone?.label})
                 </div>
               )}
               {morningSlots.length > 0 && (
-                <div className="mb-4">
-                  <div className="text-xs font-medium text-gray-400 uppercase mb-2">Mañana</div>
-                  <div className="grid grid-cols-3 gap-2">
+                <div style={{ marginBottom: 16 }}>
+                  <div className="field-label" style={{ fontSize: 12, marginBottom: 8 }}>Mañana</div>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8 }}>
                     {morningSlots.map(slot => (
                       <button
-                        type="button"
-                        key={slot.time}
-                        onClick={() => handleSelectSlot(slot)}
-                        className="py-2.5 px-3 rounded-lg border border-gray-200 text-sm font-medium hover:bg-gray-900 hover:text-white hover:border-gray-900 transition-all"
+                        type="button" key={slot.time} onClick={() => handleSelectSlot(slot)}
+                        className="slot-btn"
                       >
-                        {isNotBolivia
-                          ? convertLaPazTimeToTz(slot.time, selectedDate, timezone.tz)
-                          : slot.time}
+                        {isNotBolivia ? convertLaPazTimeToTz(slot.time, selectedDate, timezone.tz) : slot.time}
                       </button>
                     ))}
                   </div>
@@ -177,18 +160,14 @@ export default function CalendarScreen({ state, dispatch, config, slots, slotsLo
               )}
               {afternoonSlots.length > 0 && (
                 <div>
-                  <div className="text-xs font-medium text-gray-400 uppercase mb-2">Tarde</div>
-                  <div className="grid grid-cols-3 gap-2">
+                  <div className="field-label" style={{ fontSize: 12, marginBottom: 8 }}>Tarde</div>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8 }}>
                     {afternoonSlots.map(slot => (
                       <button
-                        type="button"
-                        key={slot.time}
-                        onClick={() => handleSelectSlot(slot)}
-                        className="py-2.5 px-3 rounded-lg border border-gray-200 text-sm font-medium hover:bg-gray-900 hover:text-white hover:border-gray-900 transition-all"
+                        type="button" key={slot.time} onClick={() => handleSelectSlot(slot)}
+                        className="slot-btn"
                       >
-                        {isNotBolivia
-                          ? convertLaPazTimeToTz(slot.time, selectedDate, timezone.tz)
-                          : slot.time}
+                        {isNotBolivia ? convertLaPazTimeToTz(slot.time, selectedDate, timezone.tz) : slot.time}
                       </button>
                     ))}
                   </div>

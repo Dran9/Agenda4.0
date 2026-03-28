@@ -18,73 +18,43 @@ export default function ConfirmScreen({ state, dispatch, onSubmitOnboarding }) {
   function handleSubmit(e) {
     e.preventDefault();
     if (!form.first_name.trim() || !form.last_name.trim()) return;
-    onSubmitOnboarding({
-      ...form,
-      age: form.age ? parseInt(form.age) : undefined,
-    });
+    onSubmitOnboarding({ ...form, age: form.age ? parseInt(form.age) : undefined });
   }
 
   return (
-    <div>
-      <div className="text-xs font-mono text-gray-400 mb-2">Step 3</div>
+    <div style={{ width: '100%' }}>
       <button
         type="button"
         onClick={() => dispatch({ type: 'GO_BACK' })}
-        className="flex items-center gap-1 text-sm text-gray-500 hover:text-gray-700 mb-4"
+        style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 14, color: 'var(--gris-medio)', background: 'none', border: 'none', cursor: 'pointer', marginBottom: 16, padding: 0 }}
       >
         <ChevronLeft size={16} />
         Volver
       </button>
 
-      <h2 className="text-lg font-semibold mb-1">Completa tus datos</h2>
-      <p className="text-sm text-gray-500 mb-4">Es tu primera vez. Necesitamos algunos datos para agendar.</p>
+      <h2 style={{ fontSize: 20, fontWeight: 600, marginBottom: 4 }}>Completa tus datos</h2>
+      <p style={{ fontSize: 14, color: 'var(--gris-medio)', marginBottom: 20 }}>Es tu primera vez. Necesitamos algunos datos para agendar.</p>
 
-      <form onSubmit={handleSubmit} className="space-y-3">
-        <div className="grid grid-cols-2 gap-3">
+      <form onSubmit={handleSubmit}>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 12 }}>
           <div>
-            <label className="block text-xs font-medium text-gray-500 mb-1">Nombre</label>
-            <input
-              name="first_name"
-              value={form.first_name}
-              onChange={handleChange}
-              required
-              className="w-full px-3 py-2.5 border border-gray-200 rounded-lg text-base focus:outline-none focus:ring-2 focus:ring-gray-300"
-              autoFocus
-            />
+            <div className="field-label" style={{ fontSize: 12 }}>Nombre</div>
+            <input name="first_name" value={form.first_name} onChange={handleChange} required className="input-field" autoFocus />
           </div>
           <div>
-            <label className="block text-xs font-medium text-gray-500 mb-1">Apellido</label>
-            <input
-              name="last_name"
-              value={form.last_name}
-              onChange={handleChange}
-              required
-              className="w-full px-3 py-2.5 border border-gray-200 rounded-lg text-base focus:outline-none focus:ring-2 focus:ring-gray-300"
-            />
+            <div className="field-label" style={{ fontSize: 12 }}>Apellido</div>
+            <input name="last_name" value={form.last_name} onChange={handleChange} required className="input-field" />
           </div>
         </div>
 
-        <div className="grid grid-cols-2 gap-3">
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 12 }}>
           <div>
-            <label className="block text-xs font-medium text-gray-500 mb-1">Edad</label>
-            <input
-              name="age"
-              type="number"
-              value={form.age}
-              onChange={handleChange}
-              min="1"
-              max="120"
-              className="w-full px-3 py-2.5 border border-gray-200 rounded-lg text-base focus:outline-none focus:ring-2 focus:ring-gray-300"
-            />
+            <div className="field-label" style={{ fontSize: 12 }}>Edad</div>
+            <input name="age" type="number" value={form.age} onChange={handleChange} min="1" max="120" className="input-field" />
           </div>
           <div>
-            <label className="block text-xs font-medium text-gray-500 mb-1">Ciudad</label>
-            <select
-              name="city"
-              value={form.city}
-              onChange={handleChange}
-              className="w-full px-3 py-2.5 border border-gray-200 rounded-lg text-base bg-white focus:outline-none focus:ring-2 focus:ring-gray-300"
-            >
+            <div className="field-label" style={{ fontSize: 12 }}>Ciudad</div>
+            <select name="city" value={form.city} onChange={handleChange} className="input-field" style={{ appearance: 'auto' }}>
               <option value="Cochabamba">Cochabamba</option>
               <option value="Santa Cruz">Santa Cruz</option>
               <option value="La Paz">La Paz</option>
@@ -94,14 +64,9 @@ export default function ConfirmScreen({ state, dispatch, onSubmitOnboarding }) {
           </div>
         </div>
 
-        <div>
-          <label className="block text-xs font-medium text-gray-500 mb-1">¿Cómo nos encontraste?</label>
-          <select
-            name="source"
-            value={form.source}
-            onChange={handleChange}
-            className="w-full px-3 py-2.5 border border-gray-200 rounded-lg text-base bg-white focus:outline-none focus:ring-2 focus:ring-gray-300"
-          >
+        <div style={{ marginBottom: 16 }}>
+          <div className="field-label" style={{ fontSize: 12 }}>¿Cómo nos encontraste?</div>
+          <select name="source" value={form.source} onChange={handleChange} className="input-field" style={{ appearance: 'auto' }}>
             <option value="Instagram">Instagram</option>
             <option value="Referido">Referido</option>
             <option value="Google">Google</option>
@@ -111,7 +76,7 @@ export default function ConfirmScreen({ state, dispatch, onSubmitOnboarding }) {
         </div>
 
         {state.error && (
-          <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">
+          <div style={{ marginBottom: 12, padding: 12, background: '#FEF2F2', border: '1px solid #FECACA', borderRadius: 12, fontSize: 14, color: 'var(--terracota)' }}>
             {state.error}
           </div>
         )}
@@ -119,7 +84,7 @@ export default function ConfirmScreen({ state, dispatch, onSubmitOnboarding }) {
         <button
           type="submit"
           disabled={!form.first_name.trim() || !form.last_name.trim() || state.loading}
-          className="w-full py-3 bg-gray-900 text-white rounded-lg font-medium disabled:opacity-40 disabled:cursor-not-allowed hover:bg-gray-800 transition-colors"
+          className="btn-primary"
         >
           {state.loading ? 'Agendando...' : 'Agendar cita'}
         </button>

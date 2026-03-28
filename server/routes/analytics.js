@@ -23,14 +23,16 @@ router.get('/', authMiddleware, async (req, res) => {
       // Totals
       pool.query(`
         SELECT
-          (SELECT COUNT(*) FROM clients WHERE tenant_id = ? AND deleted_at IS NULL) as total_clients,
+          (SELECT COUNT(*) FROM clients WHERE tenant_id = ?) as total_clients,
           (SELECT COUNT(*) FROM appointments WHERE tenant_id = ?) as total_appointments,
           (SELECT COUNT(*) FROM appointments WHERE tenant_id = ? AND status = 'Completada') as total_completed,
           (SELECT COUNT(*) FROM appointments WHERE tenant_id = ? AND status = 'Cancelada') as total_cancelled,
           (SELECT COUNT(*) FROM appointments WHERE tenant_id = ? AND status = 'No-show') as total_noshow,
           (SELECT COUNT(*) FROM appointments WHERE tenant_id = ? AND status = 'Reagendada') as total_rescheduled,
-          (SELECT COUNT(*) FROM clients WHERE tenant_id = ? AND deleted_at IS NULL AND created_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)) as new_clients_30d
-      `, [t, t, t, t, t, t, t]),
+          (SELECT COUNT(*) FROM clients WHERE tenant_id = ? AND created_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)) as new_clients_30d,
+          (SELECT COUNT(*) FROM appointments WHERE tenant_id = ? AND date_time >= DATE_SUB(NOW(), INTERVAL 7 DAY) AND status IN ('Completada','Confirmada')) as sessions_this_week,
+          (SELECT COALESCE(SUM(p.amount), 0) FROM payments p JOIN appointments a ON p.appointment_id = a.id WHERE p.tenant_id = ? AND p.status = 'Confirmado' AND MONTH(a.date_time) = MONTH(NOW()) AND YEAR(a.date_time) = YEAR(NOW())) as income_this_month
+      `, [t, t, t, t, t, t, t, t, t]),
 
       // Sessions by week (last 12 weeks)
       pool.query(`
@@ -54,15 +56,13 @@ router.get('/', authMiddleware, async (req, res) => {
       // Clients by city
       pool.query(`
         SELECT COALESCE(city, 'Sin ciudad') as city, COUNT(*) as count
-        FROM clients WHERE tenant_id = ? AND deleted_at IS NULL
-        GROUP BY city ORDER BY count DESC
+        FROM clients WHERE tenant_id = ?         GROUP BY city ORDER BY count DESC
       `, [t]),
 
       // Clients by source
       pool.query(`
         SELECT COALESCE(source, 'Sin fuente') as source, COUNT(*) as count
-        FROM clients WHERE tenant_id = ? AND deleted_at IS NULL
-        GROUP BY source ORDER BY count DESC
+        FROM clients WHERE tenant_id = ?         GROUP BY source ORDER BY count DESC
       `, [t]),
 
       // Popular hours

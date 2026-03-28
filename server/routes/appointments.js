@@ -115,4 +115,16 @@ router.get('/today', authMiddleware, async (req, res) => {
   }
 });
 
+// DELETE /api/appointments/:id — delete appointment (admin)
+router.delete('/:id', authMiddleware, async (req, res) => {
+  try {
+    // Also delete associated payment if any
+    await pool.query('DELETE FROM payments WHERE appointment_id = ? AND tenant_id = ?', [req.params.id, req.tenantId]);
+    await pool.query('DELETE FROM appointments WHERE id = ? AND tenant_id = ?', [req.params.id, req.tenantId]);
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 module.exports = router;

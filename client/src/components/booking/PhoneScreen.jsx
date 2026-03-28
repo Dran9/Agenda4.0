@@ -1,30 +1,43 @@
 import { useState, useEffect, useRef } from 'react';
-import { ChevronLeft } from 'lucide-react';
+import { ChevronLeft, ChevronDown } from 'lucide-react';
 
-const COUNTRY_CODES = ['591', '54', '56', '51', '57', '52', '34', '1'];
+const COUNTRY_CODES = [
+  { code: '591', flag: '🇧🇴', name: 'Bolivia', digits: 8 },
+  { code: '54', flag: '🇦🇷', name: 'Argentina', digits: 10 },
+  { code: '56', flag: '🇨🇱', name: 'Chile', digits: 9 },
+  { code: '57', flag: '🇨🇴', name: 'Colombia', digits: 10 },
+  { code: '51', flag: '🇵🇪', name: 'Perú', digits: 9 },
+  { code: '593', flag: '🇪🇨', name: 'Ecuador', digits: 9 },
+  { code: '52', flag: '🇲🇽', name: 'México', digits: 10 },
+  { code: '34', flag: '🇪🇸', name: 'España', digits: 9 },
+  { code: '1', flag: '🇺🇸', name: 'USA', digits: 10 },
+];
 
 // Parse a full phone number into { countryCode, local }
 function parsePrefill(full) {
   if (!full) return null;
   const digits = full.replace(/\D/g, '');
-  // Try matching longest country codes first
-  for (const cc of [...COUNTRY_CODES].sort((a, b) => b.length - a.length)) {
-    if (digits.startsWith(cc)) {
-      return { countryCode: cc, local: digits.slice(cc.length) };
+  for (const cc of [...COUNTRY_CODES].sort((a, b) => b.code.length - a.code.length)) {
+    if (digits.startsWith(cc.code)) {
+      return { countryCode: cc.code, local: digits.slice(cc.code.length) };
     }
   }
-  // No match — assume Bolivia
   return { countryCode: '591', local: digits };
 }
 
-export default function PhoneScreen({ state, dispatch, onSubmitPhone, prefillPhone }) {
+export default function PhoneScreen({ state, dispatch, onSubmitPhone, prefillPhone, detectedCountryCode }) {
   const prefill = parsePrefill(prefillPhone);
+  const initialCC = prefill?.countryCode || detectedCountryCode || '591';
   const [phone, setPhone] = useState(prefill?.local || state.phone || '');
-  const [countryCode, setCountryCode] = useState(prefill?.countryCode || '591');
+  const [countryCode, setCountryCode] = useState(initialCC);
+  const [showDropdown, setShowDropdown] = useState(false);
   const autoSubmitted = useRef(false);
 
-  const fullPhone = countryCode + phone;
+  const currentCountry = COUNTRY_CODES.find(c => c.code === countryCode) || COUNTRY_CODES[0];
+  const expectedDigits = currentCountry.digits;
   const digitCount = phone.replace(/\D/g, '').length;
+  const phoneComplete = digitCount === expectedDigits;
+  const fullPhone = countryCode + phone;
 
   // Auto-submit if phone was pre-filled with enough digits
   useEffect(() => {
@@ -34,13 +47,18 @@ export default function PhoneScreen({ state, dispatch, onSubmitPhone, prefillPho
     }
   }, []);
 
+  function handlePhoneChange(e) {
+    const val = e.target.value.replace(/\D/g, '');
+    if (val.length <= expectedDigits) setPhone(val);
+  }
+
   function handleSubmit(e) {
     e.preventDefault();
-    if (digitCount < 7) return;
+    if (!phoneComplete) return;
     onSubmitPhone(fullPhone);
   }
 
-  // If auto-submitting, show a loading state
+  // If auto-submitting, show loading
   if (prefill && prefill.local.length >= 7 && state.loading) {
     return (
       <div>
@@ -74,32 +92,54 @@ export default function PhoneScreen({ state, dispatch, onSubmitPhone, prefillPho
         </label>
 
         <div className="flex gap-2">
-          <select
-            value={countryCode}
-            onChange={e => setCountryCode(e.target.value)}
-            className="w-24 px-2 py-2.5 border border-gray-200 rounded-lg text-sm bg-white"
-          >
-            <option value="591">+591</option>
-            <option value="54">+54</option>
-            <option value="56">+56</option>
-            <option value="51">+51</option>
-            <option value="57">+57</option>
-            <option value="52">+52</option>
-            <option value="34">+34</option>
-            <option value="1">+1</option>
-          </select>
+          {/* Country selector */}
+          <div className="relative">
+            <button
+              type="button"
+              onClick={() => setShowDropdown(!showDropdown)}
+              className="flex items-center gap-1 px-2 py-2.5 border border-gray-200 rounded-lg text-sm bg-white min-w-[90px]"
+            >
+              <span>{currentCountry.flag}</span>
+              <span>+{currentCountry.code}</span>
+              <ChevronDown size={12} className="text-gray-400" />
+            </button>
+
+            {showDropdown && (
+              <div className="absolute top-full mt-1 left-0 bg-white border border-gray-200 rounded-lg shadow-lg z-50 w-56 max-h-60 overflow-y-auto">
+                {COUNTRY_CODES.map(cc => (
+                  <button
+                    key={cc.code}
+                    type="button"
+                    onClick={() => { setCountryCode(cc.code); setShowDropdown(false); setPhone(''); }}
+                    className={`w-full text-left px-3 py-2 text-sm flex items-center gap-2 hover:bg-gray-50 ${
+                      cc.code === countryCode ? 'bg-gray-100 font-medium' : ''
+                    }`}
+                  >
+                    <span>{cc.flag}</span>
+                    <span>+{cc.code}</span>
+                    <span className="text-gray-400 ml-auto text-xs">{cc.name}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
 
           <input
             type="tel"
             value={phone}
-            onChange={e => setPhone(e.target.value.replace(/\D/g, ''))}
-            placeholder="72034151"
+            onChange={handlePhoneChange}
+            placeholder={currentCountry.code === '591' ? '72034151' : ''}
+            maxLength={expectedDigits}
             className="flex-1 px-3 py-2.5 border border-gray-200 rounded-lg text-base focus:outline-none focus:ring-2 focus:ring-gray-300"
             autoFocus
           />
         </div>
 
-        <div className="text-xs text-gray-400 mt-1">{digitCount}/8 dígitos</div>
+        <div className={`text-xs mt-1 transition-colors ${
+          phoneComplete ? 'text-green-600 font-medium' : digitCount > 0 ? 'text-gray-400' : 'text-transparent'
+        }`}>
+          {digitCount}/{expectedDigits} dígitos
+        </div>
 
         {state.error && (
           <div className="mt-3 p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">
@@ -109,7 +149,7 @@ export default function PhoneScreen({ state, dispatch, onSubmitPhone, prefillPho
 
         <button
           type="submit"
-          disabled={digitCount < 7 || state.loading}
+          disabled={!phoneComplete || state.loading}
           className="w-full mt-4 py-3 bg-gray-900 text-white rounded-lg font-medium disabled:opacity-40 disabled:cursor-not-allowed hover:bg-gray-800 transition-colors"
         >
           {state.loading ? 'Verificando...' : 'Continuar'}

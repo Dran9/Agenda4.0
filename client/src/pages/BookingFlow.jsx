@@ -20,16 +20,23 @@ export default function BookingFlow() {
   const { config, loading: configLoading } = useConfig();
   const { slots, loading: slotsLoading, daysWithSlots, fetchSlots, prefetchDays } = useSlots();
   const [timezone, setTimezone] = useState(DEFAULT_TZ);
+  const [detectedCountryCode, setDetectedCountryCode] = useState('591');
 
   // URL params: ?t=PHONE, ?code=XXX
   const urlPhone = pageParams.get('t') || '';
   const urlCode = pageParams.get('code') || '';
 
-  // Detect timezone from IP on mount
+  // Detect timezone and country from IP on mount
   useEffect(() => {
     fetch('https://ipapi.co/json/')
       .then(r => r.json())
-      .then(data => setTimezone(detectTimezoneFromIP(data)))
+      .then(data => {
+        setTimezone(detectTimezoneFromIP(data));
+        // Auto-detect country code for phone input
+        if (data.country_calling_code) {
+          setDetectedCountryCode(data.country_calling_code.replace('+', ''));
+        }
+      })
       .catch(() => {});
   }, []);
 
@@ -177,6 +184,7 @@ export default function BookingFlow() {
             prefetchDays={prefetchDays}
             daysWithSlots={daysWithSlots}
             timezone={timezone}
+            onTimezoneChange={setTimezone}
           />
         )}
 
@@ -186,6 +194,7 @@ export default function BookingFlow() {
             dispatch={dispatch}
             onSubmitPhone={handleSubmitPhone}
             prefillPhone={urlPhone}
+            detectedCountryCode={detectedCountryCode}
           />
         )}
 

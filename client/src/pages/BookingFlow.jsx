@@ -192,15 +192,16 @@ export default function BookingFlow() {
       .catch(() => {});
   }, []);
 
-  // Pre-fetch 7 days of slots
+  // Pre-fetch 7 weekdays of slots
   useEffect(() => {
     if (!config) return;
     const today = new Date();
     const dates = [];
-    for (let i = 0; i < 7; i++) {
-      const d = new Date(today);
-      d.setDate(d.getDate() + i);
+    const d = new Date(today);
+    while (dates.length < 7) {
       dates.push(d.toISOString().split('T')[0]);
+      // Advance to next weekday (Mon-Fri)
+      do { d.setDate(d.getDate() + 1); } while (d.getDay() === 0 || d.getDay() === 6);
     }
     Promise.all(
       dates.map(date =>

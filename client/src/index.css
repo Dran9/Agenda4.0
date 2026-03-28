@@ -122,6 +122,15 @@ input, select, button, textarea {
   width: 100%;
 }
 
+/* Calendar card — no border, full width, minimal margins */
+.calendar-card {
+  background: var(--bg-card);
+  border-radius: 16px;
+  padding: 24px 8px;
+  border: none;
+  width: 100%;
+}
+
 /* Inputs */
 .input-field {
   width: 100%;

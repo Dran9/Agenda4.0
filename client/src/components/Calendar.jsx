@@ -10,7 +10,17 @@ const DAY_MAP = { 0: 'domingo', 1: 'lunes', 2: 'martes', 3: 'miercoles', 4: 'jue
 
 export default function Calendar({ onSelectDate, selectedDate, availableDays = [], windowDays = 10, daysWithSlots, onMonthChange }) {
   const today = useMemo(() => { const d = new Date(); d.setHours(0,0,0,0); return d; }, []);
-  const maxDate = useMemo(() => { const d = new Date(today); d.setDate(d.getDate() + windowDays); return d; }, [today, windowDays]);
+  const maxDate = useMemo(() => {
+    // windowDays counts weekdays (Mon-Fri), not calendar days
+    const d = new Date(today);
+    let weekdaysCounted = 0;
+    while (weekdaysCounted < windowDays) {
+      d.setDate(d.getDate() + 1);
+      const dow = d.getDay();
+      if (dow >= 1 && dow <= 5) weekdaysCounted++;
+    }
+    return d;
+  }, [today, windowDays]);
 
   const [viewMonth, setViewMonth] = useState(today.getMonth());
   const [viewYear, setViewYear] = useState(today.getFullYear());
@@ -54,7 +64,7 @@ export default function Calendar({ onSelectDate, selectedDate, availableDays = [
   const canGoNext = new Date(viewYear, viewMonth + 1, 1) <= maxDate;
 
   return (
-    <div className="card">
+    <div className="calendar-card">
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
         <button type="button" onClick={prevMonth} disabled={!canGoPrev} className="cal-nav-btn">
           <ChevronLeft size={16} />
@@ -67,7 +77,7 @@ export default function Calendar({ onSelectDate, selectedDate, availableDays = [
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 2, marginBottom: 4 }}>
         {DAY_LABELS.map(d => (
-          <div key={d} style={{ textAlign: 'center', fontSize: 12, fontWeight: 500, textTransform: 'uppercase', color: 'var(--gris-medio)', padding: '4px 0' }}>
+          <div key={d} style={{ textAlign: 'center', fontSize: 14, fontWeight: 500, textTransform: 'uppercase', color: '#8a8a8c', padding: '4px 0' }}>
             {d}
           </div>
         ))}
@@ -82,19 +92,19 @@ export default function Calendar({ onSelectDate, selectedDate, availableDays = [
           const withSlots = hasSlots(day);
 
           let bg = 'transparent';
-          let color = 'var(--gris-claro)';
+          let color = '#B8B8B8';
           let fw = 400;
 
           if (selected) { bg = 'var(--azul-acero)'; color = 'white'; fw = 700; }
-          else if (enabled && withSlots) { color = 'var(--negro)'; fw = 700; }
+          else if (enabled && withSlots) { color = '#000000'; fw = 900; }
           else if (enabled) { color = 'var(--gris-medio)'; fw = 500; }
-          else { color = 'var(--platino)'; }
+          else { color = '#B8B8B8'; }
 
           return (
             <button
               type="button" key={i} onClick={() => handleClick(day)} disabled={!enabled}
               style={{
-                height: 44, borderRadius: 10, fontSize: 16, display: 'flex',
+                height: 44, borderRadius: 10, fontSize: 18, display: 'flex',
                 alignItems: 'center', justifyContent: 'center', border: 'none',
                 background: bg, cursor: enabled ? 'pointer' : 'not-allowed',
                 transition: 'all 200ms', fontWeight: fw, color,

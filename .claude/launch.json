@@ -7,6 +7,12 @@
       "runtimeArgs": ["run", "dev"],
       "port": 5173,
       "cwd": "client"
+    },
+    {
+      "name": "phone-preview",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": ["serve", "client", "-l", "3456", "--no-clipboard"],
+      "port": 3456
     }
   ]
 }

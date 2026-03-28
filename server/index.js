@@ -115,6 +115,19 @@ app.get('/api/debug-env', (req, res) => {
   });
 });
 
+// ─── Debug: what files does Hostinger actually have on disk ──────
+app.get('/api/debug-dist', (req, res) => {
+  try {
+    const indexPath = path.join(distPath, 'index.html');
+    const indexContent = fs.existsSync(indexPath) ? fs.readFileSync(indexPath, 'utf-8') : 'NOT FOUND';
+    const assetsDir = path.join(distPath, 'assets');
+    const assets = fs.existsSync(assetsDir) ? fs.readdirSync(assetsDir).filter(f => f.startsWith('index-')) : [];
+    res.json({ distPath, indexContent, assets, cwd: process.cwd(), dirname: __dirname });
+  } catch (err) {
+    res.json({ error: err.message });
+  }
+});
+
 // ─── SPA fallback ────────────────────────────────────────────────
 app.get('*', (req, res) => {
   if (req.path.startsWith('/api/')) {
@@ -122,11 +135,14 @@ app.get('*', (req, res) => {
   }
   const indexPath = path.join(distPath, 'index.html');
   if (fs.existsSync(indexPath)) {
+    // Read fresh from disk every time (no sendFile cache)
+    const html = fs.readFileSync(indexPath, 'utf-8');
+    res.set('Content-Type', 'text/html; charset=UTF-8');
     res.set('Cache-Control', 'no-store, no-cache, must-revalidate');
     res.set('X-LiteSpeed-Cache-Control', 'no-cache');
     res.set('Pragma', 'no-cache');
     res.set('Expires', '0');
-    res.sendFile(indexPath);
+    res.send(html);
   } else {
     res.send('Agenda 3.0 — server running. Client build pending.');
   }

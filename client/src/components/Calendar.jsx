@@ -77,7 +77,7 @@ export default function Calendar({ onSelectDate, selectedDate, availableDays = [
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 2, marginBottom: 4 }}>
         {DAY_LABELS.map(d => (
-          <div key={d} style={{ textAlign: 'center', fontSize: 14, fontWeight: 500, textTransform: 'uppercase', color: '#8a8a8c', padding: '4px 0' }}>
+          <div key={d} style={{ textAlign: 'center', fontSize: 14, fontWeight: 500, textTransform: 'uppercase', color: '#A4A4A6', padding: '4px 0' }}>
             {d}
           </div>
         ))}
@@ -92,13 +92,13 @@ export default function Calendar({ onSelectDate, selectedDate, availableDays = [
           const withSlots = hasSlots(day);
 
           let bg = 'transparent';
-          let color = '#B8B8B8';
+          let color = '#A4A4A6';
           let fw = 400;
 
           if (selected) { bg = 'var(--azul-acero)'; color = 'white'; fw = 700; }
           else if (enabled && withSlots) { color = '#000000'; fw = 900; }
-          else if (enabled) { color = 'var(--gris-medio)'; fw = 500; }
-          else { color = '#B8B8B8'; }
+          else if (enabled) { color = '#A4A4A6'; fw = 500; }
+          else { color = '#A4A4A6'; }
 
           return (
             <button

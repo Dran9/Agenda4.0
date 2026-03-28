@@ -35,6 +35,19 @@ router.post('/', async (req, res) => {
           const phone = msg.from;
           const tenantId = 1; // Default tenant for now
 
+          // Mark as read immediately (blue checkmarks ✓✓)
+          try {
+            const token = process.env.WA_TOKEN;
+            const phoneNumberId = process.env.WA_PHONE_ID;
+            await fetch(`https://graph.facebook.com/v18.0/${phoneNumberId}/messages`, {
+              method: 'POST',
+              headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+              body: JSON.stringify({ messaging_product: 'whatsapp', status: 'read', message_id: msg.id }),
+            });
+          } catch (readErr) {
+            // Non-fatal — don't block processing
+          }
+
           // Resolve client
           const [clients] = await pool.query(
             'SELECT id, first_name FROM clients WHERE phone = ? AND tenant_id = ?',

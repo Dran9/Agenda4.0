@@ -227,6 +227,83 @@ router.post('/match-receipt', authMiddleware, async (req, res) => {
   }
 });
 
+// GET /api/payments/summary — monthly income summary for finance dashboard
+router.get('/summary', authMiddleware, async (req, res) => {
+  try {
+    const t = req.tenantId;
+    const { year, month } = req.query;
+    const y = parseInt(year) || new Date().getFullYear();
+    const m = parseInt(month) || new Date().getMonth() + 1;
+
+    // Current month stats
+    const [[current]] = await pool.query(`
+      SELECT
+        COUNT(*) as total_sessions,
+        SUM(CASE WHEN p.status = 'Confirmado' THEN 1 ELSE 0 END) as paid_sessions,
+        SUM(CASE WHEN p.status = 'Pendiente' THEN 1 ELSE 0 END) as pending_sessions,
+        COALESCE(SUM(CASE WHEN p.status = 'Confirmado' THEN p.amount ELSE 0 END), 0) as income_confirmed,
+        COALESCE(SUM(CASE WHEN p.status = 'Pendiente' THEN p.amount ELSE 0 END), 0) as income_pending
+      FROM appointments a
+      LEFT JOIN payments p ON p.appointment_id = a.id AND p.tenant_id = ?
+      WHERE a.tenant_id = ? AND YEAR(a.date_time) = ? AND MONTH(a.date_time) = ?
+        AND a.status IN ('Completada', 'Confirmada')
+    `, [t, t, y, m]);
+
+    // Monthly history (last 6 months)
+    const [history] = await pool.query(`
+      SELECT
+        YEAR(a.date_time) as year,
+        MONTH(a.date_time) as month,
+        COUNT(*) as sessions,
+        COALESCE(SUM(CASE WHEN p.status = 'Confirmado' THEN p.amount ELSE 0 END), 0) as income
+      FROM appointments a
+      LEFT JOIN payments p ON p.appointment_id = a.id AND p.tenant_id = ?
+      WHERE a.tenant_id = ? AND a.date_time >= DATE_SUB(NOW(), INTERVAL 6 MONTH)
+        AND a.status IN ('Completada', 'Confirmada')
+      GROUP BY YEAR(a.date_time), MONTH(a.date_time)
+      ORDER BY year DESC, month DESC
+    `, [t, t]);
+
+    // Payment detail for current month
+    const [payments] = await pool.query(`
+      SELECT p.*, c.first_name, c.last_name, c.phone as client_phone, c.fee as client_fee,
+             a.date_time, a.status as appt_status, a.session_number,
+             p.ocr_extracted_amount, p.ocr_extracted_ref
+      FROM payments p
+      JOIN clients c ON p.client_id = c.id
+      LEFT JOIN appointments a ON p.appointment_id = a.id
+      WHERE p.tenant_id = ? AND YEAR(a.date_time) = ? AND MONTH(a.date_time) = ?
+      ORDER BY a.date_time DESC
+    `, [t, y, m]);
+
+    // Get goal from config
+    const [[cfg]] = await pool.query('SELECT monthly_goal FROM config WHERE tenant_id = ?', [t]);
+
+    res.json({
+      current: { ...current, year: y, month: m },
+      history,
+      payments,
+      monthly_goal: cfg?.monthly_goal || null,
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// PUT /api/payments/goal — set monthly income goal
+router.put('/goal', authMiddleware, async (req, res) => {
+  try {
+    const { goal } = req.body;
+    await pool.query(
+      'UPDATE config SET monthly_goal = ? WHERE tenant_id = ?',
+      [goal, req.tenantId]
+    );
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // Helper: add or remove $ from GCal event summary
 async function updateGCalPaymentPrefix(paymentId, tenantId, isPaid) {
   try {

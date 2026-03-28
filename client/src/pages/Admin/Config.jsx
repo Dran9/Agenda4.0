@@ -182,6 +182,7 @@ export default function Config() {
         buffer_hours: config.buffer_hours,
         appointment_duration: config.appointment_duration,
         min_age: config.min_age,
+        max_age: config.max_age,
         capital_fee: config.capital_fee,
         default_fee: config.default_fee,
         special_fee: config.special_fee,
@@ -494,28 +495,39 @@ export default function Config() {
                 <option value={30}>30 días</option>
               </select>
             </div>
-            <div>
-              <label className="block text-xs text-gray-500 mb-1">Buffer mínimo (horas antes)</label>
-              <select
-                value={config?.buffer_hours || 3}
-                onChange={e => setConfig(c => ({ ...c, buffer_hours: parseInt(e.target.value) }))}
-                className="w-full px-3 py-2.5 border border-gray-200 rounded-lg text-sm bg-white"
-              >
-                <option value={1}>1 hora</option>
-                <option value={2}>2 horas</option>
-                <option value={3}>3 horas</option>
-                <option value={6}>6 horas</option>
-                <option value={24}>24 horas</option>
-              </select>
-            </div>
-            <div>
-              <label className="block text-xs text-gray-500 mb-1">Edad mínima del paciente</label>
-              <input
-                type="number"
-                value={config?.min_age || 12}
-                onChange={e => setConfig(c => ({ ...c, min_age: parseInt(e.target.value) }))}
-                className="w-full px-3 py-2.5 border border-gray-200 rounded-lg text-sm"
-              />
+            <div className="flex gap-3">
+              <div className="flex-1">
+                <label className="block text-xs text-gray-500 mb-1">Buffer mínimo</label>
+                <select
+                  value={config?.buffer_hours || 3}
+                  onChange={e => setConfig(c => ({ ...c, buffer_hours: parseInt(e.target.value) }))}
+                  className="w-full px-3 py-2.5 border border-gray-200 rounded-lg text-sm bg-white"
+                >
+                  <option value={1}>1 hora</option>
+                  <option value={2}>2 horas</option>
+                  <option value={3}>3 horas</option>
+                  <option value={6}>6 horas</option>
+                  <option value={24}>24 horas</option>
+                </select>
+              </div>
+              <div className="flex-1">
+                <label className="block text-xs text-gray-500 mb-1">Edad mínima</label>
+                <input
+                  type="number"
+                  value={config?.min_age || 12}
+                  onChange={e => setConfig(c => ({ ...c, min_age: parseInt(e.target.value) }))}
+                  className="w-full px-3 py-2.5 border border-gray-200 rounded-lg text-sm"
+                />
+              </div>
+              <div className="flex-1">
+                <label className="block text-xs text-gray-500 mb-1">Edad máxima</label>
+                <input
+                  type="number"
+                  value={config?.max_age || 100}
+                  onChange={e => setConfig(c => ({ ...c, max_age: parseInt(e.target.value) }))}
+                  className="w-full px-3 py-2.5 border border-gray-200 rounded-lg text-sm"
+                />
+              </div>
             </div>
           </div>
         </div>

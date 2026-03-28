@@ -114,7 +114,7 @@ export default function WhatsApp() {
   async function triggerReminder(date) {
     setTriggerResult(null);
     try {
-      const data = await api.get(`/admin/test-reminder?date=${date}`);
+      const data = await api.get(`/admin/test-reminder?date=${date}&force=1`);
       setTriggerResult({ date, ...data });
     } catch (err) {
       setTriggerResult({ date, error: err.message });

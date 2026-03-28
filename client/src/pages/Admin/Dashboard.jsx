@@ -6,15 +6,31 @@ import { formatTimeBolivia } from '../../utils/dates';
 
 export default function Dashboard() {
   const [todayAppts, setTodayAppts] = useState([]);
+  const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(true);
   const { toast, show: showToast } = useToast();
 
   useEffect(() => {
-    api.get('/appointments/today')
-      .then(setTodayAppts)
-      .catch(err => console.error(err))
+    Promise.all([
+      api.get('/appointments/today'),
+      api.get('/analytics').catch(() => null),
+    ]).then(([appts, analytics]) => {
+      setTodayAppts(appts);
+      if (analytics) setStats(analytics.totals);
+    }).catch(err => console.error(err))
       .finally(() => setLoading(false));
   }, []);
+
+  async function handlePaymentToggle(appt) {
+    if (!appt.payment_id) return;
+    const newStatus = appt.payment_status === 'Confirmado' ? 'Pendiente' : 'Confirmado';
+    try {
+      await api.put(`/payments/${appt.payment_id}/status`, { status: newStatus });
+      setTodayAppts(prev => prev.map(a => a.id === appt.id ? { ...a, payment_status: newStatus } : a));
+    } catch (err) {
+      console.error(err);
+    }
+  }
 
   async function handleStatusChange(id, status) {
     try {
@@ -25,10 +41,15 @@ export default function Dashboard() {
     }
   }
 
-  async function handleTriggerReminder(date) {
+  async function handleTriggerReminder(date, force = false) {
     try {
-      const result = await api.get(`/admin/test-reminder?date=${date}`);
-      showToast(`Enviados: ${result.sent}, Omitidos: ${result.skipped}, Total: ${result.total}`);
+      const url = `/admin/test-reminder?date=${date}&force=1`;
+      const result = await api.get(url);
+      if (result.sent > 0) {
+        showToast(`${result.sent} recordatorio(s) enviado(s)`);
+      } else {
+        showToast('No hay citas para enviar recordatorio');
+      }
     } catch (err) {
       showToast('Error: ' + err.message, 'error');
     }
@@ -37,14 +58,30 @@ export default function Dashboard() {
   return (
     <AdminLayout title="Dashboard">
       <Toast toast={toast} />
-      {/* KPI Cards placeholder */}
+      {/* KPI Cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-        {['Sesiones esta semana', 'Clientes activos', 'Tasa asistencia', 'Ingresos del mes'].map(label => (
-          <div key={label} className="bg-white rounded-xl border border-gray-200 p-4">
-            <div className="text-xs text-gray-500 font-medium">{label}</div>
-            <div className="text-2xl font-bold mt-1">--</div>
+        <div className="bg-white rounded-xl border border-gray-200 p-4">
+          <div className="text-xs text-gray-500 font-medium">Sesiones esta semana</div>
+          <div className="text-2xl font-bold mt-1">{stats?.sessions_this_week ?? '--'}</div>
+        </div>
+        <div className="bg-white rounded-xl border border-gray-200 p-4">
+          <div className="text-xs text-gray-500 font-medium">Clientes activos</div>
+          <div className="text-2xl font-bold mt-1">{stats?.total_clients ?? '--'}</div>
+        </div>
+        <div className="bg-white rounded-xl border border-gray-200 p-4">
+          <div className="text-xs text-gray-500 font-medium">Tasa asistencia</div>
+          <div className="text-2xl font-bold mt-1">
+            {stats && stats.total_completed > 0
+              ? `${Math.round((stats.total_completed / (stats.total_completed + (stats.total_noshow || 0))) * 100)}%`
+              : '--'}
           </div>
-        ))}
+        </div>
+        <div className="bg-white rounded-xl border border-gray-200 p-4">
+          <div className="text-xs text-gray-500 font-medium">Ingresos del mes</div>
+          <div className="text-2xl font-bold mt-1">
+            {stats?.income_this_month != null ? `Bs ${Number(stats.income_this_month).toLocaleString()}` : '--'}
+          </div>
+        </div>
       </div>
 
       {/* Today's appointments */}
@@ -73,6 +110,7 @@ export default function Dashboard() {
                 <th className="text-left p-3 font-medium">Cliente</th>
                 <th className="text-left p-3 font-medium">Teléfono</th>
                 <th className="text-left p-3 font-medium">Status</th>
+                <th className="text-left p-3 font-medium">Pago</th>
                 <th className="text-left p-3 font-medium">Acción</th>
               </tr>
             </thead>
@@ -98,6 +136,23 @@ export default function Dashboard() {
                     }`}>
                       {appt.status}
                     </span>
+                  </td>
+                  <td className="p-3">
+                    {appt.payment_id ? (
+                      <button
+                        type="button"
+                        onClick={() => handlePaymentToggle(appt)}
+                        className={`text-xs px-2 py-1 rounded-full font-medium border cursor-pointer transition-colors ${
+                          appt.payment_status === 'Confirmado' ? 'bg-green-100 text-green-700 border-green-200' :
+                          'bg-red-100 text-red-700 border-red-200'
+                        }`}
+                        title={`Click para cambiar a ${appt.payment_status === 'Confirmado' ? 'Pendiente' : 'Confirmado'}`}
+                      >
+                        {appt.payment_status === 'Confirmado' ? 'Pagado' : 'Pendiente'}
+                      </button>
+                    ) : (
+                      <span className="text-xs text-gray-300">—</span>
+                    )}
                   </td>
                   <td className="p-3">
                     <select

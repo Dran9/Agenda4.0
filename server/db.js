@@ -282,6 +282,9 @@ async function initializeDatabase() {
       console.log('[DB] Seed: tenant "daniel" + config created');
     }
 
+    // Schema migrations (safe to re-run)
+    await conn.query(`ALTER TABLE config ADD COLUMN IF NOT EXISTS monthly_goal DECIMAL(10,2) DEFAULT NULL`).catch(() => {});
+
     console.log('[DB] All 10 tables initialized');
   } finally {
     conn.release();

@@ -1,9 +1,60 @@
 import { useState, useEffect } from 'react';
-import { Trash2, Search } from 'lucide-react';
+import { Trash2, Search, DollarSign, Eye } from 'lucide-react';
 import AdminLayout from '../../components/AdminLayout';
 import { api } from '../../utils/api';
 import { useToast, Toast } from '../../hooks/useToast';
 import { formatDateBolivia, formatTimeBolivia } from '../../utils/dates';
+
+function OcrBadge({ appt }) {
+  const [open, setOpen] = useState(false);
+  if (!appt.payment_id) return <span className="text-xs text-gray-300">—</span>;
+
+  const hasOcr = appt.ocr_extracted_amount || appt.ocr_extracted_ref;
+
+  return (
+    <div className="relative">
+      <div className="flex items-center gap-1">
+        <span className={`text-xs px-2 py-1 rounded-full font-medium border ${PAYMENT_STYLES[appt.payment_status] || PAYMENT_STYLES.Pendiente}`}>
+          {appt.payment_status === 'Confirmado' ? 'Pagado' : 'Pendiente'}
+        </span>
+        {hasOcr && (
+          <button
+            type="button"
+            onClick={() => setOpen(!open)}
+            className="text-gray-400 hover:text-gray-600 transition-colors"
+            title="Ver datos OCR"
+          >
+            <Eye size={14} />
+          </button>
+        )}
+      </div>
+      {open && hasOcr && (
+        <div className="absolute z-20 top-8 left-0 bg-white border border-gray-200 rounded-lg shadow-lg p-3 text-xs min-w-[200px]">
+          <div className="font-semibold text-gray-700 mb-2">Datos del comprobante</div>
+          {appt.ocr_extracted_amount && (
+            <div className="flex justify-between mb-1">
+              <span className="text-gray-500">Monto:</span>
+              <span className="font-medium">Bs {appt.ocr_extracted_amount}</span>
+            </div>
+          )}
+          {appt.ocr_extracted_ref && (
+            <div className="flex justify-between mb-1">
+              <span className="text-gray-500">Ref:</span>
+              <span className="font-mono text-[11px]">{appt.ocr_extracted_ref}</span>
+            </div>
+          )}
+          <button type="button" onClick={() => setOpen(false)} className="mt-2 text-gray-400 hover:text-gray-600 text-[10px]">Cerrar</button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+const PAYMENT_STYLES = {
+  Confirmado: 'bg-green-100 text-green-700 border-green-200',
+  Pendiente: 'bg-red-100 text-red-700 border-red-200',
+  Rechazado: 'bg-gray-100 text-gray-500 border-gray-200',
+};
 
 const STATUS_STYLES = {
   Confirmada: 'bg-green-100 text-green-700',
@@ -52,6 +103,17 @@ export default function Appointments() {
       setAppointments(prev => prev.map(a => a.id === id ? { ...a, status } : a));
     } catch (err) {
       console.error(err);
+    }
+  }
+
+  async function handlePaymentToggle(appt) {
+    if (!appt.payment_id) return;
+    const newStatus = appt.payment_status === 'Confirmado' ? 'Pendiente' : 'Confirmado';
+    try {
+      await api.put(`/payments/${appt.payment_id}/status`, { status: newStatus });
+      setAppointments(prev => prev.map(a => a.id === appt.id ? { ...a, payment_status: newStatus } : a));
+    } catch (err) {
+      showToast('Error: ' + err.message, 'error');
     }
   }
 
@@ -163,6 +225,7 @@ export default function Appointments() {
                   <th className="text-left p-3 font-medium">Cliente</th>
                   <th className="text-left p-3 font-medium">Teléfono</th>
                   <th className="text-left p-3 font-medium">Status</th>
+                  <th className="text-left p-3 font-medium">Pago</th>
                   <th className="text-left p-3 font-medium">Acción</th>
                   <th className="text-left p-3 font-medium w-10"></th>
                 </tr>
@@ -192,6 +255,9 @@ export default function Appointments() {
                       </span>
                     </td>
                     <td className="p-3">
+                      <OcrBadge appt={appt} />
+                    </td>
+                    <td className="p-3">
                       <select
                         value=""
                         onChange={e => { if (e.target.value) handleStatusChange(appt.id, e.target.value); }}
@@ -217,7 +283,7 @@ export default function Appointments() {
                   </tr>
                 ))}
                 {appointments.length === 0 && (
-                  <tr><td colSpan={8} className="p-8 text-center text-gray-400">Sin citas</td></tr>
+                  <tr><td colSpan={9} className="p-8 text-center text-gray-400">Sin citas</td></tr>
                 )}
               </tbody>
             </table>

@@ -72,7 +72,7 @@ router.post('/', async (req, res) => {
               if (payload === 'CONFIRM_NOW' && cfg?.auto_reply_confirm) {
                 // Get next appointment for personalization
                 const [appts] = await pool.query(
-                  `SELECT date_time FROM appointments WHERE client_id = ? AND status = 'Confirmada' AND date_time > NOW() ORDER BY date_time LIMIT 1`,
+                  `SELECT id, date_time, gcal_event_id FROM appointments WHERE client_id = ? AND status = 'Confirmada' AND date_time > NOW() ORDER BY date_time LIMIT 1`,
                   [clientId]
                 );
                 replyText = cfg.auto_reply_confirm
@@ -83,9 +83,26 @@ router.post('/', async (req, res) => {
                 // Mark appointment as confirmed
                 if (appts[0]) {
                   await pool.query(
-                    `UPDATE appointments SET confirmed_at = NOW() WHERE client_id = ? AND status = 'Confirmada' AND date_time > NOW()`,
-                    [clientId]
+                    `UPDATE appointments SET confirmed_at = NOW() WHERE id = ?`,
+                    [appts[0].id]
                   );
+
+                  // Add ✅ to GCal event summary
+                  if (appts[0].gcal_event_id) {
+                    try {
+                      const { updateEventSummary, getCalendar } = require('../services/calendar');
+                      const calendarId = process.env.CALENDAR_ID || 'danielmacleann@gmail.com';
+                      const cal = getCalendar();
+                      const ev = await cal.events.get({ calendarId, eventId: appts[0].gcal_event_id });
+                      const currentSummary = ev.data.summary || '';
+                      if (!currentSummary.startsWith('✅')) {
+                        await updateEventSummary(calendarId, appts[0].gcal_event_id, `✅ ${currentSummary}`);
+                        console.log(`[webhook] GCal updated: ✅ ${currentSummary}`);
+                      }
+                    } catch (gcalErr) {
+                      console.error(`[webhook] GCal update failed:`, gcalErr.message);
+                    }
+                  }
                 }
               } else if (payload === 'REAGEN_NOW' && cfg?.auto_reply_reschedule) {
                 const domain = (await pool.query('SELECT domain FROM tenants WHERE id = ?', [tenantId]))[0]?.[0]?.domain || '';

@@ -210,9 +210,29 @@ Ver `.env.example` para la lista completa. Se configuran en hPanel de Hostinger.
 - `GET /api/admin/test-ocr` — verifica GOOGLE_VISION_API_KEY
 - `GET /api/admin/test-reminder?date=today|tomorrow&force=1` — trigger manual de recordatorios
 
+### Cambios recientes (sesión 2026-03-28 tarde)
+- **Calendario**: sin borde, fuentes +2pt, #A4A4A6 para headers y días no disponibles, #000 fw900 para días con slots
+- **Calendar window_days**: ahora cuenta solo días de semana (lunes-viernes), no días calendario
+- **Prefetch**: 7 días de semana (salta sábados y domingos)
+- **Phone input unificado (EN PROGRESO — NECESITA VERIFICACIÓN)**:
+  - Código en `BookingFlow.jsx` ya modificado: eliminado dropdown de país en Screen 2
+  - Prefijo ahora es texto estático gris (#A4A4A6, Work Sans Extra Bold 28px) derivado del selector de timezone
+  - `countryCode` es un `useMemo` que lee `TZ_TO_PHONE_CODE[selectedTz?.tz]`
+  - Eliminados: `setCountryCode`, `showCountryDropdown`, useEffect de IP para country code
+  - **VERIFICAR EN PRODUCCIÓN**: Daniel reporta que no ve el cambio en el teléfono. Puede ser cache de LiteSpeed.
+    - Confirmar que `client/dist/` tiene los nuevos hashes después del push
+    - Verificar con `/api/debug-dist` que Hostinger sirve los archivos correctos
+    - Si no funciona, puede ser que el deploy no se ejecutó o LiteSpeed cacheó el HTML viejo
+  - El cambio SÍ funciona en dev local (preview confirmado en Vite dev server)
+- **CONFIRM_NOW WhatsApp**: texto estático sin variables de fecha, delay 60s antes de enviar QR
+- **Blue checkmarks**: mensajes se marcan como leídos inmediatamente
+- **Finance page**: conectada con datos reales, goal mensual, tabla de pagos con OCR
+- **Dashboard KPIs**: conectados a datos reales de analytics
+
 ### Pendiente
+- **Verificar phone input unificado en producción** — el código está listo, verificar que el deploy llegó
 - **Diseño visual** — solo estructura funcional, falta branding/colores/tipografía
-- **Finance, Analytics** — placeholders
+- **Analytics page** — placeholder
 - **WhatsApp inbox** — funciona lectura, falta pulir UI
 - **Limpiar endpoints de debug** cuando todo esté estable
 

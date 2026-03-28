@@ -147,10 +147,8 @@ export default function BookingFlow() {
   const [showTzDropdown, setShowTzDropdown] = useState(false);
   const [tzSearch, setTzSearch] = useState('');
 
-  // Phone
-  const [countryCode, setCountryCode] = useState('+591');
+  // Phone (prefix derived from timezone selector — no separate country picker)
   const [phoneNumber, setPhoneNumber] = useState('');
-  const [showCountryDropdown, setShowCountryDropdown] = useState(false);
   const [isInternational, setIsInternational] = useState(false);
 
   // Onboarding
@@ -169,6 +167,12 @@ export default function BookingFlow() {
   const [slotsCache, setSlotsCache] = useState(new Map());
   const [prefetchDone, setPrefetchDone] = useState(false);
 
+  // Derive phone prefix from timezone selection (unified — no second country picker)
+  const countryCode = useMemo(() => {
+    const tzCode = TZ_TO_PHONE_CODE[selectedTz?.tz];
+    if (tzCode) return '+' + tzCode;
+    return '+591'; // default Bolivia
+  }, [selectedTz]);
   const currentCountry = COUNTRY_CODES.find(c => c.code === countryCode) || COUNTRY_CODES[0];
   const phoneDigits = phoneNumber.replace(/\D/g, '');
   const expectedDigits = currentCountry.digits;
@@ -177,15 +181,11 @@ export default function BookingFlow() {
   // Load config
   useEffect(() => { api.get('/config/public').then(setConfig).catch(() => {}); }, []);
 
-  // Auto-detect timezone + country by IP
+  // Auto-detect timezone by IP (country code derived from timezone selector)
   useEffect(() => {
     fetch('https://ipapi.co/json/')
       .then(r => r.json())
       .then(data => {
-        if (data.country_calling_code) {
-          const match = COUNTRY_CODES.find(c => c.code === data.country_calling_code);
-          if (match) setCountryCode(match.code);
-        }
         const detectedTz = detectTimezoneFromIP(data);
         if (detectedTz) setSelectedTz(detectedTz);
       })
@@ -220,13 +220,6 @@ export default function BookingFlow() {
   }, [config]);
 
   useEffect(() => { setIsInternational(countryCode !== '+591'); }, [countryCode]);
-
-  useEffect(() => {
-    if (!showCountryDropdown) return;
-    const handler = () => setShowCountryDropdown(false);
-    document.addEventListener('click', handler);
-    return () => document.removeEventListener('click', handler);
-  }, [showCountryDropdown]);
 
   useEffect(() => {
     if (!showTzDropdown) return;
@@ -447,24 +440,14 @@ export default function BookingFlow() {
         <div className="card">
           <form onSubmit={e => { e.preventDefault(); if (phoneComplete) handlePhoneSubmit(); }}>
             <span className="field-label">NÚMERO DE WHATSAPP</span>
-            <div style={{ display: 'flex', gap: 8, marginBottom: 4 }}>
-              <div style={{ position: 'relative' }}>
-                <div className="country-selector" onClick={e => { e.stopPropagation(); setShowCountryDropdown(!showCountryDropdown); }}>
-                  <span>{currentCountry.flag}</span>
-                  <span style={{ fontWeight: 500 }}>{currentCountry.code}</span>
-                  <ChevronDown size={14} color="var(--gris-medio)" />
-                </div>
-                {showCountryDropdown && (
-                  <div className="country-dropdown" onClick={e => e.stopPropagation()}>
-                    {COUNTRY_CODES.map(c => (
-                      <div key={c.code} className="country-dropdown-item" onClick={() => { setCountryCode(c.code); setShowCountryDropdown(false); }}>
-                        <span>{c.flag}</span><span>{c.name}</span>
-                        <span style={{ color: 'var(--gris-medio)', marginLeft: 'auto' }}>{c.code}</span>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 0, marginBottom: 4 }}>
+              <span style={{
+                fontFamily: "'Work Sans', sans-serif", fontWeight: 800, fontSize: 28,
+                color: '#A4A4A6', letterSpacing: '0.1em', padding: '0 10px 0 0',
+                userSelect: 'none', whiteSpace: 'nowrap', lineHeight: '52px',
+              }}>
+                {currentCountry.flag} {countryCode}
+              </span>
               <input type="tel" value={phoneNumber}
                 onChange={e => { const val = e.target.value.replace(/\D/g, ''); if (val.length <= expectedDigits) setPhoneNumber(val); }}
                 placeholder="71234567" className="input-field" style={{ flex: 1 }} autoFocus maxLength={expectedDigits} />

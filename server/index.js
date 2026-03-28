@@ -115,6 +115,17 @@ app.get('/api/debug-env', (req, res) => {
   });
 });
 
+// ─── Debug: test OCR (TEMPORARY) ─────────────────────────────────
+app.get('/api/admin/test-ocr', async (req, res) => {
+  try {
+    const apiKey = process.env.GOOGLE_VISION_API_KEY;
+    if (!apiKey) return res.json({ error: 'GOOGLE_VISION_API_KEY not set', hint: 'Add it in hPanel → Environment Variables' });
+    res.json({ ok: true, key_length: apiKey.length, key_start: apiKey.substring(0, 8) });
+  } catch (err) {
+    res.json({ error: err.message });
+  }
+});
+
 // ─── Debug: what files does Hostinger actually have on disk ──────
 app.get('/api/debug-dist', (req, res) => {
   try {

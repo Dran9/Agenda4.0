@@ -8,6 +8,8 @@ const TYPE_LABELS = {
   button_reply: 'Botón',
   template: 'Template',
   auto_reply: 'Auto-respuesta',
+  image: 'Imagen',
+  document: 'Documento',
 };
 
 const TYPE_COLORS = {
@@ -15,6 +17,8 @@ const TYPE_COLORS = {
   button_reply: 'bg-blue-100 text-blue-700',
   template: 'bg-purple-100 text-purple-700',
   auto_reply: 'bg-green-100 text-green-700',
+  image: 'bg-amber-100 text-amber-700',
+  document: 'bg-orange-100 text-orange-700',
 };
 
 const LOG_TYPE_LABELS = {
@@ -215,6 +219,15 @@ export default function WhatsApp() {
                         )}
                       </div>
                       <p className="text-sm text-gray-600 mt-0.5 break-words">{msg.content}</p>
+                      {(msg.message_type === 'image' || msg.message_type === 'document') && msg.content?.includes('guardado:') && (
+                        <img
+                          src={`/api/webhook/file/${msg.content.match(/guardado: ([^)]+)/)?.[1]}`}
+                          alt="Comprobante"
+                          className="mt-2 max-w-[200px] rounded-lg border border-gray-200 cursor-pointer hover:opacity-80"
+                          onClick={e => window.open(e.target.src, '_blank')}
+                          onError={e => { e.target.style.display = 'none'; }}
+                        />
+                      )}
                       <span className="text-[11px] text-gray-400 mt-1 block">{formatDate(msg.created_at)}</span>
                     </div>
                   </div>

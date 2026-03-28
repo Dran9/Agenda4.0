@@ -80,44 +80,45 @@ router.post('/', async (req, res) => {
                   .replace('{{dia}}', appts[0] ? new Date(appts[0].date_time).toLocaleDateString('es-BO', { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'America/La_Paz' }) : '')
                   .replace('{{hora}}', appts[0] ? new Date(appts[0].date_time).toLocaleTimeString('es-BO', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'America/La_Paz' }) : '');
 
-                // Mark appointment as confirmed
+                // Mark appointment as confirmed (if exists in DB)
                 if (appts[0]) {
                   await pool.query(
                     `UPDATE appointments SET confirmed_at = NOW() WHERE id = ?`,
                     [appts[0].id]
                   );
+                }
 
-                  // Add ✅ to GCal event summary
-                  try {
-                    const { updateEventSummary, listEvents } = require('../services/calendar');
-                    const calendarId = process.env.CALENDAR_ID || 'danielmacleann@gmail.com';
+                // Add ✅ to GCal event summary
+                try {
+                  const { updateEventSummary, listEvents, getCalendar } = require('../services/calendar');
+                  const calendarId = process.env.CALENDAR_ID || 'danielmacleann@gmail.com';
 
-                    if (appts[0].gcal_event_id) {
-                      // Direct update by event ID
-                      const { getCalendar } = require('../services/calendar');
-                      const cal = getCalendar();
-                      const ev = await cal.events.get({ calendarId, eventId: appts[0].gcal_event_id });
-                      const currentSummary = ev.data.summary || '';
-                      if (!currentSummary.startsWith('✅')) {
-                        await updateEventSummary(calendarId, appts[0].gcal_event_id, `✅ ${currentSummary}`);
-                        console.log(`[webhook] GCal updated: ✅ ${currentSummary}`);
-                      }
-                    } else {
-                      // Fallback: search upcoming events for this phone number
-                      const now = new Date();
-                      const weekLater = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
-                      const events = await listEvents(calendarId, now.toISOString(), weekLater.toISOString());
-                      const matchEvent = events.find(e =>
-                        e.summary && e.summary.includes(phone) && e.summary.startsWith('Terapia') && !e.summary.startsWith('✅')
-                      );
-                      if (matchEvent) {
-                        await updateEventSummary(calendarId, matchEvent.id, `✅ ${matchEvent.summary}`);
-                        console.log(`[webhook] GCal updated (by phone): ✅ ${matchEvent.summary}`);
-                      }
+                  if (appts[0]?.gcal_event_id) {
+                    // Direct update by event ID
+                    const cal = getCalendar();
+                    const ev = await cal.events.get({ calendarId, eventId: appts[0].gcal_event_id });
+                    const currentSummary = ev.data.summary || '';
+                    if (!currentSummary.startsWith('✅')) {
+                      await updateEventSummary(calendarId, appts[0].gcal_event_id, `✅ ${currentSummary}`);
+                      console.log(`[webhook] GCal updated: ✅ ${currentSummary}`);
                     }
-                  } catch (gcalErr) {
-                    console.error(`[webhook] GCal update failed:`, gcalErr.message);
+                  } else {
+                    // Fallback: search upcoming events for this phone number
+                    const now = new Date();
+                    const weekLater = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
+                    const events = await listEvents(calendarId, now.toISOString(), weekLater.toISOString());
+                    const matchEvent = events.find(e =>
+                      e.summary && e.summary.includes(phone) && e.summary.startsWith('Terapia') && !e.summary.startsWith('✅')
+                    );
+                    if (matchEvent) {
+                      await updateEventSummary(calendarId, matchEvent.id, `✅ ${matchEvent.summary}`);
+                      console.log(`[webhook] GCal updated (by phone): ✅ ${matchEvent.summary}`);
+                    } else {
+                      console.log(`[webhook] No GCal event found for phone ${phone}`);
+                    }
                   }
+                } catch (gcalErr) {
+                  console.error(`[webhook] GCal update failed:`, gcalErr.message);
                 }
               } else if (payload === 'REAGEN_NOW' && cfg?.auto_reply_reschedule) {
                 const domain = (await pool.query('SELECT domain FROM tenants WHERE id = ?', [tenantId]))[0]?.[0]?.domain || '';
@@ -179,6 +180,58 @@ router.post('/', async (req, res) => {
               `INSERT INTO wa_conversations (tenant_id, client_id, client_phone, direction, message_type, content, wa_message_id)
                VALUES (?, ?, ?, 'inbound', 'text', ?, ?)`,
               [tenantId, clientId, phone, msg.text?.body, msg.id]
+            );
+          } else if (msg.type === 'image' || msg.type === 'document') {
+            // Image or document (comprobante de pago)
+            const mediaId = msg.image?.id || msg.document?.id;
+            const caption = msg.image?.caption || msg.document?.caption || '';
+            const filename = msg.document?.filename || '';
+            const mimeType = msg.image?.mime_type || msg.document?.mime_type || '';
+            console.log(`[webhook] ${msg.type} from ${phone}: ${mediaId} (${filename || caption || 'sin caption'})`);
+
+            // Download media from WhatsApp
+            let mediaData = null;
+            try {
+              const token = process.env.WA_TOKEN;
+              // Step 1: Get media URL
+              const mediaRes = await fetch(`https://graph.facebook.com/v18.0/${mediaId}`, {
+                headers: { 'Authorization': `Bearer ${token}` }
+              });
+              const mediaInfo = await mediaRes.json();
+
+              if (mediaInfo.url) {
+                // Step 2: Download the file
+                const fileRes = await fetch(mediaInfo.url, {
+                  headers: { 'Authorization': `Bearer ${token}` }
+                });
+                const buffer = Buffer.from(await fileRes.arrayBuffer());
+
+                // Step 3: Store in DB
+                const { saveFile } = require('../services/storage');
+                const fileKey = `comprobante_${phone}_${Date.now()}`;
+                await saveFile(tenantId, fileKey, buffer, mimeType, filename || `${msg.type}_${Date.now()}`);
+                mediaData = fileKey;
+                console.log(`[webhook] Media saved: ${fileKey} (${buffer.length} bytes)`);
+              }
+            } catch (mediaErr) {
+              console.error(`[webhook] Media download failed:`, mediaErr.message);
+            }
+
+            const content = mediaData
+              ? `[${msg.type === 'image' ? 'Imagen' : 'Documento'}] ${caption || filename || ''} (guardado: ${mediaData})`
+              : `[${msg.type === 'image' ? 'Imagen' : 'Documento'}] ${caption || filename || ''} (no descargado)`;
+
+            await pool.query(
+              `INSERT INTO wa_conversations (tenant_id, client_id, client_phone, direction, message_type, content, wa_message_id)
+               VALUES (?, ?, ?, 'inbound', ?, ?, ?)`,
+              [tenantId, clientId, phone, msg.type, content, msg.id]
+            );
+
+            // Log as potential payment proof
+            await pool.query(
+              `INSERT INTO webhooks_log (tenant_id, event, type, payload, status, client_phone, client_id)
+               VALUES (?, ?, 'message_sent', ?, 'recibido', ?, ?)`,
+              [tenantId, `media_${mediaData || mediaId}`, JSON.stringify({ type: msg.type, caption, filename, file_key: mediaData }), phone, clientId]
             );
           }
         }
@@ -251,6 +304,19 @@ router.get('/log', authMiddleware, async (req, res) => {
     );
 
     res.json({ logs: rows, total: countResult[0].total, page: parseInt(page), limit: parseInt(limit) });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/webhook/file/:key — serve stored media file (admin)
+router.get('/file/:key', authMiddleware, async (req, res) => {
+  try {
+    const { getFile } = require('../services/storage');
+    const file = await getFile(req.tenantId, req.params.key);
+    if (!file) return res.status(404).json({ error: 'Archivo no encontrado' });
+    res.set('Content-Type', file.mime_type);
+    res.send(file.data);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

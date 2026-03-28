@@ -117,18 +117,9 @@ router.post('/', async (req, res) => {
               const { sendTextMessage, sendImageMessage } = require('../services/whatsapp');
 
               let replyText = null;
-              if (payload === 'CONFIRM_NOW' && cfg?.auto_reply_confirm) {
-                // Use >= start of today in Bolivia (UTC-4) so same-day appointments are found
-                const nowBOT = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/La_Paz' }));
-                const todayStartUTC = new Date(`${nowBOT.getFullYear()}-${String(nowBOT.getMonth()+1).padStart(2,'0')}-${String(nowBOT.getDate()).padStart(2,'0')}T00:00:00-04:00`);
-                const [appts] = await pool.query(
-                  `SELECT id, date_time FROM appointments WHERE client_id = ? AND status = 'Confirmada' AND date_time >= ? ORDER BY date_time LIMIT 1`,
-                  [clientId, todayStartUTC]
-                );
-                replyText = cfg.auto_reply_confirm
-                  .replace('{{nombre}}', clients[0]?.first_name || '')
-                  .replace('{{dia}}', appts[0] ? new Date(appts[0].date_time).toLocaleDateString('es-BO', { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'America/La_Paz' }) : '')
-                  .replace('{{hora}}', appts[0] ? new Date(appts[0].date_time).toLocaleTimeString('es-BO', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'America/La_Paz' }) : '');
+              if (payload === 'CONFIRM_NOW') {
+                const nombre = clients[0]?.first_name || '';
+                replyText = `\ud83d\udc4f Perfecto ${nombre}, te esperamos para darle un giro a tu vida.\n\nEn un momento te mandamos el *QR* o _enlace_ para pago adelantado por favor.`;
               } else if (payload === 'REAGEN_NOW' && cfg?.auto_reply_reschedule) {
                 const domain = (await pool.query('SELECT domain FROM tenants WHERE id = ?', [tenantId]))[0]?.[0]?.domain || '';
                 replyText = cfg.auto_reply_reschedule.replace('{{link}}', `https://${domain}`);
@@ -145,8 +136,9 @@ router.post('/', async (req, res) => {
                     [tenantId, clientId, phone, replyText, result.messages?.[0]?.id]
                   );
 
-                  // Send QR payment image after confirmation
+                  // Send QR payment image after confirmation (delayed 60s to feel natural)
                   if (payload === 'CONFIRM_NOW') {
+                    setTimeout(async () => {
                     try {
                       const [clientRows] = await pool.query('SELECT fee, city FROM clients WHERE id = ?', [clientId]);
                       const client = clientRows[0];
@@ -176,6 +168,7 @@ router.post('/', async (req, res) => {
                     } catch (qrErr) {
                       console.error(`[webhook] QR send failed for ${phone}:`, qrErr.message);
                     }
+                    }, 60000); // 60 second delay
                   }
                 } catch (waErr) {
                   console.error(`[webhook] Auto-reply failed for ${phone}:`, waErr.message);

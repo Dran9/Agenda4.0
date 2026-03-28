@@ -1,0 +1,1 @@
+function a(e){return new Date(e).toLocaleDateString("es-BO",{weekday:"long",day:"numeric",month:"long",timeZone:"America/La_Paz"})}function i(e){return new Date(e).toLocaleTimeString("es-BO",{hour:"2-digit",minute:"2-digit",hour12:!1,timeZone:"America/La_Paz"})}export{a,i as f};

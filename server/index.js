@@ -60,6 +60,28 @@ app.get('/api/admin/test-reminder', async (req, res) => {
   }
 });
 
+// ─── Debug: test Sheets connection ───────────────────────────────
+app.get('/api/admin/test-sheets', async (req, res) => {
+  try {
+    const sheetsId = process.env.GOOGLE_SHEETS_ID;
+    if (!sheetsId) return res.json({ error: 'GOOGLE_SHEETS_ID not set' });
+
+    const { google } = require('googleapis');
+    const { getOAuthClient } = require('./services/calendar');
+    const sheets = google.sheets({ version: 'v4', auth: getOAuthClient() });
+
+    const info = await sheets.spreadsheets.get({ spreadsheetId: sheetsId });
+    res.json({
+      ok: true,
+      title: info.data.properties.title,
+      sheets: info.data.sheets.map(s => s.properties.title),
+      sheetsId,
+    });
+  } catch (err) {
+    res.json({ error: err.message, code: err.code });
+  }
+});
+
 // ─── Health check ────────────────────────────────────────────────
 app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', version: '3.0.0', timestamp: new Date().toISOString() });

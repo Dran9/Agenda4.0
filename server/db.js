@@ -1,3 +1,4 @@
+const dns = require('dns');
 dns.setDefaultResultOrder('ipv4first');
 const mysql = require('mysql2/promise');
 

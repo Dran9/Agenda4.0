@@ -44,8 +44,8 @@ app.use('/api', bookingRoutes);  // booking routes handle their own limiting
 app.use('/api/slots', slotsRoutes);
 app.use('/api', slotsRoutes); // /api/config/public lives here
 app.use('/api/config', configRoutes);
-app.use('/api/clients', clientLimiter, clientsRoutes);
-app.use('/api/client', clientLimiter, clientsRoutes); // /api/client/check
+app.use('/api/clients', clientsRoutes);  // admin routes — auth protects, no rate limit
+app.use('/api/client', clientLimiter, clientsRoutes); // public /api/client/check — rate limited
 app.use('/api/appointments', appointmentsRoutes);
 app.use('/api/auth', authRoutes);
 app.use('/api/webhook', webhookRoutes);

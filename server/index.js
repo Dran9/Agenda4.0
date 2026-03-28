@@ -94,7 +94,9 @@ app.get('/api/health', (req, res) => {
 // ─── Serve client build ──────────────────────────────────────────
 const distPath = path.join(__dirname, '..', 'client', 'dist');
 if (fs.existsSync(distPath)) {
-  app.use(express.static(distPath));
+  // Assets have hash in filename — cache forever. index.html — never cache.
+  app.use('/assets', express.static(path.join(distPath, 'assets'), { maxAge: '1y', immutable: true }));
+  app.use(express.static(distPath, { maxAge: 0, etag: false }));
 }
 
 // ─── Debug env (TEMPORARY — remove after fixing OAuth) ──────────
@@ -116,6 +118,9 @@ app.get('*', (req, res) => {
   }
   const indexPath = path.join(distPath, 'index.html');
   if (fs.existsSync(indexPath)) {
+    res.set('Cache-Control', 'no-store, no-cache, must-revalidate');
+    res.set('Pragma', 'no-cache');
+    res.set('Expires', '0');
     res.sendFile(indexPath);
   } else {
     res.send('Agenda 3.0 — server running. Client build pending.');

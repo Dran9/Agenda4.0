@@ -17,7 +17,7 @@ export default function ExistingApptScreen({ state, dispatch }) {
 
   return (
     <div>
-      <div className="text-[10px] font-mono text-gray-300 mb-2">Step 4</div>
+      <div className="text-xs font-mono text-gray-400 mb-2">Step 4</div>
       <h2 className="text-lg font-semibold mb-1">Ya tienes una cita, {clientName}</h2>
       <p className="text-sm text-gray-500 mb-4">Puedes reagendar o conservar tu cita actual.</p>
 

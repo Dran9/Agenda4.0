@@ -6,7 +6,7 @@ function pad(d) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
-async function checkAndSendReminders({ date, tenantId } = {}) {
+async function checkAndSendReminders({ date, tenantId, force } = {}) {
   try {
     const calendarId = process.env.CALENDAR_ID || 'danielmacleann@gmail.com';
 
@@ -91,7 +91,7 @@ async function checkAndSendReminders({ date, tenantId } = {}) {
         [appt.phone]
       );
 
-      if (logs.length > 0) {
+      if (logs.length > 0 && !force) {
         console.log(`[reminder] Already sent to ${appt.phone}, skipping`);
         skipped++;
         continue;

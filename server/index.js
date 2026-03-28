@@ -52,8 +52,8 @@ app.use('/api/analytics', analyticsRoutes);
 // ─── Admin reminder trigger ─────────────────────────────────────
 app.get('/api/admin/test-reminder', async (req, res) => {
   try {
-    const { date } = req.query; // 'today' or 'tomorrow'
-    const result = await checkAndSendReminders({ date: date || 'tomorrow', tenantId: 1 });
+    const { date, force } = req.query; // 'today' or 'tomorrow', force=1 to skip dedup
+    const result = await checkAndSendReminders({ date: date || 'tomorrow', tenantId: 1, force: force === '1' });
     res.json(result);
   } catch (err) {
     res.status(500).json({ error: err.message });

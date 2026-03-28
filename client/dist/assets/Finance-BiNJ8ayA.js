@@ -1,1 +1,0 @@
-import{j as e}from"./app-DuV3RTvL.js";import{A as r}from"./AdminLayout-nHaj-aGr.js";function s(){return e.jsx(r,{title:"Finanzas",children:e.jsx("div",{className:"bg-white rounded-xl border border-gray-200 p-8 text-center text-gray-400",children:"Módulo financiero en desarrollo. Incluirá: ingresos, pagos, deducciones, metas, semanas lectivas."})})}export{s as default};

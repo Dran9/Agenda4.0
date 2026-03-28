@@ -48,6 +48,7 @@ export default function CalendarScreen({ state, dispatch, config, slots, slotsLo
 
   return (
     <div>
+      <div className="text-[10px] font-mono text-gray-300 mb-2">Step {isReschedule ? '1 (reschedule)' : '1'}</div>
       {isReschedule && (
         <div className="mb-4 p-3 bg-amber-50 border border-amber-200 rounded-lg text-sm text-amber-800">
           Selecciona un nuevo horario para reagendar tu cita

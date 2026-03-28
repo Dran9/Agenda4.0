@@ -6,6 +6,7 @@ export default function RescheduleConfirm({ state, dispatch, onConfirmReschedule
 
   return (
     <div>
+      <div className="text-[10px] font-mono text-gray-300 mb-2">Step 4b</div>
       <button
         type="button"
         onClick={() => dispatch({ type: 'GO_BACK' })}

@@ -26,6 +26,7 @@ export default function ConfirmScreen({ state, dispatch, onSubmitOnboarding }) {
 
   return (
     <div>
+      <div className="text-[10px] font-mono text-gray-300 mb-2">Step 3</div>
       <button
         type="button"
         onClick={() => dispatch({ type: 'GO_BACK' })}

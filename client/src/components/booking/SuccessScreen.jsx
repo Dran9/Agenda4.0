@@ -4,8 +4,13 @@ export default function SuccessScreen({ state }) {
   const { bookingResult, clientName, isReschedule } = state;
   const dateTime = bookingResult?.appointment?.date_time;
 
+  // 5a = first-time client, 5b = returning client, 5c = reschedule
+  const isNewClient = bookingResult?.appointment?.session_number === 1;
+  const stepLabel = isReschedule ? '5c' : isNewClient ? '5a' : '5b';
+
   return (
     <div className="text-center py-8">
+      <div className="text-[10px] font-mono text-gray-300 mb-2 text-left">Step {stepLabel}</div>
       <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
         <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#22c55e" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
           <polyline points="20 6 9 17 4 12" />

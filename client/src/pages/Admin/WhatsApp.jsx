@@ -1,7 +1,26 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { MessageSquare, ArrowDownLeft, ArrowUpRight, Send, RefreshCw, Filter, ChevronLeft, ChevronRight } from 'lucide-react';
 import AdminLayout from '../../components/AdminLayout';
 import { api } from '../../utils/api';
+
+// Component that loads an image with auth headers
+function AuthImage({ fileKey, alt, className, onClick }) {
+  const [src, setSrc] = useState(null);
+  const loaded = useRef(false);
+  useEffect(() => {
+    if (!fileKey || loaded.current) return;
+    loaded.current = true;
+    const token = localStorage.getItem('token');
+    fetch(`/api/webhook/file/${fileKey}`, {
+      headers: { 'Authorization': `Bearer ${token}` },
+    })
+      .then(r => { if (!r.ok) throw new Error(); return r.blob(); })
+      .then(blob => setSrc(URL.createObjectURL(blob)))
+      .catch(() => {});
+  }, [fileKey]);
+  if (!src) return null;
+  return <img src={src} alt={alt} className={className} onClick={onClick} />;
+}
 
 const TYPE_LABELS = {
   text: 'Texto',
@@ -220,12 +239,11 @@ export default function WhatsApp() {
                       </div>
                       <p className="text-sm text-gray-600 mt-0.5 break-words">{msg.content}</p>
                       {(msg.message_type === 'image' || msg.message_type === 'document') && msg.content?.includes('guardado:') && (
-                        <img
-                          src={`/api/webhook/file/${msg.content.match(/guardado: ([^)]+)/)?.[1]}`}
+                        <AuthImage
+                          fileKey={msg.content.match(/guardado: ([^)]+)/)?.[1]}
                           alt="Comprobante"
                           className="mt-2 max-w-[200px] rounded-lg border border-gray-200 cursor-pointer hover:opacity-80"
                           onClick={e => window.open(e.target.src, '_blank')}
-                          onError={e => { e.target.style.display = 'none'; }}
                         />
                       )}
                       <span className="text-[11px] text-gray-400 mt-1 block">{formatDate(msg.created_at)}</span>

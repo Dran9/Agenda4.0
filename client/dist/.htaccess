@@ -1,9 +1,11 @@
 <IfModule LiteSpeed>
+  RewriteEngine On
+  RewriteRule .* - [E=Cache-Control:no-cache]
   CacheDisable public /
 </IfModule>
 
-<FilesMatch "\.html$">
+<IfModule mod_headers.c>
   Header set Cache-Control "no-store, no-cache, must-revalidate"
+  Header set X-LiteSpeed-Cache-Control "no-cache"
   Header set Pragma "no-cache"
-  Header set Expires "0"
-</FilesMatch>
+</IfModule>

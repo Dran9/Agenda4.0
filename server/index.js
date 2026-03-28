@@ -94,7 +94,11 @@ app.get('/api/health', (req, res) => {
 // ─── Serve client build ──────────────────────────────────────────
 const distPath = path.join(__dirname, '..', 'client', 'dist');
 if (fs.existsSync(distPath)) {
-  // Assets have hash in filename — cache forever. index.html — never cache.
+  // LiteSpeed ignores Cache-Control — must use its own header
+  app.use((req, res, next) => {
+    res.set('X-LiteSpeed-Cache-Control', 'no-cache');
+    next();
+  });
   app.use('/assets', express.static(path.join(distPath, 'assets'), { maxAge: '1y', immutable: true }));
   app.use(express.static(distPath, { maxAge: 0, etag: false }));
 }
@@ -119,6 +123,7 @@ app.get('*', (req, res) => {
   const indexPath = path.join(distPath, 'index.html');
   if (fs.existsSync(indexPath)) {
     res.set('Cache-Control', 'no-store, no-cache, must-revalidate');
+    res.set('X-LiteSpeed-Cache-Control', 'no-cache');
     res.set('Pragma', 'no-cache');
     res.set('Expires', '0');
     res.sendFile(indexPath);

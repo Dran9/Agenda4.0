@@ -37,7 +37,7 @@ router.post('/', async (req, res) => {
 
           // Resolve client
           const [clients] = await pool.query(
-            'SELECT id, first_name FROM clients WHERE phone = ? AND tenant_id = ? AND deleted_at IS NULL',
+            'SELECT id, first_name FROM clients WHERE phone = ? AND tenant_id = ?',
             [phone, tenantId]
           );
           const clientId = clients[0]?.id || null;
@@ -73,7 +73,7 @@ router.post('/', async (req, res) => {
                 const timeMax = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000).toISOString();
                 const events = await listEvents(calendarId, timeMin, timeMax);
                 const match = events.find(e =>
-                  e.summary && e.summary.startsWith('Terapia') && !e.summary.startsWith('✅')
+                  e.summary && e.summary.includes('Terapia') && !e.summary.includes('✅')
                   && (e.summary.includes(phone) || e.summary.includes(phoneShort))
                 );
                 if (match) {
@@ -118,9 +118,12 @@ router.post('/', async (req, res) => {
 
               let replyText = null;
               if (payload === 'CONFIRM_NOW' && cfg?.auto_reply_confirm) {
+                // Use >= start of today in Bolivia (UTC-4) so same-day appointments are found
+                const nowBOT = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/La_Paz' }));
+                const todayStartUTC = new Date(`${nowBOT.getFullYear()}-${String(nowBOT.getMonth()+1).padStart(2,'0')}-${String(nowBOT.getDate()).padStart(2,'0')}T00:00:00-04:00`);
                 const [appts] = await pool.query(
-                  `SELECT id, date_time FROM appointments WHERE client_id = ? AND status = 'Confirmada' AND date_time > NOW() ORDER BY date_time LIMIT 1`,
-                  [clientId]
+                  `SELECT id, date_time FROM appointments WHERE client_id = ? AND status = 'Confirmada' AND date_time >= ? ORDER BY date_time LIMIT 1`,
+                  [clientId, todayStartUTC]
                 );
                 replyText = cfg.auto_reply_confirm
                   .replace('{{nombre}}', clients[0]?.first_name || '')

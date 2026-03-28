@@ -1,4 +1,4 @@
-import{c as h,r as a,a as N,j as e,e as E,f as z,b as M}from"./index-BpvDioAG.js";import{A as D}from"./AdminLayout-Bnp6PEHd.js";/**
+import{c as h,r as a,a as N,j as e,e as E,f as z,b as M}from"./app.js";import{A as D}from"./AdminLayout.js";/**
  * @license lucide-react v0.441.0 - ISC
  *
  * This source code is licensed under the ISC license.

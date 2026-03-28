@@ -110,7 +110,22 @@ export default function BookingFlow() {
     }
   }
 
-  // Handle reschedule confirmation → POST /api/reschedule
+  // Handle reschedule DIRECTLY from Step 4 (user already picked a slot)
+  async function handleRescheduleFromExisting() {
+    dispatch({ type: 'SET_LOADING', loading: true });
+    try {
+      const data = await api.post('/reschedule', {
+        client_id: state.clientId,
+        old_appointment_id: state.existingAppointment.id,
+        date_time: `${state.selectedDate}T${state.selectedSlot.time}`,
+      });
+      dispatch({ type: 'RESCHEDULED', result: data });
+    } catch (err) {
+      dispatch({ type: 'SET_ERROR', error: err.message });
+    }
+  }
+
+  // Handle reschedule confirmation from Step 4b (picked new slot from calendar)
   async function handleConfirmReschedule() {
     dispatch({ type: 'SET_LOADING', loading: true });
     try {
@@ -180,6 +195,7 @@ export default function BookingFlow() {
           <ExistingApptScreen
             state={state}
             dispatch={dispatch}
+            onReschedule={handleRescheduleFromExisting}
           />
         )}
 

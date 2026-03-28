@@ -24,15 +24,15 @@ export default function RescheduleConfirm({ state, dispatch, onConfirmReschedule
           <div className="text-xs font-medium text-red-400 uppercase mb-1">Se cancela</div>
           <div className="font-medium text-red-800 capitalize line-through">
             {existingAppointment?.date_time
-              ? formatDateTimeBolivia(existingAppointment.date_time + '-04:00')
+              ? formatDateTimeBolivia(existingAppointment.date_time)
               : ''}
           </div>
         </div>
 
         <div className="p-4 bg-green-50 border border-green-200 rounded-xl">
           <div className="text-xs font-medium text-green-500 uppercase mb-1">Nueva cita</div>
-          <div className="font-medium text-green-900">
-            {selectedDate} a las {selectedSlot?.time}
+          <div className="font-medium text-green-900 capitalize">
+            {formatDateTimeBolivia(`${selectedDate}T${selectedSlot?.time}:00-04:00`)}
           </div>
         </div>
       </div>

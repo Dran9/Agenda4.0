@@ -93,12 +93,12 @@ router.post('/', authMiddleware, validate(clientSchema), async (req, res) => {
     if (existing.length > 0) return res.json({ client_id: existing[0].id, existing: true });
 
     const [result] = await pool.query(
-      `INSERT INTO clients (tenant_id, phone, first_name, last_name, age, city, country, modality, frequency, source, referred_by, fee, payment_method, rating, diagnosis, notes)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO clients (tenant_id, phone, first_name, last_name, age, city, country, timezone, modality, frequency, source, referred_by, fee, payment_method, rating, diagnosis, notes)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [req.tenantId, data.phone, data.first_name, data.last_name, data.age || null,
-       data.city || 'Cochabamba', data.country || 'Bolivia', data.modality || 'Presencial',
-       data.frequency || 'Semanal', data.source || 'Otro', data.referred_by || null,
-       data.fee || 250, data.payment_method || 'QR', data.rating || 0,
+       data.city || 'Cochabamba', data.country || 'Bolivia', data.timezone || 'America/La_Paz',
+       data.modality || 'Presencial', data.frequency || 'Semanal', data.source || 'Otro',
+       data.referred_by || null, data.fee || 250, data.payment_method || 'QR', data.rating || 0,
        data.diagnosis || null, data.notes || null]
     );
     res.json({ client_id: result.insertId, existing: false });
@@ -111,7 +111,7 @@ router.post('/', authMiddleware, validate(clientSchema), async (req, res) => {
 router.put('/:id', authMiddleware, async (req, res) => {
   try {
     const allowed = [
-      'first_name', 'last_name', 'age', 'city', 'country', 'modality', 'frequency',
+      'first_name', 'last_name', 'age', 'city', 'country', 'timezone', 'modality', 'frequency',
       'source', 'referred_by', 'fee', 'payment_method', 'rating', 'diagnosis', 'notes',
       'status_override', 'phone'
     ];

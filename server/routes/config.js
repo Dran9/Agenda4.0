@@ -28,7 +28,8 @@ router.put('/', authMiddleware, async (req, res) => {
       'capital_cities', 'reminder_time', 'reminder_enabled',
       'auto_reply_confirm', 'auto_reply_reschedule', 'auto_reply_contact',
       'qr_url_capital', 'qr_url_provincia', 'qr_url_especial', 'qr_url_generico',
-      'rate_limit_booking', 'rate_limit_window'
+      'rate_limit_booking', 'rate_limit_window',
+      'custom_statuses', 'custom_sources'
     ];
     const updates = {};
     for (const key of allowed) {

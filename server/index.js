@@ -16,6 +16,7 @@ const clientsRoutes = require('./routes/clients');
 const appointmentsRoutes = require('./routes/appointments');
 const authRoutes = require('./routes/auth');
 const webhookRoutes = require('./routes/webhook');
+const analyticsRoutes = require('./routes/analytics');
 
 const app = express();
 app.use(cors());
@@ -46,6 +47,7 @@ app.use('/api/client', clientLimiter, clientsRoutes); // /api/client/check
 app.use('/api/appointments', appointmentsRoutes);
 app.use('/api/auth', authRoutes);
 app.use('/api/webhook', webhookRoutes);
+app.use('/api/analytics', analyticsRoutes);
 
 // ─── Admin reminder trigger ─────────────────────────────────────
 app.get('/api/admin/test-reminder', async (req, res) => {

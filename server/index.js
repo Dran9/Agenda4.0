@@ -83,12 +83,16 @@ app.get('/api/admin/test-sheets', async (req, res) => {
 });
 
 // ─── OAuth setup: regenerate refresh token with all scopes (temporary) ────
+// Paso 1: visita /api/admin/oauth-setup → te da un link de Google
+// Paso 2: abrí ese link, autorizá, Google te da un código
+// Paso 3: pegá el código en /api/admin/oauth-callback?code=ELCODIGO
 app.get('/api/admin/oauth-setup', (req, res) => {
   const { google } = require('googleapis');
+  const REDIRECT = 'urn:ietf:wg:oauth:2.0:oob';
   const oAuth2Client = new google.auth.OAuth2(
     process.env.GOOGLE_CLIENT_ID,
     process.env.GOOGLE_CLIENT_SECRET,
-    `https://tumvp.in/api/admin/oauth-callback`
+    REDIRECT
   );
   const url = oAuth2Client.generateAuthUrl({
     access_type: 'offline',
@@ -99,16 +103,28 @@ app.get('/api/admin/oauth-setup', (req, res) => {
       'https://www.googleapis.com/auth/contacts',
     ],
   });
-  res.redirect(url);
+  res.send(`
+    <html><body style="font-family:sans-serif;max-width:600px;margin:40px auto;line-height:1.6">
+      <h2>Paso 1: Autorizar</h2>
+      <p><a href="${url}" target="_blank">Click aquí para autorizar con Google</a></p>
+      <h2>Paso 2: Pegar el código</h2>
+      <p>Después de autorizar, Google te muestra un código. Copialo y pegalo abajo:</p>
+      <form action="/api/admin/oauth-callback" method="get">
+        <input name="code" placeholder="Pega el código aquí" style="width:100%;padding:8px;font-size:16px" />
+        <button type="submit" style="margin-top:8px;padding:8px 16px;font-size:16px">Obtener Refresh Token</button>
+      </form>
+    </body></html>
+  `);
 });
 
 app.get('/api/admin/oauth-callback', async (req, res) => {
   try {
     const { google } = require('googleapis');
+    const REDIRECT = 'urn:ietf:wg:oauth:2.0:oob';
     const oAuth2Client = new google.auth.OAuth2(
       process.env.GOOGLE_CLIENT_ID,
       process.env.GOOGLE_CLIENT_SECRET,
-      `https://tumvp.in/api/admin/oauth-callback`
+      REDIRECT
     );
     const { tokens } = await oAuth2Client.getToken(req.query.code);
     res.json({

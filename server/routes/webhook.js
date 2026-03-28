@@ -220,8 +220,39 @@ router.post('/', async (req, res) => {
                 console.log(`[webhook] Media saved: ${fileKey} (${buffer.length} bytes)`);
 
                 // ─── OCR + Auto-match payment by phone ──────────────
+                // Only process OCR if there's payment context in recent conversation
+                // (avoids wasting Vision API on random photos like wedding pics)
                 if (clientId && (mimeType.startsWith('image/') || msg.type === 'image')) {
+                  let hasPaymentContext = false;
                   try {
+                    // Check last 60 min of conversation for payment-related context
+                    const [recentCtx] = await pool.query(
+                      `SELECT content, direction, message_type FROM wa_conversations
+                       WHERE client_phone = ? AND tenant_id = ?
+                         AND created_at >= DATE_SUB(NOW(), INTERVAL 60 MINUTE)
+                       ORDER BY created_at DESC LIMIT 10`,
+                      [phone, tenantId]
+                    );
+                    // Context clues: QR sent, CONFIRM button pressed, or payment keywords
+                    hasPaymentContext = recentCtx.some(r =>
+                      /QR de pago|CONFIRM_NOW|comprobante|pago|transferencia/i.test(r.content)
+                    );
+                    // Also check: does this client have any pending payment?
+                    if (!hasPaymentContext) {
+                      const [pending] = await pool.query(
+                        `SELECT id FROM payments WHERE client_id = ? AND tenant_id = ? AND status = 'Pendiente' LIMIT 1`,
+                        [clientId, tenantId]
+                      );
+                      hasPaymentContext = pending.length > 0;
+                    }
+                  } catch (ctxErr) {
+                    console.error('[webhook] Context check failed:', ctxErr.message);
+                    hasPaymentContext = false;
+                  }
+
+                  if (!hasPaymentContext) {
+                    console.log(`[webhook] Image from ${phone} ignored — no payment context`);
+                  } else try {
                     const { extractReceiptData } = require('../services/ocr');
                     const ocrResult = await extractReceiptData(buffer);
 

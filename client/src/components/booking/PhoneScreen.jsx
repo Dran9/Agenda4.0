@@ -1,17 +1,55 @@
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { ChevronLeft } from 'lucide-react';
 
-export default function PhoneScreen({ state, dispatch, onSubmitPhone }) {
-  const [phone, setPhone] = useState(state.phone || '');
-  const [countryCode, setCountryCode] = useState('591');
+const COUNTRY_CODES = ['591', '54', '56', '51', '57', '52', '34', '1'];
+
+// Parse a full phone number into { countryCode, local }
+function parsePrefill(full) {
+  if (!full) return null;
+  const digits = full.replace(/\D/g, '');
+  // Try matching longest country codes first
+  for (const cc of [...COUNTRY_CODES].sort((a, b) => b.length - a.length)) {
+    if (digits.startsWith(cc)) {
+      return { countryCode: cc, local: digits.slice(cc.length) };
+    }
+  }
+  // No match — assume Bolivia
+  return { countryCode: '591', local: digits };
+}
+
+export default function PhoneScreen({ state, dispatch, onSubmitPhone, prefillPhone }) {
+  const prefill = parsePrefill(prefillPhone);
+  const [phone, setPhone] = useState(prefill?.local || state.phone || '');
+  const [countryCode, setCountryCode] = useState(prefill?.countryCode || '591');
+  const autoSubmitted = useRef(false);
 
   const fullPhone = countryCode + phone;
   const digitCount = phone.replace(/\D/g, '').length;
+
+  // Auto-submit if phone was pre-filled with enough digits
+  useEffect(() => {
+    if (prefill && prefill.local.length >= 7 && !autoSubmitted.current && !state.loading) {
+      autoSubmitted.current = true;
+      onSubmitPhone(prefill.countryCode + prefill.local);
+    }
+  }, []);
 
   function handleSubmit(e) {
     e.preventDefault();
     if (digitCount < 7) return;
     onSubmitPhone(fullPhone);
+  }
+
+  // If auto-submitting, show a loading state
+  if (prefill && prefill.local.length >= 7 && state.loading) {
+    return (
+      <div>
+        <div className="text-xs font-mono text-gray-400 mb-2">Step 2</div>
+        <div className="text-center py-12">
+          <div className="text-gray-400 text-sm">Verificando tu número...</div>
+        </div>
+      </div>
+    );
   }
 
   return (

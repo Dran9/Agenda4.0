@@ -1,8 +1,17 @@
 // Centralized fetch wrapper
 const BASE_URL = '/api';
 
+// Detect devmode from page URL once
+const pageParams = new URLSearchParams(window.location.search);
+const isDevMode = pageParams.get('devmode') === '1';
+
 async function request(path, options = {}) {
-  const url = `${BASE_URL}${path}`;
+  // Append devmode to API URL so server-side rate limiter sees it
+  const separator = path.includes('?') ? '&' : '?';
+  const url = isDevMode
+    ? `${BASE_URL}${path}${separator}devmode=1`
+    : `${BASE_URL}${path}`;
+
   const config = {
     headers: { 'Content-Type': 'application/json' },
     ...options,

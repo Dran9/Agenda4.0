@@ -12,11 +12,18 @@ import SuccessScreen from '../components/booking/SuccessScreen';
 import ExistingApptScreen from '../components/booking/ExistingApptScreen';
 import RescheduleConfirm from '../components/booking/RescheduleConfirm';
 
+// Parse URL params once
+const pageParams = new URLSearchParams(window.location.search);
+
 export default function BookingFlow() {
   const [state, dispatch] = useBookingReducer();
   const { config, loading: configLoading } = useConfig();
   const { slots, loading: slotsLoading, daysWithSlots, fetchSlots, prefetchDays } = useSlots();
   const [timezone, setTimezone] = useState(DEFAULT_TZ);
+
+  // URL params: ?t=PHONE, ?code=XXX
+  const urlPhone = pageParams.get('t') || '';
+  const urlCode = pageParams.get('code') || '';
 
   // Detect timezone from IP on mount
   useEffect(() => {
@@ -68,10 +75,12 @@ export default function BookingFlow() {
   async function handleSubmitPhone(phone) {
     dispatch({ type: 'SUBMIT_PHONE', phone });
     try {
-      const data = await api.post('/book', {
+      const body = {
         phone,
         date_time: `${state.selectedDate}T${state.selectedSlot.time}`,
-      });
+      };
+      if (urlCode) body.code = urlCode;
+      const data = await api.post('/book', body);
 
       if (data.status === 'needs_onboarding') {
         dispatch({ type: 'NEEDS_ONBOARDING' });
@@ -176,6 +185,7 @@ export default function BookingFlow() {
             state={state}
             dispatch={dispatch}
             onSubmitPhone={handleSubmitPhone}
+            prefillPhone={urlPhone}
           />
         )}
 

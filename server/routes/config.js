@@ -24,8 +24,11 @@ router.put('/', authMiddleware, async (req, res) => {
     const allowed = [
       'available_hours', 'available_days', 'window_days', 'buffer_hours',
       'appointment_duration', 'break_start', 'break_end', 'min_age', 'max_age',
-      'default_fee', 'capital_fee', 'capital_cities', 'reminder_time', 'reminder_enabled',
-      'auto_reply_confirm', 'auto_reply_reschedule', 'auto_reply_contact'
+      'default_fee', 'capital_fee', 'special_fee', 'foreign_fee', 'foreign_currency',
+      'capital_cities', 'reminder_time', 'reminder_enabled',
+      'auto_reply_confirm', 'auto_reply_reschedule', 'auto_reply_contact',
+      'qr_url_capital', 'qr_url_provincia', 'qr_url_especial', 'qr_url_generico',
+      'rate_limit_booking', 'rate_limit_window'
     ];
     const updates = {};
     for (const key of allowed) {

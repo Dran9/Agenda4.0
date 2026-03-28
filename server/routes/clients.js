@@ -130,13 +130,14 @@ router.put('/:id', authMiddleware, async (req, res) => {
   }
 });
 
-// DELETE /api/clients/:id — soft delete (admin)
+// DELETE /api/clients/:id — hard delete (admin)
 router.delete('/:id', authMiddleware, async (req, res) => {
   try {
-    await pool.query(
-      'UPDATE clients SET deleted_at = NOW(), status_override = ? WHERE id = ? AND tenant_id = ?',
-      ['Archivado', req.params.id, req.tenantId]
-    );
+    // Delete related records first (foreign keys)
+    await pool.query('DELETE FROM payments WHERE client_id = ? AND tenant_id = ?', [req.params.id, req.tenantId]);
+    await pool.query('DELETE FROM appointments WHERE client_id = ? AND tenant_id = ?', [req.params.id, req.tenantId]);
+    await pool.query('DELETE FROM wa_conversations WHERE client_id = ? AND tenant_id = ?', [req.params.id, req.tenantId]);
+    await pool.query('DELETE FROM clients WHERE id = ? AND tenant_id = ?', [req.params.id, req.tenantId]);
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: err.message });

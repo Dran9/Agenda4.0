@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { Trash2, Search } from 'lucide-react';
 import AdminLayout from '../../components/AdminLayout';
 import { api } from '../../utils/api';
+import { useToast, Toast } from '../../hooks/useToast';
 import { formatDateBolivia, formatTimeBolivia } from '../../utils/dates';
 
 const STATUS_STYLES = {
@@ -15,6 +16,7 @@ const STATUS_STYLES = {
 export default function Appointments() {
   const [appointments, setAppointments] = useState([]);
   const [loading, setLoading] = useState(true);
+  const { toast, show: showToast } = useToast();
   const [filters, setFilters] = useState({ status: '', from: '', to: '', search: '' });
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
@@ -61,7 +63,7 @@ export default function Appointments() {
       setSelected(prev => { const n = new Set(prev); n.delete(id); return n; });
       setTotal(t => t - 1);
     } catch (err) {
-      alert('Error: ' + err.message);
+      showToast('Error: ' + err.message, 'error');
     }
   }
 
@@ -76,7 +78,7 @@ export default function Appointments() {
       setTotal(t => t - selected.size);
       setSelected(new Set());
     } catch (err) {
-      alert('Error: ' + err.message);
+      showToast('Error: ' + err.message, 'error');
     }
   }
 
@@ -98,6 +100,7 @@ export default function Appointments() {
 
   return (
     <AdminLayout title="Citas">
+      <Toast toast={toast} />
       {/* Filters */}
       <div className="flex flex-wrap items-center gap-3 mb-4">
         <div className="relative">

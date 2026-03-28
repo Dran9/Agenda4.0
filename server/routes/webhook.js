@@ -66,7 +66,7 @@ router.post('/', async (req, res) => {
             if (payload && clientId) {
               const [cfgRows] = await pool.query('SELECT * FROM config WHERE tenant_id = ?', [tenantId]);
               const cfg = cfgRows[0];
-              const { sendTextMessage } = require('../services/whatsapp');
+              const { sendTextMessage, sendImageMessage } = require('../services/whatsapp');
 
               let replyText = null;
               if (payload === 'CONFIRM_NOW' && cfg?.auto_reply_confirm) {
@@ -88,10 +88,13 @@ router.post('/', async (req, res) => {
                   );
 
                   // Add ✅ to GCal event summary
-                  if (appts[0].gcal_event_id) {
-                    try {
-                      const { updateEventSummary, getCalendar } = require('../services/calendar');
-                      const calendarId = process.env.CALENDAR_ID || 'danielmacleann@gmail.com';
+                  try {
+                    const { updateEventSummary, listEvents } = require('../services/calendar');
+                    const calendarId = process.env.CALENDAR_ID || 'danielmacleann@gmail.com';
+
+                    if (appts[0].gcal_event_id) {
+                      // Direct update by event ID
+                      const { getCalendar } = require('../services/calendar');
                       const cal = getCalendar();
                       const ev = await cal.events.get({ calendarId, eventId: appts[0].gcal_event_id });
                       const currentSummary = ev.data.summary || '';
@@ -99,9 +102,21 @@ router.post('/', async (req, res) => {
                         await updateEventSummary(calendarId, appts[0].gcal_event_id, `✅ ${currentSummary}`);
                         console.log(`[webhook] GCal updated: ✅ ${currentSummary}`);
                       }
-                    } catch (gcalErr) {
-                      console.error(`[webhook] GCal update failed:`, gcalErr.message);
+                    } else {
+                      // Fallback: search upcoming events for this phone number
+                      const now = new Date();
+                      const weekLater = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
+                      const events = await listEvents(calendarId, now.toISOString(), weekLater.toISOString());
+                      const matchEvent = events.find(e =>
+                        e.summary && e.summary.includes(phone) && e.summary.startsWith('Terapia') && !e.summary.startsWith('✅')
+                      );
+                      if (matchEvent) {
+                        await updateEventSummary(calendarId, matchEvent.id, `✅ ${matchEvent.summary}`);
+                        console.log(`[webhook] GCal updated (by phone): ✅ ${matchEvent.summary}`);
+                      }
                     }
+                  } catch (gcalErr) {
+                    console.error(`[webhook] GCal update failed:`, gcalErr.message);
                   }
                 }
               } else if (payload === 'REAGEN_NOW' && cfg?.auto_reply_reschedule) {
@@ -119,6 +134,39 @@ router.post('/', async (req, res) => {
                      VALUES (?, ?, ?, 'outbound', 'auto_reply', ?, ?)`,
                     [tenantId, clientId, phone, replyText, result.messages?.[0]?.id]
                   );
+
+                  // Send QR payment image after confirmation
+                  if (payload === 'CONFIRM_NOW') {
+                    try {
+                      const [clientRows] = await pool.query('SELECT fee, city FROM clients WHERE id = ?', [clientId]);
+                      const client = clientRows[0];
+                      if (client) {
+                        const capitalCities = (cfg.capital_cities || '').split(',').map(c => c.trim());
+                        let qrKey;
+                        const fee = parseFloat(client.fee);
+                        if (fee === parseFloat(cfg.capital_fee)) qrKey = 'qr_300';
+                        else if (fee === parseFloat(cfg.special_fee)) qrKey = 'qr_150';
+                        else if (fee === parseFloat(cfg.default_fee)) qrKey = 'qr_250';
+                        else qrKey = 'qr_generico';
+
+                        const { getFile } = require('../services/storage');
+                        const qrFile = await getFile(tenantId, qrKey);
+                        if (qrFile) {
+                          const domain = (await pool.query('SELECT domain FROM tenants WHERE id = ?', [tenantId]))[0]?.[0]?.domain || '';
+                          const qrUrl = `https://${domain}/api/config/qr/${qrKey}`;
+                          const qrResult = await sendImageMessage(phone, qrUrl, `QR de pago - Bs ${fee}`);
+                          await pool.query(
+                            `INSERT INTO wa_conversations (tenant_id, client_id, client_phone, direction, message_type, content, wa_message_id)
+                             VALUES (?, ?, ?, 'outbound', 'auto_reply', ?, ?)`,
+                            [tenantId, clientId, phone, `QR de pago enviado (${qrKey})`, qrResult.messages?.[0]?.id]
+                          );
+                          console.log(`[webhook] QR sent to ${phone}: ${qrKey}`);
+                        }
+                      }
+                    } catch (qrErr) {
+                      console.error(`[webhook] QR send failed for ${phone}:`, qrErr.message);
+                    }
+                  }
                 } catch (waErr) {
                   console.error(`[webhook] Auto-reply failed for ${phone}:`, waErr.message);
                 }

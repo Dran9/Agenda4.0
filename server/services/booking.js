@@ -56,7 +56,29 @@ async function createClient(phone, onboarding, tenantId, conn) {
   );
 
   const [clients] = await db.query('SELECT * FROM clients WHERE id = ?', [result.insertId]);
-  return clients[0];
+  const newClient = clients[0];
+
+  // Create Google Contact + sync to Sheets (async, non-blocking)
+  try {
+    const { createContact } = require('./contacts');
+    createContact({
+      firstName: first_name,
+      lastName: last_name,
+      phone: phone.startsWith('+') ? phone : `+${phone}`,
+      city: city || 'Cochabamba',
+    }).catch(err => console.error('[contacts] Create failed (non-fatal):', err.message));
+  } catch (err) {
+    console.error('[contacts] Import failed:', err.message);
+  }
+
+  try {
+    const { syncClientToSheet } = require('./sheets');
+    syncClientToSheet(newClient).catch(err => console.error('[sheets] Client sync failed (non-fatal):', err.message));
+  } catch (err) {
+    console.error('[sheets] Import failed:', err.message);
+  }
+
+  return newClient;
 }
 
 // ─── Create booking (GCal + DB atomic) ───────────────────────────
@@ -136,15 +158,24 @@ async function createBooking(client, dateTime, tenantId) {
     [tenantId, `booking_${result.insertId}`, JSON.stringify({ date_time: dateTime }), client.phone, client.id, result.insertId]
   );
 
-  return {
-    success: true,
-    appointment: {
-      id: result.insertId,
-      date_time: dateTime,
-      gcal_event_id: gcalEvent.id,
-      session_number: sessionNumber,
-    },
+  const newAppt = {
+    id: result.insertId,
+    date_time: dateTime,
+    gcal_event_id: gcalEvent.id,
+    session_number: sessionNumber,
+    is_first: isFirst,
+    status: 'Confirmada',
   };
+
+  // Sync booking to Google Sheets (async, non-blocking)
+  try {
+    const { syncBookingToSheet } = require('./sheets');
+    syncBookingToSheet(newAppt, client).catch(err => console.error('[sheets] Booking sync failed (non-fatal):', err.message));
+  } catch (err) {
+    console.error('[sheets] Import failed:', err.message);
+  }
+
+  return { success: true, appointment: newAppt };
 }
 
 // ─── Reschedule appointment ──────────────────────────────────────

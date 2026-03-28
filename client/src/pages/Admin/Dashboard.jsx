@@ -1,11 +1,13 @@
 import { useState, useEffect } from 'react';
 import AdminLayout from '../../components/AdminLayout';
 import { api } from '../../utils/api';
+import { useToast, Toast } from '../../hooks/useToast';
 import { formatTimeBolivia } from '../../utils/dates';
 
 export default function Dashboard() {
   const [todayAppts, setTodayAppts] = useState([]);
   const [loading, setLoading] = useState(true);
+  const { toast, show: showToast } = useToast();
 
   useEffect(() => {
     api.get('/appointments/today')
@@ -26,14 +28,15 @@ export default function Dashboard() {
   async function handleTriggerReminder(date) {
     try {
       const result = await api.get(`/admin/test-reminder?date=${date}`);
-      alert(`Enviados: ${result.sent}, Omitidos: ${result.skipped}, Total eventos: ${result.total}`);
+      showToast(`Enviados: ${result.sent}, Omitidos: ${result.skipped}, Total: ${result.total}`);
     } catch (err) {
-      alert('Error: ' + err.message);
+      showToast('Error: ' + err.message, 'error');
     }
   }
 
   return (
     <AdminLayout title="Dashboard">
+      <Toast toast={toast} />
       {/* KPI Cards placeholder */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
         {['Sesiones esta semana', 'Clientes activos', 'Tasa asistencia', 'Ingresos del mes'].map(label => (

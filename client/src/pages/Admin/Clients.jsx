@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { Plus, Trash2, X, Search, ChevronDown } from 'lucide-react';
 import AdminLayout from '../../components/AdminLayout';
 import { api } from '../../utils/api';
+import { useToast, Toast } from '../../hooks/useToast';
 
 const DEFAULT_STATUSES = [
   { name: 'Nuevo', color: '#3B82F6' },
@@ -33,6 +34,7 @@ function statusStyle(color) {
 export default function Clients() {
   const [clients, setClients] = useState([]);
   const [loading, setLoading] = useState(true);
+  const { toast, show: showToast } = useToast();
   const [search, setSearch] = useState('');
   const [selected, setSelected] = useState(new Set());
   const [showCreate, setShowCreate] = useState(false);
@@ -91,7 +93,7 @@ export default function Clients() {
       setClients(prev => prev.filter(c => c.id !== id));
       setSelected(prev => { const n = new Set(prev); n.delete(id); return n; });
     } catch (err) {
-      alert('Error: ' + err.message);
+      showToast('Error: ' + err.message, 'error');
     }
   }
 
@@ -105,7 +107,7 @@ export default function Clients() {
       setClients(prev => prev.filter(c => !selected.has(c.id)));
       setSelected(new Set());
     } catch (err) {
-      alert('Error: ' + err.message);
+      showToast('Error: ' + err.message, 'error');
     }
   }
 
@@ -114,13 +116,13 @@ export default function Clients() {
     try {
       const result = await api.post('/clients', data);
       if (result.existing) {
-        alert('Ya existe un cliente con ese teléfono');
+        showToast('Ya existe un cliente con ese teléfono', 'error');
       } else {
         setShowCreate(false);
         loadClients();
       }
     } catch (err) {
-      alert('Error: ' + err.message);
+      showToast('Error: ' + err.message, 'error');
     } finally {
       setSaving(false);
     }
@@ -168,6 +170,7 @@ export default function Clients() {
 
   return (
     <AdminLayout title="Clientes">
+      <Toast toast={toast} />
       {/* Toolbar */}
       <div className="flex flex-wrap items-center gap-3 mb-4">
         <div className="relative flex-1 min-w-[200px] max-w-sm">
@@ -457,7 +460,7 @@ function EditClientModal({ client, onClose, onSave, sources, statuses }) {
       }
       onClose();
     } catch (err) {
-      alert('Error: ' + err.message);
+      showToast('Error: ' + err.message, 'error');
     } finally {
       setSaving(false);
     }

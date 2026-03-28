@@ -86,4 +86,33 @@ async function sendTextMessage(phone, text) {
   return data;
 }
 
-module.exports = { sendConfirmationTemplate, sendTextMessage };
+async function sendImageMessage(phone, imageUrl, caption) {
+  const token = process.env.WA_TOKEN;
+  const phoneNumberId = process.env.WA_PHONE_ID;
+
+  const payload = {
+    messaging_product: 'whatsapp',
+    to: phone,
+    type: 'image',
+    image: { link: imageUrl },
+  };
+  if (caption) payload.image.caption = caption;
+
+  const response = await fetch(`${GRAPH_API_URL}/${phoneNumberId}/messages`, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${token}`,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify(payload)
+  });
+
+  const data = await response.json();
+  if (!response.ok) {
+    console.error('[whatsapp] Image error:', JSON.stringify(data));
+    throw new Error(`WhatsApp API error: ${response.status}`);
+  }
+  return data;
+}
+
+module.exports = { sendConfirmationTemplate, sendTextMessage, sendImageMessage };

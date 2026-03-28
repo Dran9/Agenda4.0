@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { ChevronDown, ChevronRight, Plus, X } from 'lucide-react';
 import AdminLayout from '../../components/AdminLayout';
 import { api } from '../../utils/api';
+import { useToast, Toast } from '../../hooks/useToast.jsx';
 
 const DAYS = [
   { key: 'lunes', label: 'Lunes', short: 'Lun' },
@@ -75,6 +76,7 @@ export default function Config() {
   const [config, setConfig] = useState(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const { toast, show: showToast } = useToast();
   const [availability, setAvailability] = useState({});
   const [expandedDay, setExpandedDay] = useState(null);
   const [copyTo, setCopyTo] = useState({});
@@ -189,9 +191,9 @@ export default function Config() {
         rate_limit_booking: config.rate_limit_booking,
         rate_limit_window: config.rate_limit_window,
       });
-      alert('Configuración guardada');
+      showToast('Configuración guardada');
     } catch (err) {
-      alert('Error: ' + err.message);
+      showToast('Error: ' + err.message, 'error');
     } finally {
       setSaving(false);
     }
@@ -202,9 +204,9 @@ export default function Config() {
     formData.append('file', file);
     try {
       await api.upload(`/config/qr/${key}`, formData);
-      alert('QR subido');
+      showToast('QR subido');
     } catch (err) {
-      alert('Error: ' + err.message);
+      showToast('Error: ' + err.message, 'error');
     }
   }
 
@@ -214,6 +216,7 @@ export default function Config() {
 
   return (
     <AdminLayout title="Configuración">
+      <Toast toast={toast} />
       <div className="max-w-2xl space-y-6">
         <p className="text-sm text-gray-500 -mt-2">Disponibilidad, aranceles y preferencias</p>
 

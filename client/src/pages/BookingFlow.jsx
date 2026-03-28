@@ -7,7 +7,7 @@ import {
 import {
   ArrowRight, ArrowLeft, ChevronDown, Calendar as CalendarIcon,
   Clock, CalendarClock, CalendarCheck, Check, Sun, Sunset,
-  Coffee, Globe, Search, RefreshCw, Heart, MessageCircle, TriangleAlert, Info,
+  Coffee, Globe, Search, RefreshCw, Heart, MessageCircle, TriangleAlert, Info, MousePointerClick,
 } from 'lucide-react';
 
 const COUNTRY_CODES = [
@@ -303,12 +303,14 @@ export default function BookingFlow() {
       <div style={{ width: '100%', marginBottom: 16 }}>
         <div style={{ display: 'flex', justifyContent: 'center' }}>
           <button type="button" className="timezone-selector" onClick={e => { e.stopPropagation(); setShowTzDropdown(!showTzDropdown); }}>
-            <Globe size={14} />
             <span>{selectedTz.flag} {selectedTz.label} ({getCurrentTimeInTz(selectedTz.tz)})</span>
             <ChevronDown size={12} />
           </button>
         </div>
-        <p style={{ fontSize: 14, color: 'var(--gris-medio)', textAlign: 'center', marginTop: 6 }}>Horarios en tu zona</p>
+        <p style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5, fontSize: 16, fontWeight: 600, color: '#B34E35', textAlign: 'center', marginTop: 6 }}>
+          <MousePointerClick size={15} color="#B34E35" />
+          Confirma tu país
+        </p>
         {showTzDropdown && (
           <div className="timezone-dropdown" onClick={e => e.stopPropagation()}>
             <div style={{ position: 'relative' }}>
@@ -351,12 +353,14 @@ export default function BookingFlow() {
     return (
       <Layout devMode={devMode}>
         <Logo width={120} />
-        <h1 style={{ fontSize: 32, fontWeight: 600, textAlign: 'center', color: 'var(--negro)', marginBottom: 6 }}>
-          {flow.rescheduleMode ? 'Elige tu nueva hora' : 'Encuentra el momento para tu sesión'}
+        <h1 style={{ fontSize: 30, fontWeight: 600, textAlign: 'center', color: 'var(--negro)', marginBottom: 16, lineHeight: 1.15 }}>
+          {flow.rescheduleMode ? 'Elige tu nueva hora' : 'Encuentra el mejor momento para tu sesión'}
         </h1>
-        <p style={{ fontSize: 18, color: 'var(--gris-medio)', textAlign: 'center', marginBottom: 24 }}>
-          {flow.rescheduleMode ? 'Selecciona una fecha y hora para reagendar' : 'Elige una fecha y hora disponible'}
-        </p>
+        {flow.rescheduleMode && (
+          <p style={{ fontSize: 18, fontWeight: 600, color: 'var(--gris-medio)', textAlign: 'center', marginBottom: 12 }}>
+            Selecciona una fecha y hora para reagendar
+          </p>
+        )}
 
         <div className="card" style={{ marginBottom: 16 }}>
           <Calendar
@@ -380,9 +384,9 @@ export default function BookingFlow() {
             ) : (
               <>
                 {morningSlots.length > 0 && (
-                  <div style={{ marginBottom: afternoonSlots.length > 0 ? 0 : 16 }}>
+                  <div style={{ marginBottom: afternoonSlots.length > 0 ? 18 : 16 }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 10 }}>
-                      <Sun size={12} color="var(--dorado)" />
+                      <Sun size={20} color="#1B2B43" />
                       <span style={{ fontSize: 15, fontWeight: 500, textTransform: 'uppercase', letterSpacing: 1.5, color: 'var(--gris-medio)' }}>Mañana</span>
                     </div>
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8 }}>
@@ -394,13 +398,10 @@ export default function BookingFlow() {
                     </div>
                   </div>
                 )}
-                {morningSlots.length > 0 && afternoonSlots.length > 0 && (
-                  <div className="break-divider"><Coffee size={11} /><span>Descanso</span></div>
-                )}
                 {afternoonSlots.length > 0 && (
                   <div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 10 }}>
-                      <Sunset size={12} color="var(--terracota)" />
+                      <Sunset size={20} color="#1B2B43" />
                       <span style={{ fontSize: 15, fontWeight: 500, textTransform: 'uppercase', letterSpacing: 1.5, color: 'var(--gris-medio)' }}>Tarde</span>
                     </div>
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8 }}>

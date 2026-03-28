@@ -69,7 +69,7 @@ export default function Calendar({ onSelectDate, selectedDate, availableDays = [
         <button type="button" onClick={prevMonth} disabled={!canGoPrev} className="cal-nav-btn">
           <ChevronLeft size={16} />
         </button>
-        <span style={{ fontWeight: 600, fontSize: 18 }}>{MONTH_NAMES[viewMonth]} {viewYear}</span>
+        <span style={{ fontWeight: 600, fontSize: 20 }}>{MONTH_NAMES[viewMonth]} {viewYear}</span>
         <button type="button" onClick={nextMonth} disabled={!canGoNext} className="cal-nav-btn">
           <ChevronRight size={16} />
         </button>
@@ -77,7 +77,7 @@ export default function Calendar({ onSelectDate, selectedDate, availableDays = [
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 2, marginBottom: 4 }}>
         {DAY_LABELS.map(d => (
-          <div key={d} style={{ textAlign: 'center', fontSize: 14, fontWeight: 500, textTransform: 'uppercase', color: '#A4A4A6', padding: '4px 0' }}>
+          <div key={d} style={{ textAlign: 'center', fontSize: 14, fontWeight: 800, textTransform: 'uppercase', color: '#A4A4A6', padding: '4px 0' }}>
             {d}
           </div>
         ))}
@@ -97,8 +97,8 @@ export default function Calendar({ onSelectDate, selectedDate, availableDays = [
 
           if (selected) { bg = 'var(--azul-acero)'; color = 'white'; fw = 700; }
           else if (enabled && withSlots) { color = '#000000'; fw = 900; }
-          else if (enabled) { color = '#A4A4A6'; fw = 500; }
-          else { color = '#A4A4A6'; }
+          else if (enabled) { color = '#A4A4A6'; fw = 600; }
+          else { color = '#A4A4A6'; fw = 600; }
 
           return (
             <button

@@ -117,7 +117,7 @@ input, select, button, textarea {
 .card {
   background: var(--bg-card);
   border-radius: 16px;
-  padding: 24px 20px;
+  padding: 22px 18px;
   border: 1px solid var(--platino);
   width: 100%;
 }
@@ -126,7 +126,7 @@ input, select, button, textarea {
 .calendar-card {
   background: var(--bg-card);
   border-radius: 16px;
-  padding: 24px 8px;
+  padding: 22px 8px;
   border: none;
   width: 100%;
 }
@@ -330,7 +330,7 @@ input, select, button, textarea {
   height: 46px;
   border-radius: 10px;
   font-size: 17px;
-  font-weight: 500;
+  font-weight: 600;
   border: 1px solid var(--platino);
   background: var(--blanco-gris);
   color: var(--text-primary);
@@ -478,15 +478,18 @@ input, select, button, textarea {
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 8px 14px;
+  padding: 10px 20px;
   background: var(--blanco-gris);
   border: 1px solid var(--platino);
   border-radius: 10px;
   cursor: pointer;
-  font-size: 15px;
+  font-size: 16px;
+  font-weight: 600;
   color: var(--grafito);
   transition: color 200ms, background 200ms;
   margin: 0 auto;
+  min-width: 260px;
+  justify-content: center;
 }
 
 .timezone-selector:hover {

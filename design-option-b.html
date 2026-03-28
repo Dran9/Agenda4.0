@@ -1,0 +1,606 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Option B — Modern/Clinical</title>
+<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700&family=Source+Serif+4:ital,wght@0,400;0,600;1,400&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #F4F7FA;
+    --bg-card: #FFFFFF;
+    --surface: #EDF1F7;
+    --surface-hover: #E2E8F0;
+    --primary: #1B4965;
+    --primary-light: #2D6A8F;
+    --primary-bg: rgba(27, 73, 101, 0.06);
+    --accent: #3DA5D9;
+    --accent-soft: rgba(61, 165, 217, 0.1);
+    --text: #1A2332;
+    --text-secondary: #5A6B7F;
+    --text-muted: #9EAAB8;
+    --border: #E0E6ED;
+    --selected: #1B4965;
+    --selected-text: #FFFFFF;
+    --slot-bg: #FFFFFF;
+    --slot-border: #D8DEE6;
+    --slot-hover: #1B4965;
+    --shadow-sm: 0 1px 2px rgba(26, 35, 50, 0.04);
+    --shadow-md: 0 2px 12px rgba(26, 35, 50, 0.06);
+    --shadow-lg: 0 8px 24px rgba(26, 35, 50, 0.08);
+    --radius: 14px;
+    --radius-sm: 10px;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: 'Outfit', sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .app {
+    max-width: 480px;
+    margin: 0 auto;
+    min-height: 100vh;
+    position: relative;
+  }
+
+  /* ─── Header ─── */
+  .header {
+    padding: 20px 12px 16px;
+    display: flex;
+    align-items: center;
+    gap: 14px;
+  }
+
+  @media (min-width: 520px) {
+    .header { padding: 28px 24px 20px; }
+  }
+
+  .logo-mark {
+    width: 44px;
+    height: 44px;
+    background: var(--primary);
+    border-radius: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+  }
+
+  .logo-mark svg {
+    width: 22px;
+    height: 22px;
+  }
+
+  .brand-text {
+    flex: 1;
+  }
+
+  .brand-name {
+    font-size: 20px;
+    font-weight: 700;
+    color: var(--text);
+    letter-spacing: -0.01em;
+    line-height: 1.2;
+  }
+
+  .brand-subtitle {
+    font-size: 13px;
+    color: var(--text-secondary);
+    font-weight: 400;
+    margin-top: 1px;
+  }
+
+  /* ─── Content ─── */
+  .content {
+    padding: 0 12px 32px;
+  }
+
+  @media (min-width: 520px) {
+    .content { padding: 0 24px 40px; }
+  }
+
+  .section-label {
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--text);
+    margin-bottom: 12px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .step-badge {
+    font-size: 11px;
+    font-weight: 600;
+    background: var(--accent-soft);
+    color: var(--accent);
+    padding: 3px 10px;
+    border-radius: 20px;
+    letter-spacing: 0.02em;
+  }
+
+  /* ─── Calendar Card ─── */
+  .calendar-card {
+    background: var(--bg-card);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow-md);
+    overflow: hidden;
+  }
+
+  .calendar-nav {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 14px 16px;
+  }
+
+  .calendar-nav button {
+    background: var(--surface);
+    border: none;
+    cursor: pointer;
+    color: var(--primary);
+    font-size: 16px;
+    width: 34px;
+    height: 34px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 8px;
+    transition: all 0.15s;
+    font-weight: 600;
+  }
+
+  .calendar-nav button:hover {
+    background: var(--surface-hover);
+  }
+
+  .calendar-month {
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--text);
+    text-transform: capitalize;
+  }
+
+  .calendar-grid {
+    padding: 4px 12px 12px;
+  }
+
+  .weekdays {
+    display: grid;
+    grid-template-columns: repeat(7, 1fr);
+    margin-bottom: 2px;
+  }
+
+  .weekday {
+    text-align: center;
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--text-muted);
+    padding: 8px 0;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+  }
+
+  .days {
+    display: grid;
+    grid-template-columns: repeat(7, 1fr);
+    gap: 2px;
+  }
+
+  .day {
+    aspect-ratio: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 14px;
+    font-weight: 500;
+    border-radius: 10px;
+    cursor: pointer;
+    transition: all 0.15s;
+    color: var(--text-muted);
+    position: relative;
+  }
+
+  .day.has-slots {
+    color: var(--text);
+    font-weight: 700;
+  }
+
+  .day.has-slots:hover {
+    background: var(--primary-bg);
+  }
+
+  .day.selected {
+    background: var(--selected);
+    color: var(--selected-text);
+    font-weight: 700;
+    box-shadow: 0 2px 8px rgba(27, 73, 101, 0.25);
+  }
+
+  .day.today {
+    border: 2px solid var(--accent);
+  }
+
+  .day.today.selected {
+    border-color: transparent;
+  }
+
+  .day.empty {
+    cursor: default;
+  }
+
+  /* ─── Time Slots ─── */
+  .slots-section {
+    margin-top: 20px;
+  }
+
+  .slots-date {
+    font-size: 13px;
+    color: var(--text-secondary);
+    margin-bottom: 10px;
+    font-weight: 500;
+  }
+
+  .slots-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 8px;
+  }
+
+  .slot {
+    background: var(--slot-bg);
+    border: 1.5px solid var(--slot-border);
+    border-radius: var(--radius-sm);
+    padding: 12px 8px;
+    text-align: center;
+    cursor: pointer;
+    transition: all 0.15s;
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--text);
+    position: relative;
+    overflow: hidden;
+  }
+
+  .slot::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 3px;
+    background: var(--accent);
+    opacity: 0;
+    transition: opacity 0.15s;
+  }
+
+  .slot:hover {
+    border-color: var(--primary);
+    transform: translateY(-1px);
+    box-shadow: var(--shadow-sm);
+  }
+
+  .slot:hover::before {
+    opacity: 1;
+  }
+
+  .slot.selected {
+    background: var(--primary);
+    color: white;
+    border-color: var(--primary);
+    box-shadow: 0 2px 8px rgba(27, 73, 101, 0.2);
+  }
+
+  .slot.selected::before {
+    background: var(--accent);
+    opacity: 1;
+  }
+
+  .slot-block {
+    font-size: 10px;
+    font-weight: 500;
+    color: var(--text-muted);
+    margin-top: 2px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+
+  .slot.selected .slot-block {
+    color: rgba(255,255,255,0.6);
+  }
+
+  /* ─── Continue Button ─── */
+  .continue-btn {
+    margin-top: 20px;
+    width: 100%;
+    padding: 15px;
+    background: var(--primary);
+    color: white;
+    border: none;
+    border-radius: var(--radius-sm);
+    font-family: 'Outfit', sans-serif;
+    font-size: 15px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.15s;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .continue-btn::after {
+    content: ' \2192';
+  }
+
+  .continue-btn:hover {
+    background: var(--primary-light);
+    box-shadow: 0 4px 16px rgba(27, 73, 101, 0.2);
+    transform: translateY(-1px);
+  }
+
+  .continue-btn:disabled {
+    background: var(--surface);
+    color: var(--text-muted);
+    cursor: not-allowed;
+    box-shadow: none;
+    transform: none;
+  }
+
+  .continue-btn:disabled::after {
+    content: '';
+  }
+
+  /* ─── Timezone Bar ─── */
+  .tz-bar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 14px;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    margin-bottom: 14px;
+    font-size: 13px;
+    color: var(--text-secondary);
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+
+  .tz-bar:hover {
+    border-color: var(--primary);
+    background: var(--primary-bg);
+  }
+
+  .tz-icon {
+    width: 20px;
+    height: 20px;
+    background: var(--surface);
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 12px;
+    flex-shrink: 0;
+  }
+
+  .tz-time {
+    margin-left: auto;
+    font-weight: 600;
+    color: var(--primary);
+    font-size: 13px;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .tz-chevron {
+    color: var(--text-muted);
+    font-size: 12px;
+  }
+
+  /* ─── Palette ─── */
+  .palette {
+    margin-top: 40px;
+    padding: 24px;
+    background: var(--bg-card);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow-sm);
+  }
+
+  .palette h3 {
+    font-size: 17px;
+    font-weight: 700;
+    margin-bottom: 16px;
+    color: var(--text);
+  }
+
+  .palette-row {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 12px;
+    flex-wrap: wrap;
+  }
+
+  .swatch {
+    width: 48px;
+    height: 48px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    position: relative;
+  }
+
+  .swatch span {
+    position: absolute;
+    bottom: -18px;
+    left: 50%;
+    transform: translateX(-50%);
+    font-size: 9px;
+    color: var(--text-muted);
+    white-space: nowrap;
+  }
+
+  .palette-info {
+    margin-top: 24px;
+    font-size: 13px;
+    line-height: 1.8;
+    color: var(--text-secondary);
+  }
+
+  .palette-info strong {
+    color: var(--text);
+  }
+</style>
+</head>
+<body>
+
+<div class="app">
+
+  <!-- Header -->
+  <header class="header">
+    <div class="logo-mark">
+      <svg viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round">
+        <path d="M12 3C7 3 3 7 3 12s4 9 9 9 9-4 9-9"/>
+        <path d="M12 3c2 3 3 6 3 9"/>
+        <path d="M3.5 9h17"/>
+      </svg>
+    </div>
+    <div class="brand-text">
+      <div class="brand-name">Daniel MacLean</div>
+      <div class="brand-subtitle">Psicoterapia</div>
+    </div>
+  </header>
+
+  <!-- Content -->
+  <main class="content">
+
+    <div class="section-label">
+      Elige fecha y hora
+      <span class="step-badge">Paso 1</span>
+    </div>
+
+    <!-- Timezone -->
+    <div class="tz-bar">
+      <span class="tz-icon">&#127760;</span>
+      <span>America/La_Paz (BOT)</span>
+      <span class="tz-time">14:30</span>
+      <span class="tz-chevron">&#9662;</span>
+    </div>
+
+    <!-- Calendar -->
+    <div class="calendar-card">
+      <div class="calendar-nav">
+        <button type="button">&#8249;</button>
+        <span class="calendar-month">marzo 2026</span>
+        <button type="button">&#8250;</button>
+      </div>
+      <div class="calendar-grid">
+        <div class="weekdays">
+          <div class="weekday">Lun</div>
+          <div class="weekday">Mar</div>
+          <div class="weekday">Mie</div>
+          <div class="weekday">Jue</div>
+          <div class="weekday">Vie</div>
+          <div class="weekday">Sab</div>
+          <div class="weekday">Dom</div>
+        </div>
+        <div class="days">
+          <div class="day empty"></div>
+          <div class="day empty"></div>
+          <div class="day empty"></div>
+          <div class="day empty"></div>
+          <div class="day empty"></div>
+          <div class="day empty"></div>
+          <div class="day">1</div>
+          <div class="day has-slots">2</div>
+          <div class="day has-slots">3</div>
+          <div class="day has-slots">4</div>
+          <div class="day">5</div>
+          <div class="day has-slots">6</div>
+          <div class="day">7</div>
+          <div class="day">8</div>
+          <div class="day has-slots">9</div>
+          <div class="day has-slots">10</div>
+          <div class="day has-slots">11</div>
+          <div class="day">12</div>
+          <div class="day has-slots">13</div>
+          <div class="day">14</div>
+          <div class="day">15</div>
+          <div class="day has-slots">16</div>
+          <div class="day has-slots">17</div>
+          <div class="day has-slots">18</div>
+          <div class="day">19</div>
+          <div class="day has-slots">20</div>
+          <div class="day">21</div>
+          <div class="day">22</div>
+          <div class="day has-slots">23</div>
+          <div class="day has-slots">24</div>
+          <div class="day has-slots today">25</div>
+          <div class="day">26</div>
+          <div class="day has-slots">27</div>
+          <div class="day">28</div>
+          <div class="day selected">29</div>
+          <div class="day has-slots">30</div>
+          <div class="day has-slots">31</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Slots -->
+    <div class="slots-section">
+      <div class="slots-date">Domingo 29 de marzo</div>
+      <div class="slots-grid">
+        <div class="slot">
+          09:00
+          <div class="slot-block">Manana</div>
+        </div>
+        <div class="slot">
+          10:00
+          <div class="slot-block">Manana</div>
+        </div>
+        <div class="slot selected">
+          11:00
+          <div class="slot-block">Manana</div>
+        </div>
+        <div class="slot">
+          14:00
+          <div class="slot-block">Tarde</div>
+        </div>
+        <div class="slot">
+          15:00
+          <div class="slot-block">Tarde</div>
+        </div>
+        <div class="slot">
+          16:00
+          <div class="slot-block">Tarde</div>
+        </div>
+      </div>
+    </div>
+
+    <button type="button" class="continue-btn">Continuar</button>
+
+    <!-- Palette -->
+    <div class="palette">
+      <h3>Option B — Modern / Clinical</h3>
+      <div class="palette-row">
+        <div class="swatch" style="background:#1B4965"><span>#1B4965</span></div>
+        <div class="swatch" style="background:#2D6A8F"><span>#2D6A8F</span></div>
+        <div class="swatch" style="background:#3DA5D9"><span>#3DA5D9</span></div>
+        <div class="swatch" style="background:#F4F7FA"><span>#F4F7FA</span></div>
+        <div class="swatch" style="background:#EDF1F7"><span>#EDF1F7</span></div>
+        <div class="swatch" style="background:#1A2332"><span>#1A2332</span></div>
+      </div>
+      <div class="palette-info">
+        <strong>Tipografia:</strong> Outfit (todo el UI)<br>
+        <strong>Mood:</strong> Profesional, limpio, confiable. Azul petroleo profundo con acento celeste.<br>
+        <strong>Inspiracion:</strong> Clinica moderna, dashboard medico premium, app de salud tipo Calm/Headspace pero sin lo hippie.
+      </div>
+    </div>
+
+  </main>
+</div>
+
+</body>
+</html>

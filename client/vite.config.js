@@ -6,11 +6,10 @@ export default defineConfig({
   build: {
     rollupOptions: {
       output: {
-        // Fixed filenames — no hashes. Hostinger's deploy doesn't handle
-        // git delete+create (hashed names) but DOES handle overwrites.
-        entryFileNames: 'assets/app.js',
-        chunkFileNames: 'assets/[name].js',
-        assetFileNames: 'assets/[name][extname]',
+        // Short hash suffix busts LiteSpeed proxy cache on each deploy
+        entryFileNames: 'assets/app-[hash:8].js',
+        chunkFileNames: 'assets/[name]-[hash:8].js',
+        assetFileNames: 'assets/[name]-[hash:8][extname]',
       },
     },
   },

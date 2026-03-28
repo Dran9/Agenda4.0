@@ -121,7 +121,7 @@ app.get('/api/debug-dist', (req, res) => {
     const indexPath = path.join(distPath, 'index.html');
     const indexContent = fs.existsSync(indexPath) ? fs.readFileSync(indexPath, 'utf-8') : 'NOT FOUND';
     const assetsDir = path.join(distPath, 'assets');
-    const assets = fs.existsSync(assetsDir) ? fs.readdirSync(assetsDir).filter(f => f.startsWith('index-')) : [];
+    const assets = fs.existsSync(assetsDir) ? fs.readdirSync(assetsDir) : [];
     res.json({ distPath, indexContent, assets, cwd: process.cwd(), dirname: __dirname });
   } catch (err) {
     res.json({ error: err.message });

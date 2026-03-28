@@ -99,7 +99,7 @@ if (fs.existsSync(distPath)) {
     res.set('X-LiteSpeed-Cache-Control', 'no-cache');
     next();
   });
-  app.use('/assets', express.static(path.join(distPath, 'assets'), { maxAge: '1y', immutable: true }));
+  app.use('/assets', express.static(path.join(distPath, 'assets'), { maxAge: 0, etag: false }));
   app.use(express.static(distPath, { maxAge: 0, etag: false }));
 }
 

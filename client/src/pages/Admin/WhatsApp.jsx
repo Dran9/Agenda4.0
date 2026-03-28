@@ -10,7 +10,7 @@ function AuthImage({ fileKey, alt, className, onClick }) {
   useEffect(() => {
     if (!fileKey || loaded.current) return;
     loaded.current = true;
-    const token = localStorage.getItem('token');
+    const token = localStorage.getItem('auth_token');
     fetch(`/api/webhook/file/${fileKey}`, {
       headers: { 'Authorization': `Bearer ${token}` },
     })

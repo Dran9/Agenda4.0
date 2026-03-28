@@ -1,0 +1,9 @@
+<IfModule LiteSpeed>
+  CacheDisable public /
+</IfModule>
+
+<FilesMatch "\.html$">
+  Header set Cache-Control "no-store, no-cache, must-revalidate"
+  Header set Pragma "no-cache"
+  Header set Expires "0"
+</FilesMatch>

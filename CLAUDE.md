@@ -191,12 +191,14 @@ Ver `.env.example` para la lista completa. Se configuran en hPanel de Hostinger.
 - **Rate limiting** solo en /api/book y /api/reschedule (NO en slots/config)
 - **Step labels** visibles en cada pantalla (Step 1, 2, 3, 4, 4b, 5a/5b/5c)
 
-### BLOQUEANTE: Google Calendar OAuth `invalid_client`
-- `GET /api/slots?date=YYYY-MM-DD` devuelve `{ slots: [], warning: "invalid_client" }`
-- Las env vars `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_REFRESH_TOKEN` están seteadas en hPanel (Settings and redeploy → Environment Variables)
-- Esas mismas credenciales funcionan en el sitio anterior (skyblue-rabbit-531241.hostingersite.com)
-- **Diagnóstico probable:** valores truncados al copiar/pegar en hPanel, o el GOOGLE_CLIENT_SECRET tiene caracteres especiales que se perdieron
-- **Para diagnosticar:** comparar caracter por caracter los valores en hPanel del sitio nuevo vs el viejo
+### BLOQUEANTE: Google Calendar OAuth — GOOGLE_CLIENT_SECRET incorrecto
+- Google responde: `"error_description": "The provided client secret is invalid."`
+- El `GOOGLE_CLIENT_SECRET` en hPanel de tumvp.in NO es el correcto
+- **FIX:** copiar el valor exacto de `GOOGLE_CLIENT_SECRET` desde skyblue-rabbit (sitio viejo) → Settings and redeploy → Environment Variables, y pegarlo en tumvp.in
+- **Verificar después:** `curl https://tumvp.in/api/slots?date=2026-03-30` debe devolver slots, no warning
+- **Endpoints de debug temporales** (BORRAR después de arreglar):
+  - `GET /api/debug-env` — muestra longitud y parciales de las credenciales
+  - `/api/slots` devuelve `debug` field con error detallado de Google
 - **El código es idéntico** al repo anterior (`server/services/calendar.js`)
 
 ### Pendiente

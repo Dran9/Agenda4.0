@@ -112,9 +112,12 @@ router.post('/', async (req, res) => {
 
                   // Fallback: search upcoming events by phone number (handles moved/manual events)
                   if (!checkDone) {
+                    // Search from start of today (BOT) to 7 days ahead
                     const now = new Date();
+                    const todayStart = new Date(now.toLocaleString('en-US', { timeZone: 'America/La_Paz' }));
+                    todayStart.setHours(0, 0, 0, 0);
                     const weekLater = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
-                    const events = await listEvents(calendarId, now.toISOString(), weekLater.toISOString());
+                    const events = await listEvents(calendarId, todayStart.toISOString(), weekLater.toISOString());
                     // Match by last 8 digits (phone in GCal may not have country code)
                     const phoneShort = phone.slice(-8);
                     const matchEvent = events.find(e =>
@@ -330,6 +333,50 @@ router.get('/file/:key', authMiddleware, async (req, res) => {
     res.send(file.data);
   } catch (err) {
     res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/webhook/debug-check/:phone — test ✅ GCal logic without WhatsApp (admin, temporary)
+router.get('/debug-check/:phone', authMiddleware, async (req, res) => {
+  try {
+    const { updateEventSummary, listEvents } = require('../services/calendar');
+    const calendarId = process.env.CALENDAR_ID || 'danielmacleann@gmail.com';
+    const phone = req.params.phone;
+    const dryRun = req.query.dry !== '0'; // default: dry run (don't actually update)
+
+    // Search from start of today to 7 days ahead
+    const now = new Date();
+    const todayStart = new Date(now.toLocaleString('en-US', { timeZone: 'America/La_Paz' }));
+    todayStart.setHours(0, 0, 0, 0);
+    const weekLater = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
+
+    const events = await listEvents(calendarId, todayStart.toISOString(), weekLater.toISOString());
+    const phoneShort = phone.slice(-8);
+
+    const allTerapia = events.filter(e => e.summary?.startsWith('Terapia'));
+    const matchEvent = events.find(e =>
+      e.summary && e.summary.startsWith('Terapia') && !e.summary.startsWith('✅')
+      && (e.summary.includes(phone) || e.summary.includes(phoneShort))
+    );
+
+    const result = {
+      phone,
+      phoneShort,
+      searchRange: { from: todayStart.toISOString(), to: weekLater.toISOString() },
+      totalEvents: events.length,
+      terapiaEvents: allTerapia.map(e => ({ id: e.id, summary: e.summary, start: e.start?.dateTime })),
+      matchEvent: matchEvent ? { id: matchEvent.id, summary: matchEvent.summary, start: matchEvent.start?.dateTime } : null,
+      dryRun,
+    };
+
+    if (matchEvent && !dryRun) {
+      await updateEventSummary(calendarId, matchEvent.id, `✅ ${matchEvent.summary}`);
+      result.updated = true;
+    }
+
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ error: err.message, stack: err.stack });
   }
 });
 

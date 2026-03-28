@@ -24,9 +24,11 @@ router.get('/', authMiddleware, async (req, res) => {
     params.push(parseInt(limit), offset);
 
     const [rows] = await pool.query(
-      `SELECT a.*, c.first_name, c.last_name, c.phone as client_phone
+      `SELECT a.*, c.first_name, c.last_name, c.phone as client_phone,
+              p.status as payment_status, p.id as payment_id, p.amount as payment_amount
        FROM appointments a
        JOIN clients c ON a.client_id = c.id
+       LEFT JOIN payments p ON p.appointment_id = a.id
        WHERE ${where}
        ORDER BY a.date_time DESC
        LIMIT ? OFFSET ?`,
@@ -36,7 +38,7 @@ router.get('/', authMiddleware, async (req, res) => {
     // Total count for pagination
     const countParams = params.slice(0, -2);
     const [countResult] = await pool.query(
-      `SELECT COUNT(*) as total FROM appointments a JOIN clients c ON a.client_id = c.id WHERE ${where}`,
+      `SELECT COUNT(*) as total FROM appointments a JOIN clients c ON a.client_id = c.id LEFT JOIN payments p ON p.appointment_id = a.id WHERE ${where}`,
       countParams
     );
 
@@ -102,9 +104,11 @@ router.put('/:id/notes', authMiddleware, async (req, res) => {
 router.get('/today', authMiddleware, async (req, res) => {
   try {
     const [rows] = await pool.query(
-      `SELECT a.*, c.first_name, c.last_name, c.phone as client_phone
+      `SELECT a.*, c.first_name, c.last_name, c.phone as client_phone,
+              p.status as payment_status, p.id as payment_id, p.amount as payment_amount
        FROM appointments a
        JOIN clients c ON a.client_id = c.id
+       LEFT JOIN payments p ON p.appointment_id = a.id
        WHERE a.tenant_id = ? AND DATE(a.date_time) = CURDATE()
        ORDER BY a.date_time ASC`,
       [req.tenantId]

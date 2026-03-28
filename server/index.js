@@ -17,6 +17,7 @@ const appointmentsRoutes = require('./routes/appointments');
 const authRoutes = require('./routes/auth');
 const webhookRoutes = require('./routes/webhook');
 const analyticsRoutes = require('./routes/analytics');
+const paymentsRoutes = require('./routes/payments');
 
 const app = express();
 app.set('trust proxy', 1);
@@ -49,6 +50,7 @@ app.use('/api/appointments', appointmentsRoutes);
 app.use('/api/auth', authRoutes);
 app.use('/api/webhook', webhookRoutes);
 app.use('/api/analytics', analyticsRoutes);
+app.use('/api/payments', paymentsRoutes);
 
 // ─── Admin reminder trigger ─────────────────────────────────────
 app.get('/api/admin/test-reminder', async (req, res) => {

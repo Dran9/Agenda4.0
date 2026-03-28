@@ -92,29 +92,40 @@ router.post('/', async (req, res) => {
                 try {
                   const { updateEventSummary, listEvents, getCalendar } = require('../services/calendar');
                   const calendarId = process.env.CALENDAR_ID || 'danielmacleann@gmail.com';
+                  let checkDone = false;
 
+                  // Try direct update by event ID first
                   if (appts[0]?.gcal_event_id) {
-                    // Direct update by event ID
-                    const cal = getCalendar();
-                    const ev = await cal.events.get({ calendarId, eventId: appts[0].gcal_event_id });
-                    const currentSummary = ev.data.summary || '';
-                    if (!currentSummary.startsWith('✅')) {
-                      await updateEventSummary(calendarId, appts[0].gcal_event_id, `✅ ${currentSummary}`);
-                      console.log(`[webhook] GCal updated: ✅ ${currentSummary}`);
+                    try {
+                      const cal = getCalendar();
+                      const ev = await cal.events.get({ calendarId, eventId: appts[0].gcal_event_id });
+                      const currentSummary = ev.data.summary || '';
+                      if (!currentSummary.startsWith('✅')) {
+                        await updateEventSummary(calendarId, appts[0].gcal_event_id, `✅ ${currentSummary}`);
+                        console.log(`[webhook] GCal updated: ✅ ${currentSummary}`);
+                      }
+                      checkDone = true;
+                    } catch (directErr) {
+                      console.log(`[webhook] Direct GCal update failed, trying fallback: ${directErr.message}`);
                     }
-                  } else {
-                    // Fallback: search upcoming events for this phone number
+                  }
+
+                  // Fallback: search upcoming events by phone number (handles moved/manual events)
+                  if (!checkDone) {
                     const now = new Date();
                     const weekLater = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
                     const events = await listEvents(calendarId, now.toISOString(), weekLater.toISOString());
+                    // Match by last 8 digits (phone in GCal may not have country code)
+                    const phoneShort = phone.slice(-8);
                     const matchEvent = events.find(e =>
-                      e.summary && e.summary.includes(phone) && e.summary.startsWith('Terapia') && !e.summary.startsWith('✅')
+                      e.summary && e.summary.startsWith('Terapia') && !e.summary.startsWith('✅')
+                      && (e.summary.includes(phone) || e.summary.includes(phoneShort))
                     );
                     if (matchEvent) {
                       await updateEventSummary(calendarId, matchEvent.id, `✅ ${matchEvent.summary}`);
                       console.log(`[webhook] GCal updated (by phone): ✅ ${matchEvent.summary}`);
                     } else {
-                      console.log(`[webhook] No GCal event found for phone ${phone}`);
+                      console.log(`[webhook] No GCal event found for phone ${phone} (short: ${phoneShort})`);
                     }
                   }
                 } catch (gcalErr) {

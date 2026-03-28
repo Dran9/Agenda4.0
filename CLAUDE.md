@@ -32,10 +32,14 @@ Daniel MacLean — psicólogo en Cochabamba, Bolivia
 
 ### Hostinger
 - `dns.setDefaultResultOrder('ipv4first')` DEBE ser la primera línea de `server/db.js`
-- `client/dist/` se commitea al repo — Hostinger no ejecuta builds
-- Después de cambios en client/, correr `npm run build` y commitear `client/dist/`
+- `client/dist/` se commitea al repo con hashes en filenames (Vite default)
+- **NUNCA poner `maxAge` ni `immutable` en `express.static()` para assets** — LiteSpeed cachea a nivel proxy y no lo suelta
+- `express.static()` para assets usa `maxAge: 0, etag: false`
+- **El script `build` en package.json raíz es un no-op** — Hostinger ejecuta `npm run build` en cada deploy, y si es un build real sobreescribe nuestro dist con código fuente desactualizado. Dejarlo como no-op.
+- Después de cambios en client/, correr `cd client && npm run build` y commitear `client/dist/`
 - `express.static()` con `fs.existsSync()` guard obligatorio
 - **Nueva MySQL** — base de datos nueva en nuevo site de Hostinger (no la misma del repo anterior)
+- **SPA fallback usa `fs.readFileSync()`** (no `res.sendFile()`) para evitar cache de Express
 
 ### WhatsApp webhooks
 - Después de configurar Callback URL en Meta, SIEMPRE ejecutar:
@@ -68,7 +72,7 @@ Daniel MacLean — psicólogo en Cochabamba, Bolivia
 - **Servicios con lógica:** services/ contiene toda la lógica de negocio
 - **Transacciones:** toda operación GCal + DB debe ser atómica (transaction wrapper en db.js)
 - **QR en MySQL BLOB:** NUNCA en disco (desaparecen en deploy)
-- **Soft delete:** clientes tienen `deleted_at`, nunca DELETE real
+- **Hard delete:** clientes se borran con DELETE CASCADE (payments, appointments, wa_conversations). Soft delete causaba UNIQUE constraint violations y ghost records.
 - **Multi-tenant ready:** tabla `tenants`, FK `tenant_id` en todas las tablas principales
 
 ### Daniel (preferencias de trabajo)
@@ -179,42 +183,38 @@ Recordatorio (18:40 diario):
 ## Variables de entorno
 Ver `.env.example` para la lista completa. Se configuran en hPanel de Hostinger.
 
-## Estado actual (2026-03-27)
+## Estado actual (2026-03-28)
 
 ### Funcionando
 - **Server Express** corriendo en Hostinger (tumvp.in), auto-deploy desde GitHub
-- **10 tablas MySQL** creadas en `u926460478_agenda30` (host: srv2023.hstgr.io para remoto, localhost en Hostinger)
-- **Remote MySQL** habilitada con Any Host (%)
-- **API health** responde OK: `https://tumvp.in/api/health`
-- **Config pública** responde OK: `https://tumvp.in/api/config/public`
-- **Calendario** renderiza correctamente con prefetch de 5 weekdays en paralelo
-- **Rate limiting** solo en /api/book y /api/reschedule (NO en slots/config)
-- **Step labels** visibles en cada pantalla (Step 1, 2, 3, 4, 4b, 5a/5b/5c)
+- **10 tablas MySQL** en `u926460478_agenda30` (localhost en Hostinger, srv2023.hstgr.io remoto)
+- **Google Calendar OAuth** funcionando — slots, eventos, recordatorios
+- **WhatsApp Cloud API** — recordatorios diarios 18:40 BOT, auto-reply a botones CONFIRM/REAGEN/DANIEL
+- **OCR de comprobantes** — Google Vision API reconoce montos, referencias, bancos bolivianos
+- **Auto-match pagos por teléfono** — imagen WhatsApp → OCR → match con pago pendiente → confirma automáticamente
+- **QR de pago automático** — al confirmar asistencia, envía QR según arancel del cliente
+- **Payment badges** — verde "Pagado" / rojo "Pendiente" en Appointments y Dashboard
+- **Hard delete de clientes** — CASCADE por payments, appointments, wa_conversations
+- **Rate limiting** solo en /api/book, /api/reschedule, /api/client (NO en admin routes)
 
-### BLOQUEANTE: Google Calendar OAuth — GOOGLE_CLIENT_SECRET incorrecto
-- Google responde: `"error_description": "The provided client secret is invalid."`
-- El `GOOGLE_CLIENT_SECRET` en hPanel de tumvp.in NO es el correcto
-- **FIX:** copiar el valor exacto de `GOOGLE_CLIENT_SECRET` desde skyblue-rabbit (sitio viejo) → Settings and redeploy → Environment Variables, y pegarlo en tumvp.in
-- **Verificar después:** `curl https://tumvp.in/api/slots?date=2026-03-30` debe devolver slots, no warning
-- **Endpoints de debug temporales** (BORRAR después de arreglar):
-  - `GET /api/debug-env` — muestra longitud y parciales de las credenciales
-  - `/api/slots` devuelve `debug` field con error detallado de Google
-- **El código es idéntico** al repo anterior (`server/services/calendar.js`)
+### Deploy — Lecciones aprendidas (CRÍTICO)
+- **Hostinger ejecuta `npm run build` en cada deploy** → el script build en package.json raíz DEBE ser no-op
+- **NUNCA usar `maxAge` ni `immutable` en express.static para assets** → LiteSpeed cachea a nivel proxy y no lo suelta
+- **Filenames con hash** (Vite default) son necesarios para invalidar cache de LiteSpeed en cada deploy
+- **`index.html` se sirve con `fs.readFileSync()`** (no sendFile) para evitar cache de Express
+- **Flujo correcto**: cambiar código → `cd client && npm run build` → commitear `client/dist/` → push → Hostinger deploys
+
+### Endpoints de debug (TEMPORALES — borrar cuando todo esté estable)
+- `GET /api/debug-env` — longitud y parciales de credenciales
+- `GET /api/debug-dist` — lista archivos en client/dist en Hostinger
+- `GET /api/admin/test-ocr` — verifica GOOGLE_VISION_API_KEY
+- `GET /api/admin/test-reminder?date=today|tomorrow&force=1` — trigger manual de recordatorios
 
 ### Pendiente
-- **Arreglar Google OAuth** (ver arriba) — sin esto no hay slots disponibles
-- **Webhook de Meta/WhatsApp** — cambiar Callback URL a `https://tumvp.in/api/webhook` + suscribir
 - **Diseño visual** — solo estructura funcional, falta branding/colores/tipografía
-- **Admin panel** — estructura creada, falta conectar datos reales y pulir UI
-- **Finance, Analytics, WhatsApp inbox** — placeholders
-
-### Fixes aplicados en esta sesión
-1. `require('dns')` faltante en db.js → causaba 503
-2. Rate limiter aplicaba a TODO /api → bloqueaba slots y config
-3. Slots endpoint devuelve [] en vez de 500 cuando GCal falla
-4. Step labels en cada pantalla de booking
-5. Prefetch 5 weekdays en paralelo al cargar + auto-select hoy
-6. DB_HOST corregido a srv2023.hstgr.io (remoto) / localhost (Hostinger)
+- **Finance, Analytics** — placeholders
+- **WhatsApp inbox** — funciona lectura, falta pulir UI
+- **Limpiar endpoints de debug** cuando todo esté estable
 
 ### Numeración de Steps (referencia para hablar con Daniel)
 ```

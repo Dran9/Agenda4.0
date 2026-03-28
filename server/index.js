@@ -69,6 +69,18 @@ if (fs.existsSync(distPath)) {
   app.use(express.static(distPath));
 }
 
+// ─── Debug env (TEMPORARY — remove after fixing OAuth) ──────────
+app.get('/api/debug-env', (req, res) => {
+  res.json({
+    GOOGLE_CLIENT_ID_len: (process.env.GOOGLE_CLIENT_ID || '').length,
+    GOOGLE_CLIENT_SECRET_len: (process.env.GOOGLE_CLIENT_SECRET || '').length,
+    GOOGLE_REFRESH_TOKEN_len: (process.env.GOOGLE_REFRESH_TOKEN || '').length,
+    CALENDAR_ID: process.env.CALENDAR_ID || '(not set)',
+    GOOGLE_CLIENT_ID_start: (process.env.GOOGLE_CLIENT_ID || '').substring(0, 15),
+    GOOGLE_CLIENT_ID_end: (process.env.GOOGLE_CLIENT_ID || '').slice(-10),
+  });
+});
+
 // ─── SPA fallback ────────────────────────────────────────────────
 app.get('*', (req, res) => {
   if (req.path.startsWith('/api/')) {

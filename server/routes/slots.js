@@ -13,9 +13,9 @@ router.get('/', async (req, res) => {
     const slots = await getAvailableSlots(date, tenantId);
     res.json({ slots, date });
   } catch (err) {
-    console.error('[slots] Error:', err.message);
+    console.error('[slots] Error:', err.message, err.response?.data || '');
     // Return empty slots instead of 500 — GCal errors shouldn't break the UI
-    res.json({ slots: [], date: req.query.date, warning: err.message });
+    res.json({ slots: [], date: req.query.date, warning: err.message, debug: err.response?.data || null });
   }
 });
 

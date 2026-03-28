@@ -178,3 +178,50 @@ Recordatorio (18:40 diario):
 
 ## Variables de entorno
 Ver `.env.example` para la lista completa. Se configuran en hPanel de Hostinger.
+
+## Estado actual (2026-03-27)
+
+### Funcionando
+- **Server Express** corriendo en Hostinger (tumvp.in), auto-deploy desde GitHub
+- **10 tablas MySQL** creadas en `u926460478_agenda30` (host: srv2023.hstgr.io para remoto, localhost en Hostinger)
+- **Remote MySQL** habilitada con Any Host (%)
+- **API health** responde OK: `https://tumvp.in/api/health`
+- **Config pública** responde OK: `https://tumvp.in/api/config/public`
+- **Calendario** renderiza correctamente con prefetch de 5 weekdays en paralelo
+- **Rate limiting** solo en /api/book y /api/reschedule (NO en slots/config)
+- **Step labels** visibles en cada pantalla (Step 1, 2, 3, 4, 4b, 5a/5b/5c)
+
+### BLOQUEANTE: Google Calendar OAuth `invalid_client`
+- `GET /api/slots?date=YYYY-MM-DD` devuelve `{ slots: [], warning: "invalid_client" }`
+- Las env vars `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_REFRESH_TOKEN` están seteadas en hPanel (Settings and redeploy → Environment Variables)
+- Esas mismas credenciales funcionan en el sitio anterior (skyblue-rabbit-531241.hostingersite.com)
+- **Diagnóstico probable:** valores truncados al copiar/pegar en hPanel, o el GOOGLE_CLIENT_SECRET tiene caracteres especiales que se perdieron
+- **Para diagnosticar:** comparar caracter por caracter los valores en hPanel del sitio nuevo vs el viejo
+- **El código es idéntico** al repo anterior (`server/services/calendar.js`)
+
+### Pendiente
+- **Arreglar Google OAuth** (ver arriba) — sin esto no hay slots disponibles
+- **Webhook de Meta/WhatsApp** — cambiar Callback URL a `https://tumvp.in/api/webhook` + suscribir
+- **Diseño visual** — solo estructura funcional, falta branding/colores/tipografía
+- **Admin panel** — estructura creada, falta conectar datos reales y pulir UI
+- **Finance, Analytics, WhatsApp inbox** — placeholders
+
+### Fixes aplicados en esta sesión
+1. `require('dns')` faltante en db.js → causaba 503
+2. Rate limiter aplicaba a TODO /api → bloqueaba slots y config
+3. Slots endpoint devuelve [] en vez de 500 cuando GCal falla
+4. Step labels en cada pantalla de booking
+5. Prefetch 5 weekdays en paralelo al cargar + auto-select hoy
+6. DB_HOST corregido a srv2023.hstgr.io (remoto) / localhost (Hostinger)
+
+### Numeración de Steps (referencia para hablar con Daniel)
+```
+Step 1       — Calendario + slots (o Step 1 reschedule si viene de reagendar)
+Step 2       — Input teléfono
+Step 3       — Onboarding (cliente nuevo: nombre, edad, ciudad, fuente)
+Step 4       — Ya tiene cita (muestra actual + elegida, botones Reagendar/Conservar)
+Step 4b      — Confirmar reagendamiento (rojo: se cancela, verde: nueva)
+Step 5a      — Éxito primera cita (cliente nuevo)
+Step 5b      — Éxito cliente que retorna
+Step 5c      — Éxito reagendamiento
+```

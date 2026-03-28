@@ -1,4 +1,5 @@
 const { Router } = require('express');
+const rateLimit = require('express-rate-limit');
 const { validate, bookingSchema, rescheduleSchema } = require('../middleware/validate');
 const { checkClientByPhone, createClient, createBooking, rescheduleAppointment } = require('../services/booking');
 
@@ -7,8 +8,17 @@ const router = Router();
 // Default tenant (Daniel) — later resolved by domain/slug
 const DEFAULT_TENANT = 1;
 
+// Rate limiter: 3 attempts per 15 min (only on book/reschedule)
+function isDevMode(req) { return req.query.devmode === '1'; }
+const bookingLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 3,
+  skip: isDevMode,
+  message: { error: 'Demasiados intentos. Esperá 15 minutos.' },
+});
+
 // POST /api/book
-router.post('/book', validate(bookingSchema), async (req, res) => {
+router.post('/book', bookingLimiter, validate(bookingSchema), async (req, res) => {
   try {
     const { phone, date_time, onboarding, client_id } = req.validated;
     const tenantId = req.tenantId || DEFAULT_TENANT;
@@ -55,7 +65,7 @@ router.post('/book', validate(bookingSchema), async (req, res) => {
 });
 
 // POST /api/reschedule
-router.post('/reschedule', validate(rescheduleSchema), async (req, res) => {
+router.post('/reschedule', bookingLimiter, validate(rescheduleSchema), async (req, res) => {
   try {
     const { client_id, old_appointment_id, date_time } = req.validated;
     const tenantId = req.tenantId || DEFAULT_TENANT;

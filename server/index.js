@@ -21,18 +21,10 @@ const app = express();
 app.use(cors());
 app.use(express.json({ limit: '5mb' }));
 
-// ─── Dev mode bypass for rate limiting ───────────────────────────
+// ─── Rate limiter for client check ───────────────────────────────
 function isDevMode(req) {
   return req.query.devmode === '1';
 }
-
-// ─── Rate limiters ───────────────────────────────────────────────
-const bookingLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: 3,
-  skip: isDevMode,
-  message: { error: 'Demasiados intentos. Esperá 15 minutos.' },
-});
 
 const clientLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
@@ -45,12 +37,12 @@ const clientLimiter = rateLimit({
 const { checkAndSendReminders } = require('./services/reminder');
 
 // ─── Mount routes ────────────────────────────────────────────────
-app.use('/api', bookingLimiter, bookingRoutes);
+app.use('/api', bookingRoutes);  // booking routes handle their own limiting
 app.use('/api/slots', slotsRoutes);
 app.use('/api', slotsRoutes); // /api/config/public lives here
 app.use('/api/config', configRoutes);
-app.use('/api/clients', clientsRoutes);
-app.use('/api/client', clientsRoutes); // /api/client/check
+app.use('/api/clients', clientLimiter, clientsRoutes);
+app.use('/api/client', clientLimiter, clientsRoutes); // /api/client/check
 app.use('/api/appointments', appointmentsRoutes);
 app.use('/api/auth', authRoutes);
 app.use('/api/webhook', webhookRoutes);

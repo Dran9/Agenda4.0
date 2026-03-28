@@ -82,6 +82,46 @@ app.get('/api/admin/test-sheets', async (req, res) => {
   }
 });
 
+// ─── OAuth setup: regenerate refresh token with all scopes (temporary) ────
+app.get('/api/admin/oauth-setup', (req, res) => {
+  const { google } = require('googleapis');
+  const oAuth2Client = new google.auth.OAuth2(
+    process.env.GOOGLE_CLIENT_ID,
+    process.env.GOOGLE_CLIENT_SECRET,
+    `https://tumvp.in/api/admin/oauth-callback`
+  );
+  const url = oAuth2Client.generateAuthUrl({
+    access_type: 'offline',
+    prompt: 'consent',
+    scope: [
+      'https://www.googleapis.com/auth/calendar',
+      'https://www.googleapis.com/auth/spreadsheets',
+      'https://www.googleapis.com/auth/contacts',
+    ],
+  });
+  res.redirect(url);
+});
+
+app.get('/api/admin/oauth-callback', async (req, res) => {
+  try {
+    const { google } = require('googleapis');
+    const oAuth2Client = new google.auth.OAuth2(
+      process.env.GOOGLE_CLIENT_ID,
+      process.env.GOOGLE_CLIENT_SECRET,
+      `https://tumvp.in/api/admin/oauth-callback`
+    );
+    const { tokens } = await oAuth2Client.getToken(req.query.code);
+    res.json({
+      message: 'Copia el refresh_token y ponlo en GOOGLE_REFRESH_TOKEN en hPanel',
+      refresh_token: tokens.refresh_token,
+      scopes: tokens.scope,
+      note: 'BORRAR estos endpoints después de configurar',
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // ─── Health check ────────────────────────────────────────────────
 app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', version: '3.0.0', timestamp: new Date().toISOString() });

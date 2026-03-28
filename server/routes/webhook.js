@@ -62,6 +62,54 @@ router.post('/', async (req, res) => {
               [tenantId, `button_${payload}_${phone}`, JSON.stringify({ payload, text, wa_message_id: msg.id }), phone, clientId]
             );
 
+            // ─── CONFIRM_NOW: Add ✅ to GCal (runs independently, no DB dependency) ───
+            if (payload === 'CONFIRM_NOW') {
+              try {
+                const { updateEventSummary, listEvents } = require('../services/calendar');
+                const calendarId = process.env.CALENDAR_ID || 'danielmacleann@gmail.com';
+                const phoneShort = phone.slice(-8);
+                const now = new Date();
+                const timeMin = new Date(`${now.toLocaleDateString('en-CA', { timeZone: 'America/La_Paz' })}T00:00:00-04:00`).toISOString();
+                const timeMax = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000).toISOString();
+                const events = await listEvents(calendarId, timeMin, timeMax);
+                const match = events.find(e =>
+                  e.summary && e.summary.startsWith('Terapia') && !e.summary.startsWith('✅')
+                  && (e.summary.includes(phone) || e.summary.includes(phoneShort))
+                );
+                if (match) {
+                  await updateEventSummary(calendarId, match.id, `✅ ${match.summary}`);
+                  await pool.query(
+                    `INSERT INTO webhooks_log (tenant_id, event, type, payload, status, client_phone, client_id)
+                     VALUES (?, ?, 'status_change', ?, 'procesado', ?, ?)`,
+                    [tenantId, `gcal_check_${match.id}`, JSON.stringify({ action: 'added_check', summary: match.summary, eventId: match.id }), phone, clientId]
+                  );
+                } else {
+                  await pool.query(
+                    `INSERT INTO webhooks_log (tenant_id, event, type, payload, status, client_phone, client_id)
+                     VALUES (?, ?, 'status_change', ?, 'error', ?, ?)`,
+                    [tenantId, `gcal_check_miss_${phone}`, JSON.stringify({ action: 'no_match', phone, phoneShort, totalEvents: events.length, terapiaCount: events.filter(e => e.summary?.startsWith('Terapia')).length, terapiaSummaries: events.filter(e => e.summary?.startsWith('Terapia')).map(e => e.summary) }), phone, clientId]
+                  );
+                }
+              } catch (gcalErr) {
+                await pool.query(
+                  `INSERT INTO webhooks_log (tenant_id, event, type, payload, status, client_phone, client_id)
+                   VALUES (?, ?, 'status_change', ?, 'error', ?, ?)`,
+                  [tenantId, `gcal_check_error_${phone}`, JSON.stringify({ action: 'error', message: gcalErr.message, stack: gcalErr.stack?.split('\n').slice(0, 3) }), phone, clientId]
+                ).catch(() => {});
+              }
+
+              // Mark DB appointment as confirmed (if exists)
+              if (clientId) {
+                const [appts] = await pool.query(
+                  `SELECT id FROM appointments WHERE client_id = ? AND status = 'Confirmada' AND date_time > NOW() ORDER BY date_time LIMIT 1`,
+                  [clientId]
+                );
+                if (appts[0]) {
+                  await pool.query(`UPDATE appointments SET confirmed_at = NOW() WHERE id = ?`, [appts[0].id]);
+                }
+              }
+            }
+
             // Auto-reply based on config
             if (payload && clientId) {
               const [cfgRows] = await pool.query('SELECT * FROM config WHERE tenant_id = ?', [tenantId]);
@@ -70,70 +118,14 @@ router.post('/', async (req, res) => {
 
               let replyText = null;
               if (payload === 'CONFIRM_NOW' && cfg?.auto_reply_confirm) {
-                // Get next appointment for personalization
                 const [appts] = await pool.query(
-                  `SELECT id, date_time, gcal_event_id FROM appointments WHERE client_id = ? AND status = 'Confirmada' AND date_time > NOW() ORDER BY date_time LIMIT 1`,
+                  `SELECT id, date_time FROM appointments WHERE client_id = ? AND status = 'Confirmada' AND date_time > NOW() ORDER BY date_time LIMIT 1`,
                   [clientId]
                 );
                 replyText = cfg.auto_reply_confirm
                   .replace('{{nombre}}', clients[0]?.first_name || '')
                   .replace('{{dia}}', appts[0] ? new Date(appts[0].date_time).toLocaleDateString('es-BO', { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'America/La_Paz' }) : '')
                   .replace('{{hora}}', appts[0] ? new Date(appts[0].date_time).toLocaleTimeString('es-BO', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'America/La_Paz' }) : '');
-
-                // Mark appointment as confirmed (if exists in DB)
-                if (appts[0]) {
-                  await pool.query(
-                    `UPDATE appointments SET confirmed_at = NOW() WHERE id = ?`,
-                    [appts[0].id]
-                  );
-                }
-
-                // Add ✅ to GCal event summary
-                try {
-                  const { updateEventSummary, listEvents, getCalendar } = require('../services/calendar');
-                  const calendarId = process.env.CALENDAR_ID || 'danielmacleann@gmail.com';
-                  let checkDone = false;
-
-                  // Try direct update by event ID first
-                  if (appts[0]?.gcal_event_id) {
-                    try {
-                      const cal = getCalendar();
-                      const ev = await cal.events.get({ calendarId, eventId: appts[0].gcal_event_id });
-                      const currentSummary = ev.data.summary || '';
-                      if (!currentSummary.startsWith('✅')) {
-                        await updateEventSummary(calendarId, appts[0].gcal_event_id, `✅ ${currentSummary}`);
-                        console.log(`[webhook] GCal updated: ✅ ${currentSummary}`);
-                      }
-                      checkDone = true;
-                    } catch (directErr) {
-                      console.log(`[webhook] Direct GCal update failed, trying fallback: ${directErr.message}`);
-                    }
-                  }
-
-                  // Fallback: search upcoming events by phone number (handles moved/manual events)
-                  if (!checkDone) {
-                    // Search from start of today (BOT) to 7 days ahead
-                    const now = new Date();
-                    const todayStart = new Date(now.toLocaleString('en-US', { timeZone: 'America/La_Paz' }));
-                    todayStart.setHours(0, 0, 0, 0);
-                    const weekLater = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
-                    const events = await listEvents(calendarId, todayStart.toISOString(), weekLater.toISOString());
-                    // Match by last 8 digits (phone in GCal may not have country code)
-                    const phoneShort = phone.slice(-8);
-                    const matchEvent = events.find(e =>
-                      e.summary && e.summary.startsWith('Terapia') && !e.summary.startsWith('✅')
-                      && (e.summary.includes(phone) || e.summary.includes(phoneShort))
-                    );
-                    if (matchEvent) {
-                      await updateEventSummary(calendarId, matchEvent.id, `✅ ${matchEvent.summary}`);
-                      console.log(`[webhook] GCal updated (by phone): ✅ ${matchEvent.summary}`);
-                    } else {
-                      console.log(`[webhook] No GCal event found for phone ${phone} (short: ${phoneShort})`);
-                    }
-                  }
-                } catch (gcalErr) {
-                  console.error(`[webhook] GCal update failed:`, gcalErr.message);
-                }
               } else if (payload === 'REAGEN_NOW' && cfg?.auto_reply_reschedule) {
                 const domain = (await pool.query('SELECT domain FROM tenants WHERE id = ?', [tenantId]))[0]?.[0]?.domain || '';
                 replyText = cfg.auto_reply_reschedule.replace('{{link}}', `https://${domain}`);

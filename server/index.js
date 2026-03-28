@@ -88,7 +88,7 @@ app.get('/api/admin/test-sheets', async (req, res) => {
 // Paso 3: pegá el código en /api/admin/oauth-callback?code=ELCODIGO
 app.get('/api/admin/oauth-setup', (req, res) => {
   const { google } = require('googleapis');
-  const REDIRECT = 'urn:ietf:wg:oauth:2.0:oob';
+  const REDIRECT = 'http://localhost';
   const oAuth2Client = new google.auth.OAuth2(
     process.env.GOOGLE_CLIENT_ID,
     process.env.GOOGLE_CLIENT_SECRET,
@@ -107,8 +107,10 @@ app.get('/api/admin/oauth-setup', (req, res) => {
     <html><body style="font-family:sans-serif;max-width:600px;margin:40px auto;line-height:1.6">
       <h2>Paso 1: Autorizar</h2>
       <p><a href="${url}" target="_blank">Click aquí para autorizar con Google</a></p>
-      <h2>Paso 2: Pegar el código</h2>
-      <p>Después de autorizar, Google te muestra un código. Copialo y pegalo abajo:</p>
+      <h2>Paso 2: Copiar el código</h2>
+      <p>Después de autorizar, el browser te va a redirigir a <code>http://localhost?code=XXXXX</code>.</p>
+      <p>La página NO va a cargar (es normal). Copiá todo lo que está después de <code>code=</code> en la barra de direcciones (hasta antes de <code>&amp;</code> si hay).</p>
+      <h2>Paso 3: Pegar el código</h2>
       <form action="/api/admin/oauth-callback" method="get">
         <input name="code" placeholder="Pega el código aquí" style="width:100%;padding:8px;font-size:16px" />
         <button type="submit" style="margin-top:8px;padding:8px 16px;font-size:16px">Obtener Refresh Token</button>
@@ -120,7 +122,7 @@ app.get('/api/admin/oauth-setup', (req, res) => {
 app.get('/api/admin/oauth-callback', async (req, res) => {
   try {
     const { google } = require('googleapis');
-    const REDIRECT = 'urn:ietf:wg:oauth:2.0:oob';
+    const REDIRECT = 'http://localhost';
     const oAuth2Client = new google.auth.OAuth2(
       process.env.GOOGLE_CLIENT_ID,
       process.env.GOOGLE_CLIENT_SECRET,

@@ -37,8 +37,8 @@ async function checkAndSendReminders({ date, tenantId, force } = {}) {
     for (const event of events) {
       const summary = event.summary || '';
 
-      // Only process events that start with "Terapia"
-      if (!summary.startsWith('Terapia')) continue;
+      // Only process events that contain "Terapia" (may have $, ✅ prefixes)
+      if (!summary.includes('Terapia')) continue;
 
       // Try 1: Find appointment by gcal_event_id
       const tenantFilter = tenantId ? 'AND a.tenant_id = ?' : '';
@@ -50,7 +50,7 @@ async function checkAndSendReminders({ date, tenantId, force } = {}) {
         params
       );
 
-      // Try 2: Fallback — extract phone from event name (format: "Terapia Name - 59172034151")
+      // Try 2: Fallback — extract phone from event name (format: "$ ✅ Terapia Name - 59172034151")
       if (appts.length === 0) {
         const phoneMatch = summary.match(/-\s*(\d{10,15})\s*$/);
         if (phoneMatch) {
@@ -59,7 +59,7 @@ async function checkAndSendReminders({ date, tenantId, force } = {}) {
           const paramsFb = tenantId ? [phone, tenantId] : [phone];
           [appts] = await pool.query(
             `SELECT c.id AS client_id, c.phone, c.first_name, c.tenant_id FROM clients c
-             WHERE c.phone = ? AND c.deleted_at IS NULL ${tenantFilterFb}`,
+             WHERE c.phone = ? ${tenantFilterFb}`,
             paramsFb
           );
           // Wrap as pseudo-appointment for sending
@@ -112,7 +112,7 @@ async function checkAndSendReminders({ date, tenantId, force } = {}) {
       }
     }
 
-    return { sent, skipped, total: events.length };
+    return { sent, skipped, total: events.length, force: !!force };
   } catch (err) {
     console.error('[reminder] Error:', err.message);
     throw err;

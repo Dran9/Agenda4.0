@@ -5,10 +5,24 @@ const CALENDAR_ID = () => process.env.CALENDAR_ID || 'danielmacleann@gmail.com';
 
 // ─── Check client status by phone ────────────────────────────────
 async function checkClientByPhone(phone, tenantId) {
-  const [clients] = await pool.query(
+  // First check active clients
+  let [clients] = await pool.query(
     'SELECT * FROM clients WHERE phone = ? AND tenant_id = ? AND deleted_at IS NULL',
     [phone, tenantId]
   );
+
+  // If not found, check soft-deleted and reactivate
+  if (clients.length === 0) {
+    const [deleted] = await pool.query(
+      'SELECT * FROM clients WHERE phone = ? AND tenant_id = ? AND deleted_at IS NOT NULL',
+      [phone, tenantId]
+    );
+    if (deleted.length > 0) {
+      await pool.query('UPDATE clients SET deleted_at = NULL WHERE id = ?', [deleted[0].id]);
+      console.log(`[booking] Reactivated soft-deleted client: ${deleted[0].first_name} (${phone})`);
+      clients = [{ ...deleted[0], deleted_at: null }];
+    }
+  }
 
   if (clients.length === 0) return { status: 'new' };
 
@@ -49,14 +63,32 @@ async function createClient(phone, onboarding, tenantId, conn) {
   const capitalCities = (cfg?.capital_cities || '').split(',').map(c => c.trim());
   const fee = capitalCities.includes(city) ? (cfg?.capital_fee || 300) : (cfg?.default_fee || 250);
 
-  const [result] = await db.query(
-    `INSERT INTO clients (tenant_id, phone, first_name, last_name, age, city, country, source, fee)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    [tenantId, phone, first_name, last_name, age || null, city || 'Cochabamba', country || 'Bolivia', source || 'Otro', fee]
-  );
-
-  const [clients] = await db.query('SELECT * FROM clients WHERE id = ?', [result.insertId]);
-  const newClient = clients[0];
+  let newClient;
+  try {
+    const [result] = await db.query(
+      `INSERT INTO clients (tenant_id, phone, first_name, last_name, age, city, country, source, fee)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [tenantId, phone, first_name, last_name, age || null, city || 'Cochabamba', country || 'Bolivia', source || 'Otro', fee]
+    );
+    const [clients] = await db.query('SELECT * FROM clients WHERE id = ?', [result.insertId]);
+    newClient = clients[0];
+  } catch (err) {
+    if (err.code === 'ER_DUP_ENTRY') {
+      // Reactivate soft-deleted client and update their info
+      await db.query(
+        `UPDATE clients SET deleted_at = NULL, first_name = ?, last_name = ?, age = ?,
+         city = ?, country = ?, source = ?, fee = ? WHERE phone = ? AND tenant_id = ?`,
+        [first_name, last_name, age || null, city || 'Cochabamba', country || 'Bolivia', source || 'Otro', fee, phone, tenantId]
+      );
+      const [clients] = await db.query(
+        'SELECT * FROM clients WHERE phone = ? AND tenant_id = ?', [phone, tenantId]
+      );
+      newClient = clients[0];
+      console.log(`[booking] Reactivated existing client: ${first_name} (${phone})`);
+    } else {
+      throw err;
+    }
+  }
 
   // Create Google Contact + sync to Sheets (async, non-blocking)
   try {

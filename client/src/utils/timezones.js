@@ -90,6 +90,52 @@ export function getCurrentTimeInTz(tz) {
   }).format(new Date());
 }
 
+// Map timezone → phone country code (for syncing tz selector with phone prefix)
+export const TZ_TO_PHONE_CODE = {
+  'America/La_Paz': '591',
+  'America/Argentina/Buenos_Aires': '54',
+  'America/Santiago': '56',
+  'America/Lima': '51',
+  'America/Bogota': '57',
+  'America/Mexico_City': '52',
+  'America/Asuncion': '595',
+  'America/Montevideo': '598',
+  'America/Sao_Paulo': '55',
+  'America/Guayaquil': '593',
+  'America/Caracas': '58',
+  'America/Panama': '507',
+  'America/Costa_Rica': '506',
+  'America/Puerto_Rico': '1',
+  'America/Santo_Domingo': '1',
+  'America/New_York': '1',
+  'America/Chicago': '1',
+  'America/Denver': '1',
+  'America/Los_Angeles': '1',
+  'America/Toronto': '1',
+  'America/Winnipeg': '1',
+  'America/Edmonton': '1',
+  'America/Vancouver': '1',
+  'Europe/Madrid': '34',
+  'Europe/Lisbon': '351',
+  'Europe/Paris': '33',
+  'Europe/Rome': '39',
+  'Europe/Berlin': '49',
+  'Europe/Zurich': '41',
+  'Europe/London': '44',
+  'Europe/Vienna': '43',
+  'Europe/Amsterdam': '31',
+  'Europe/Brussels': '32',
+  'Europe/Stockholm': '46',
+  'Europe/Oslo': '47',
+  'Europe/Copenhagen': '45',
+  'Europe/Helsinki': '358',
+  'Europe/Warsaw': '48',
+  'Europe/Dublin': '353',
+  'Europe/Belgrade': '381',
+  'Asia/Tokyo': '81',
+  'Africa/Cairo': '20',
+};
+
 export function detectTimezoneFromIP(ipData) {
   if (!ipData) return DEFAULT_TZ;
   if (ipData.timezone) {

@@ -11,6 +11,26 @@ const COUNTRY_CODES = [
   { code: '52', flag: '🇲🇽', name: 'México', digits: 10 },
   { code: '34', flag: '🇪🇸', name: 'España', digits: 9 },
   { code: '1', flag: '🇺🇸', name: 'USA', digits: 10 },
+  { code: '55', flag: '🇧🇷', name: 'Brasil', digits: 11 },
+  { code: '595', flag: '🇵🇾', name: 'Paraguay', digits: 9 },
+  { code: '598', flag: '🇺🇾', name: 'Uruguay', digits: 8 },
+  { code: '58', flag: '🇻🇪', name: 'Venezuela', digits: 10 },
+  { code: '33', flag: '🇫🇷', name: 'Francia', digits: 9 },
+  { code: '49', flag: '🇩🇪', name: 'Alemania', digits: 11 },
+  { code: '39', flag: '🇮🇹', name: 'Italia', digits: 10 },
+  { code: '44', flag: '🇬🇧', name: 'Reino Unido', digits: 10 },
+  { code: '46', flag: '🇸🇪', name: 'Suecia', digits: 9 },
+  { code: '47', flag: '🇳🇴', name: 'Noruega', digits: 8 },
+  { code: '45', flag: '🇩🇰', name: 'Dinamarca', digits: 8 },
+  { code: '41', flag: '🇨🇭', name: 'Suiza', digits: 9 },
+  { code: '31', flag: '🇳🇱', name: 'Países Bajos', digits: 9 },
+  { code: '351', flag: '🇵🇹', name: 'Portugal', digits: 9 },
+  { code: '48', flag: '🇵🇱', name: 'Polonia', digits: 9 },
+  { code: '43', flag: '🇦🇹', name: 'Austria', digits: 10 },
+  { code: '32', flag: '🇧🇪', name: 'Bélgica', digits: 9 },
+  { code: '358', flag: '🇫🇮', name: 'Finlandia', digits: 9 },
+  { code: '353', flag: '🇮🇪', name: 'Irlanda', digits: 9 },
+  { code: '381', flag: '🇷🇸', name: 'Serbia', digits: 9 },
 ];
 
 // Parse a full phone number into { countryCode, local }
@@ -32,6 +52,15 @@ export default function PhoneScreen({ state, dispatch, onSubmitPhone, prefillPho
   const [countryCode, setCountryCode] = useState(initialCC);
   const [showDropdown, setShowDropdown] = useState(false);
   const autoSubmitted = useRef(false);
+  const userChangedCountry = useRef(false);
+
+  // Sync country code when timezone changes (unless user manually picked a country)
+  useEffect(() => {
+    if (!userChangedCountry.current && detectedCountryCode && !prefillPhone) {
+      setCountryCode(detectedCountryCode);
+      setPhone('');
+    }
+  }, [detectedCountryCode]);
 
   const currentCountry = COUNTRY_CODES.find(c => c.code === countryCode) || COUNTRY_CODES[0];
   const expectedDigits = currentCountry.digits;
@@ -110,7 +139,7 @@ export default function PhoneScreen({ state, dispatch, onSubmitPhone, prefillPho
                   <button
                     key={cc.code}
                     type="button"
-                    onClick={() => { setCountryCode(cc.code); setShowDropdown(false); setPhone(''); }}
+                    onClick={() => { userChangedCountry.current = true; setCountryCode(cc.code); setShowDropdown(false); setPhone(''); }}
                     className={`w-full text-left px-3 py-2 text-sm flex items-center gap-2 hover:bg-gray-50 ${
                       cc.code === countryCode ? 'bg-gray-100 font-medium' : ''
                     }`}

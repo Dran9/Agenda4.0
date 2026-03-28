@@ -124,4 +124,71 @@ router.post('/', async (req, res) => {
   }
 });
 
+// GET /api/webhook/conversations — admin: list WhatsApp conversations
+const { authMiddleware } = require('../middleware/auth');
+
+router.get('/conversations', authMiddleware, async (req, res) => {
+  try {
+    const { phone, direction, type, page = 1, limit = 50 } = req.query;
+    let where = 'w.tenant_id = ?';
+    const params = [req.tenantId];
+
+    if (phone) { where += ' AND w.client_phone LIKE ?'; params.push(`%${phone}%`); }
+    if (direction) { where += ' AND w.direction = ?'; params.push(direction); }
+    if (type) { where += ' AND w.message_type = ?'; params.push(type); }
+
+    const offset = (parseInt(page) - 1) * parseInt(limit);
+    params.push(parseInt(limit), offset);
+
+    const [rows] = await pool.query(
+      `SELECT w.*, c.first_name, c.last_name
+       FROM wa_conversations w
+       LEFT JOIN clients c ON w.client_id = c.id
+       WHERE ${where}
+       ORDER BY w.created_at DESC
+       LIMIT ? OFFSET ?`,
+      params
+    );
+
+    const countParams = params.slice(0, -2);
+    const [countResult] = await pool.query(
+      `SELECT COUNT(*) as total FROM wa_conversations w WHERE ${where}`,
+      countParams
+    );
+
+    res.json({ conversations: rows, total: countResult[0].total, page: parseInt(page), limit: parseInt(limit) });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/webhook/log — admin: list webhooks_log
+router.get('/log', authMiddleware, async (req, res) => {
+  try {
+    const { type, page = 1, limit = 50 } = req.query;
+    let where = 'tenant_id = ?';
+    const params = [req.tenantId];
+
+    if (type) { where += ' AND type = ?'; params.push(type); }
+
+    const offset = (parseInt(page) - 1) * parseInt(limit);
+    params.push(parseInt(limit), offset);
+
+    const [rows] = await pool.query(
+      `SELECT * FROM webhooks_log WHERE ${where} ORDER BY created_at DESC LIMIT ? OFFSET ?`,
+      params
+    );
+
+    const countParams = params.slice(0, -2);
+    const [countResult] = await pool.query(
+      `SELECT COUNT(*) as total FROM webhooks_log WHERE ${where}`,
+      countParams
+    );
+
+    res.json({ logs: rows, total: countResult[0].total, page: parseInt(page), limit: parseInt(limit) });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 module.exports = router;

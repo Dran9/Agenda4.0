@@ -3,7 +3,7 @@ import { useBookingReducer } from '../hooks/useBookingReducer';
 import { useSlots } from '../hooks/useSlots';
 import { useConfig } from '../hooks/useConfig';
 import { api } from '../utils/api';
-import { DEFAULT_TZ, detectTimezoneFromIP } from '../utils/timezones';
+import { DEFAULT_TZ, detectTimezoneFromIP, TZ_TO_PHONE_CODE } from '../utils/timezones';
 
 import CalendarScreen from '../components/booking/CalendarScreen';
 import PhoneScreen from '../components/booking/PhoneScreen';
@@ -20,22 +20,20 @@ export default function BookingFlow() {
   const { config, loading: configLoading } = useConfig();
   const { slots, loading: slotsLoading, daysWithSlots, fetchSlots, prefetchDays } = useSlots();
   const [timezone, setTimezone] = useState(DEFAULT_TZ);
-  const [detectedCountryCode, setDetectedCountryCode] = useState('591');
 
   // URL params: ?t=PHONE, ?code=XXX
   const urlPhone = pageParams.get('t') || '';
   const urlCode = pageParams.get('code') || '';
 
-  // Detect timezone and country from IP on mount
+  // Derive phone country code from selected timezone (stays in sync when user changes tz)
+  const detectedCountryCode = TZ_TO_PHONE_CODE[timezone?.tz] || '591';
+
+  // Detect timezone from IP on mount
   useEffect(() => {
     fetch('https://ipapi.co/json/')
       .then(r => r.json())
       .then(data => {
         setTimezone(detectTimezoneFromIP(data));
-        // Auto-detect country code for phone input
-        if (data.country_calling_code) {
-          setDetectedCountryCode(data.country_calling_code.replace('+', ''));
-        }
       })
       .catch(() => {});
   }, []);

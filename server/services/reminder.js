@@ -35,17 +35,54 @@ async function checkAndSendReminders({ date, tenantId } = {}) {
     let skipped = 0;
 
     for (const event of events) {
-      // Find appointment by gcal_event_id
+      const summary = event.summary || '';
+
+      // Only process events that start with "Terapia"
+      if (!summary.startsWith('Terapia')) continue;
+
+      // Try 1: Find appointment by gcal_event_id
       const tenantFilter = tenantId ? 'AND a.tenant_id = ?' : '';
-      const params = tenantId ? [event.id, tenantId] : [event.id];
-      const [appts] = await pool.query(
+      let params = tenantId ? [event.id, tenantId] : [event.id];
+      let [appts] = await pool.query(
         `SELECT a.*, c.phone, c.first_name FROM appointments a
          JOIN clients c ON a.client_id = c.id
          WHERE a.gcal_event_id = ? AND a.status = 'Confirmada' ${tenantFilter}`,
         params
       );
 
-      if (appts.length === 0) continue;
+      // Try 2: Fallback — extract phone from event name (format: "Terapia Name - 59172034151")
+      if (appts.length === 0) {
+        const phoneMatch = summary.match(/-\s*(\d{10,15})\s*$/);
+        if (phoneMatch) {
+          const phone = phoneMatch[1];
+          const tenantFilterFb = tenantId ? 'AND c.tenant_id = ?' : '';
+          const paramsFb = tenantId ? [phone, tenantId] : [phone];
+          [appts] = await pool.query(
+            `SELECT c.id AS client_id, c.phone, c.first_name, c.tenant_id FROM clients c
+             WHERE c.phone = ? AND c.deleted_at IS NULL ${tenantFilterFb}`,
+            paramsFb
+          );
+          // Wrap as pseudo-appointment for sending
+          if (appts.length > 0) {
+            const client = appts[0];
+            const eventStart = event.start?.dateTime || event.start?.date;
+            appts = [{
+              id: null,
+              client_id: client.client_id,
+              phone: client.phone,
+              first_name: client.first_name,
+              tenant_id: client.tenant_id || 1,
+              date_time: eventStart,
+            }];
+            console.log(`[reminder] Matched by phone from event name: ${phone}`);
+          }
+        }
+      }
+
+      if (appts.length === 0) {
+        console.log(`[reminder] No match for event: ${summary}`);
+        continue;
+      }
       const appt = appts[0];
 
       // Check if reminder already sent (within last 24h)

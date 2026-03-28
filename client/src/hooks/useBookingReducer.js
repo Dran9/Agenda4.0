@@ -17,6 +17,13 @@ const initialState = {
 
 function bookingReducer(state, action) {
   switch (action.type) {
+    case 'SELECT_DATE_ONLY':
+      return {
+        ...state,
+        selectedDate: action.date,
+        error: null,
+      };
+
     case 'SELECT_SLOT':
       return {
         ...state,

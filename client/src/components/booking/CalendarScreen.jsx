@@ -5,7 +5,7 @@ import { convertLaPazTimeToTz } from '../../utils/timezones';
 export default function CalendarScreen({ state, dispatch, config, slots, slotsLoading, fetchSlots, prefetchDays, daysWithSlots, timezone }) {
   const { selectedDate, isReschedule } = state;
 
-  // Pre-fetch slots for visible days when month changes
+  // Pre-fetch slots for visible weekdays when month changes
   const handleMonthChange = useCallback((year, month) => {
     if (!config) return;
     const dates = [];
@@ -17,7 +17,9 @@ export default function CalendarScreen({ state, dispatch, config, slots, slotsLo
 
     for (let d = 1; d <= daysInMonth; d++) {
       const date = new Date(year, month, d);
-      if (date >= today && date <= maxDate) {
+      const dow = date.getDay();
+      // Only weekdays (Mon-Fri)
+      if (dow >= 1 && dow <= 5 && date >= today && date <= maxDate) {
         const str = `${year}-${String(month + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
         dates.push(str);
       }
@@ -31,8 +33,8 @@ export default function CalendarScreen({ state, dispatch, config, slots, slotsLo
   }, [selectedDate]);
 
   function handleSelectDate(dateStr) {
+    dispatch({ type: 'SELECT_DATE_ONLY', date: dateStr });
     fetchSlots(dateStr);
-    // Keep on calendar screen until slot is picked
   }
 
   function handleSelectSlot(slot) {

@@ -26,6 +26,41 @@ export default function BookingFlow() {
       .catch(() => {});
   }, []);
 
+  // Prefetch next 5 weekdays on mount + auto-select today if it has slots
+  useEffect(() => {
+    if (!config) return;
+
+    function getNextWeekdays(count) {
+      const days = [];
+      const d = new Date();
+      d.setHours(0, 0, 0, 0);
+      while (days.length < count) {
+        const dow = d.getDay(); // 0=Sun, 6=Sat
+        if (dow >= 1 && dow <= 5) {
+          const str = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+          days.push(str);
+        }
+        d.setDate(d.getDate() + 1);
+      }
+      return days;
+    }
+
+    const weekdays = getNextWeekdays(5);
+    prefetchDays(weekdays);
+
+    // Auto-select today and show its slots if today is a weekday
+    const today = new Date();
+    const todayDow = today.getDay();
+    if (todayDow >= 1 && todayDow <= 5) {
+      const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+      fetchSlots(todayStr).then(todaySlots => {
+        if (todaySlots && todaySlots.length > 0) {
+          dispatch({ type: 'SELECT_DATE_ONLY', date: todayStr });
+        }
+      });
+    }
+  }, [config]);
+
   // Dev mode detection
   const isDevMode = new URLSearchParams(window.location.search).get('devmode') === '1';
 

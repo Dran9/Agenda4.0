@@ -1,1 +1,0 @@
-import{j as e}from"./index-DIcFrC6p.js";import{A as r}from"./AdminLayout-Du43B2KS.js";function o(){return e.jsx(r,{title:"WhatsApp",children:e.jsx("div",{className:"bg-white rounded-xl border border-gray-200 p-8 text-center text-gray-400",children:"Centro de mensajes WhatsApp en desarrollo. Incluirá: inbox, auto-respuestas, historial por cliente."})})}export{o as default};

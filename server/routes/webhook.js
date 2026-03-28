@@ -218,6 +218,82 @@ router.post('/', async (req, res) => {
                 await saveFile(tenantId, fileKey, buffer, mimeType, filename || `${msg.type}_${Date.now()}`);
                 mediaData = fileKey;
                 console.log(`[webhook] Media saved: ${fileKey} (${buffer.length} bytes)`);
+
+                // ─── OCR + Auto-match payment by phone ──────────────
+                if (clientId && (mimeType.startsWith('image/') || msg.type === 'image')) {
+                  try {
+                    const { extractReceiptData } = require('../services/ocr');
+                    const ocrResult = await extractReceiptData(buffer);
+
+                    if (ocrResult && ocrResult.amount) {
+                      console.log(`[webhook] OCR: ${ocrResult.name}, Bs ${ocrResult.amount}, ${ocrResult.date}, ref: ${ocrResult.reference}`);
+
+                      // Find pending payment for this client (match by phone → client_id)
+                      const [pendingPayments] = await pool.query(
+                        `SELECT p.id, p.amount, p.appointment_id, a.date_time, a.gcal_event_id,
+                                c.first_name, c.last_name, c.phone as client_phone, c.fee
+                         FROM payments p
+                         JOIN appointments a ON p.appointment_id = a.id
+                         JOIN clients c ON p.client_id = c.id
+                         WHERE p.client_id = ? AND p.tenant_id = ? AND p.status = 'Pendiente'
+                         ORDER BY a.date_time ASC LIMIT 5`,
+                        [clientId, tenantId]
+                      );
+
+                      if (pendingPayments.length > 0) {
+                        // Find best match: amount matches fee, or closest upcoming appointment
+                        let bestMatch = pendingPayments[0];
+                        for (const pp of pendingPayments) {
+                          if (parseFloat(pp.fee) === ocrResult.amount || parseFloat(pp.amount) === ocrResult.amount) {
+                            bestMatch = pp;
+                            break;
+                          }
+                        }
+
+                        // Auto-confirm payment
+                        await pool.query(
+                          `UPDATE payments SET status = 'Confirmado', confirmed_at = NOW(),
+                           receipt_file_key = ?, ocr_extracted_amount = ?, ocr_extracted_ref = ?
+                           WHERE id = ? AND tenant_id = ?`,
+                          [fileKey, ocrResult.amount, ocrResult.reference, bestMatch.id, tenantId]
+                        );
+
+                        // Update GCal with $ prefix
+                        try {
+                          const calendarId = process.env.GOOGLE_CALENDAR_ID;
+                          if (calendarId && bestMatch.gcal_event_id) {
+                            const { updateEventSummary } = require('../services/calendar');
+                            const currentSummary = `Terapia ${bestMatch.first_name} ${bestMatch.last_name || ''} - ${bestMatch.client_phone}`.trim();
+                            // Check if already has checkmark prefix
+                            const base = currentSummary.replace(/^[\$✅]\s*/, '');
+                            await updateEventSummary(calendarId, bestMatch.gcal_event_id, `$ ✅ ${base}`);
+                            console.log(`[webhook] GCal updated with $ for payment ${bestMatch.id}`);
+                          }
+                        } catch (gcalErr) {
+                          console.error(`[webhook] GCal $ update failed (non-fatal):`, gcalErr.message);
+                        }
+
+                        // Send confirmation reply
+                        try {
+                          const { sendTextMessage } = require('../services/whatsapp');
+                          const phoneNumberId = process.env.WA_PHONE_NUMBER_ID || '887756534426165';
+                          await sendTextMessage(phoneNumberId, phone,
+                            `Pago recibido: Bs ${ocrResult.amount}. Gracias, ${bestMatch.first_name}.`
+                          );
+                          console.log(`[webhook] Payment confirmation sent to ${phone}`);
+                        } catch (replyErr) {
+                          console.error(`[webhook] Payment reply failed:`, replyErr.message);
+                        }
+
+                        console.log(`[webhook] Payment ${bestMatch.id} auto-confirmed via OCR for client ${clientId}`);
+                      } else {
+                        console.log(`[webhook] OCR detected Bs ${ocrResult.amount} but no pending payment for client ${clientId}`);
+                      }
+                    }
+                  } catch (ocrErr) {
+                    console.error(`[webhook] OCR processing failed (non-fatal):`, ocrErr.message);
+                  }
+                }
               }
             } catch (mediaErr) {
               console.error(`[webhook] Media download failed:`, mediaErr.message);

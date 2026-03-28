@@ -142,27 +142,58 @@ router.get('/:id/receipt', authMiddleware, async (req, res) => {
   }
 });
 
-// POST /api/payments/match-receipt — upload receipt without knowing which payment (auto-match)
+// POST /api/payments/match-receipt — upload receipt + match by phone (primary) or amount (fallback)
 router.post('/match-receipt', authMiddleware, async (req, res) => {
   try {
-    const { image } = req.body;
+    const { image, phone } = req.body; // phone is the WhatsApp sender number
     if (!image) return res.status(400).json({ error: 'No image provided' });
 
     const base64Data = image.replace(/^data:image\/\w+;base64,/, '');
     const imageBuffer = Buffer.from(base64Data, 'base64');
 
-    // Run OCR first
+    // Run OCR
     const ocrResult = await extractReceiptData(imageBuffer);
     if (!ocrResult) {
       return res.status(422).json({ error: 'No se pudo leer el comprobante' });
     }
 
-    // Try to match by name + amount
     let matches = [];
-    if (ocrResult.name) {
+
+    // Priority 1: Match by phone number (most reliable — the patient sends from their WhatsApp)
+    if (phone) {
+      const [rows] = await pool.query(
+        `SELECT p.*, c.first_name, c.last_name, c.phone, c.fee,
+                a.date_time, a.gcal_event_id
+         FROM payments p
+         JOIN clients c ON p.client_id = c.id
+         LEFT JOIN appointments a ON p.appointment_id = a.id
+         WHERE p.tenant_id = ? AND p.status = 'Pendiente' AND c.phone = ?
+         ORDER BY a.date_time ASC LIMIT 5`,
+        [req.tenantId, phone]
+      );
+      matches = rows;
+    }
+
+    // Priority 2: Match by amount (when admin uploads manually without phone)
+    if (matches.length === 0 && ocrResult.amount) {
+      const [rows] = await pool.query(
+        `SELECT p.*, c.first_name, c.last_name, c.phone, c.fee,
+                a.date_time, a.gcal_event_id
+         FROM payments p
+         JOIN clients c ON p.client_id = c.id
+         LEFT JOIN appointments a ON p.appointment_id = a.id
+         WHERE p.tenant_id = ? AND p.status = 'Pendiente' AND (p.amount = ? OR c.fee = ?)
+         ORDER BY a.date_time ASC LIMIT 5`,
+        [req.tenantId, ocrResult.amount, ocrResult.amount]
+      );
+      matches = rows;
+    }
+
+    // Priority 3: Name from OCR (least reliable — someone else may have paid)
+    if (matches.length === 0 && ocrResult.name) {
       const nameParts = ocrResult.name.split(' ').filter(p => p.length > 2);
       if (nameParts.length > 0) {
-        const nameSearch = nameParts.map(p => `(c.first_name LIKE ? OR c.last_name LIKE ?)`).join(' AND ');
+        const nameSearch = nameParts.map(() => `(c.first_name LIKE ? OR c.last_name LIKE ?)`).join(' AND ');
         const nameParams = nameParts.flatMap(p => [`%${p}%`, `%${p}%`]);
 
         const [rows] = await pool.query(
@@ -172,30 +203,16 @@ router.post('/match-receipt', authMiddleware, async (req, res) => {
            JOIN clients c ON p.client_id = c.id
            LEFT JOIN appointments a ON p.appointment_id = a.id
            WHERE p.tenant_id = ? AND p.status = 'Pendiente' AND ${nameSearch}
-           ORDER BY p.created_at DESC LIMIT 5`,
+           ORDER BY a.date_time ASC LIMIT 5`,
           [req.tenantId, ...nameParams]
         );
         matches = rows;
       }
     }
 
-    // If no name match, try by amount
-    if (matches.length === 0 && ocrResult.amount) {
-      const [rows] = await pool.query(
-        `SELECT p.*, c.first_name, c.last_name, c.phone, c.fee,
-                a.date_time, a.gcal_event_id
-         FROM payments p
-         JOIN clients c ON p.client_id = c.id
-         LEFT JOIN appointments a ON p.appointment_id = a.id
-         WHERE p.tenant_id = ? AND p.status = 'Pendiente' AND p.amount = ?
-         ORDER BY p.created_at DESC LIMIT 5`,
-        [req.tenantId, ocrResult.amount]
-      );
-      matches = rows;
-    }
-
     res.json({
       ocr: { name: ocrResult.name, amount: ocrResult.amount, date: ocrResult.date, reference: ocrResult.reference, bank: ocrResult.bank },
+      matched_by: matches.length > 0 ? (phone ? 'phone' : ocrResult.amount ? 'amount' : 'name') : null,
       matches: matches.map(m => ({
         payment_id: m.id,
         client_name: `${m.first_name} ${m.last_name || ''}`.trim(),

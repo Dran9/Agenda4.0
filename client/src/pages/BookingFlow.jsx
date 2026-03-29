@@ -8,6 +8,7 @@ import {
   ArrowRight, ArrowLeft, ChevronDown, Calendar as CalendarIcon,
   Clock, CalendarClock, CalendarCheck, Check, Sun, Sunset,
   Coffee, Globe, Search, RefreshCw, Heart, MessageSquareHeart, ShieldAlert, Info, MousePointerClick, Smartphone, SmilePlus,
+  CalendarArrowUp, CircleArrowRight, Clock4, CircleCheck, CircleX,
 } from 'lucide-react';
 
 const COUNTRY_CODES = [
@@ -638,38 +639,59 @@ export default function BookingFlow() {
     return (
       <Layout devMode={devMode}>
         <Logo width={90} />
-        <h1 style={{ fontSize: 26, fontWeight: 600, textAlign: 'center', color: 'var(--negro)', marginBottom: 6 }}>
-          {flow.clientName ? `${flow.clientName}, ya tienes una cita` : 'Ya tienes una cita'}
+
+        {/* Icono superior */}
+        <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 14 }}>
+          <div style={{ width: 64, height: 64, borderRadius: '50%', background: '#CFE8E9', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <CalendarArrowUp size={26} color="#4E769B" />
+          </div>
+        </div>
+
+        {/* Título */}
+        <h1 style={{ fontSize: 26, fontWeight: 600, textAlign: 'center', color: '#B34E35', marginBottom: 10 }}>
+          {flow.clientName ? `${flow.clientName}, ya tienes una cita agendada.` : 'Ya tienes una cita agendada.'}
         </h1>
-        <p style={{ fontSize: 18, color: 'var(--gris-medio)', textAlign: 'center', marginBottom: 20 }}>Tu cita actual es:</p>
-        <div className="card" style={{ marginBottom: 16 }}>
-          <div className="detail-row" style={{ paddingTop: 0, borderTop: 'none' }}>
+
+        {/* Sub-encabezado */}
+        <p style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, fontSize: 20, fontWeight: 600, color: '#3C3939', textAlign: 'center', marginBottom: 20 }}>
+          <CircleArrowRight size={20} color="#4E769B" />
+          Continúa para <strong style={{ fontWeight: 800 }}>reprogramar</strong>
+        </p>
+
+        {/* Bloque CITA ACTUAL */}
+        <div className="card" style={{ marginBottom: 12 }}>
+          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 14 }}>
             <div className="detail-icon"><CalendarIcon size={18} color="var(--gris-medio)" /></div>
             <div>
-              <div className="detail-label" style={{ fontSize: 16, color: '#737375' }}>Cita actual</div>
-              <div className="detail-value">{formatDateES(apptDate)}</div>
-              <div style={{ fontSize: 20, fontWeight: 600, color: 'var(--azul-acero)', marginTop: 2 }}>{apptTime} hs</div>
+              <div style={{ fontSize: 17, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--gris-medio)', marginBottom: 4 }}>Cita actual</div>
+              <div style={{ fontSize: 18, fontWeight: 600, color: '#3C3939' }}>{formatDateES(apptDate)}</div>
+              <div style={{ fontSize: 16, fontWeight: 600, color: '#3C3939', marginTop: 2 }}>{apptTime} hs</div>
             </div>
           </div>
         </div>
-        <p style={{ fontSize: 18, color: 'var(--gris-medio)', textAlign: 'center', marginBottom: 12 }}>Acabas de elegir:</p>
-        <div className="card" style={{ marginBottom: 24, border: '1.5px solid var(--azul-acero)', background: '#FDF0AD' }}>
-          <div className="detail-row" style={{ paddingTop: 0, borderTop: 'none' }}>
-            <div className="detail-icon" style={{ background: 'var(--cian-light)' }}><CalendarClock size={18} color="var(--petroleo)" /></div>
+
+        {/* Bloque NUEVA PROPUESTA */}
+        <div className="card" style={{ marginBottom: 24, background: '#FDFAE8', border: '1px solid #4E769B' }}>
+          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 14 }}>
+            <div className="detail-icon" style={{ background: '#FEF3C7' }}><Clock4 size={18} color="#D97706" /></div>
             <div>
-              <div className="detail-label" style={{ fontSize: 16, color: '#737375' }}>Nueva fecha</div>
-              <div className="detail-value">{formatDateES(selectedDate)}</div>
-              <div style={{ fontSize: 20, fontWeight: 600, color: 'var(--petroleo)', marginTop: 2 }}>{displayTime(selectedSlot)} hs</div>
+              <div style={{ fontSize: 17, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.08em', color: '#D97706', marginBottom: 4 }}>Nueva propuesta</div>
+              <div style={{ fontSize: 18, fontWeight: 700, color: '#3C3939' }}>{formatDateES(selectedDate)}</div>
+              <div style={{ fontSize: 22, fontWeight: 700, color: '#4E769B', marginTop: 2 }}>{displayTime(selectedSlot)} hs</div>
             </div>
           </div>
         </div>
-        <p style={{ fontSize: 22, fontWeight: 500, textAlign: 'center', color: 'var(--negro)', marginBottom: 16 }}>¿Qué deseas hacer?</p>
+
         {flow.error && <p style={{ color: 'var(--terracota)', fontSize: 16, textAlign: 'center', marginBottom: 12 }}>{flow.error}</p>}
-        <button type="button" onClick={handleReschedule} disabled={flow.loading} className="btn-primary" style={{ marginBottom: 12 }}>
-          <RefreshCw size={18} />{flow.loading ? 'Reagendando...' : 'Cambiar a esta hora'}
+
+        {/* Botón principal */}
+        <button type="button" onClick={handleReschedule} disabled={flow.loading} className="btn-primary" style={{ marginBottom: 12, fontSize: 18, fontWeight: 600, background: '#4E769B' }}>
+          <RefreshCw size={18} />{flow.loading ? 'Reprogramando...' : 'Reprogramar'}
         </button>
-        <button type="button" onClick={() => dispatch({ type: 'KEEP_APPOINTMENT', appointment: { date: apptDate, time: apptTime } })} className="btn-secondary">
-          <CalendarCheck size={18} />Conservar mi cita actual
+
+        {/* Botón secundario */}
+        <button type="button" onClick={() => dispatch({ type: 'KEEP_APPOINTMENT', appointment: { date: apptDate, time: apptTime } })} className="btn-secondary" style={{ fontSize: 18, fontWeight: 600 }}>
+          <CircleCheck size={18} />Mantener mi cita actual
         </button>
       </Layout>
     );

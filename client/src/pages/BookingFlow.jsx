@@ -593,30 +593,30 @@ export default function BookingFlow() {
             ? (displayName ? `Perfecto ${displayName}, tu cita ha sido reagendada` : 'Tu cita ha sido reagendada')
             : (displayName ? `${displayName}, tu cita está confirmada` : 'Tu cita está confirmada')}
         </h1>
-        <p style={{ fontSize: 22, fontWeight: 600, color: 'var(--turquesa)', textAlign: 'center', marginBottom: 24, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
+        <p style={{ fontSize: 24, fontWeight: 600, color: 'var(--turquesa)', textAlign: 'center', marginBottom: 24, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
           <Heart size={20} color="var(--turquesa)" fill="var(--turquesa)" strokeWidth={2.5} /> Gracias por tu confianza
         </p>
         {flow.bookedAppointment && (
           <div className="card" style={{ marginBottom: 16 }}>
             <div className="detail-row" style={{ paddingTop: 0 }}>
               <div className="detail-icon"><CalendarIcon size={18} color="var(--gris-medio)" /></div>
-              <div><div className="detail-label">Fecha</div><div className="detail-value">{formatDateES(flow.bookedAppointment.date)}</div></div>
+              <div><div className="detail-label" style={{ fontSize: 16 }}>Fecha</div><div className="detail-value" style={{ fontSize: 20 }}>{formatDateES(flow.bookedAppointment.date)}</div></div>
             </div>
             <div className="detail-row" style={{ paddingBottom: 0 }}>
               <div className="detail-icon"><Clock size={18} color="var(--gris-medio)" /></div>
-              <div><div className="detail-label">Hora</div><div className="detail-value">{displayTime(flow.bookedAppointment.time)} hs</div></div>
+              <div><div className="detail-label" style={{ fontSize: 16 }}>Hora</div><div className="detail-value" style={{ fontSize: 20 }}>{displayTime(flow.bookedAppointment.time)} hs</div></div>
             </div>
           </div>
         )}
         <div className="notice-box" style={{ marginBottom: 24 }}>
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6 }}>
             <MessageSquareHeart size={22} color="#1A1A17" />
-            <p style={{ fontSize: 17, fontWeight: 500, color: 'var(--grafito)', lineHeight: 1.5, textAlign: 'center', margin: 0 }}>Te llegará un recordatorio el día antes de tu cita.</p>
+            <p style={{ fontSize: 19, fontWeight: 500, color: 'var(--grafito)', lineHeight: 1.5, textAlign: 'center', margin: 0 }}>Te llegará un recordatorio el día antes de tu cita.</p>
           </div>
           <div style={{ borderTop: '1px solid rgba(0,0,0,0.06)', marginTop: 12, paddingTop: 12 }}>
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6 }}>
               <ShieldAlert size={22} color="#1A1A17" />
-              <p style={{ fontSize: 17, fontWeight: 500, color: 'var(--grafito)', lineHeight: 1.5, textAlign: 'center', margin: 0 }}>
+              <p style={{ fontSize: 19, fontWeight: 500, color: 'var(--grafito)', lineHeight: 1.5, textAlign: 'center', margin: 0 }}>
                 Toda cancelación o cambio debe realizarse con mínimo <strong>6 horas</strong> de anticipación, caso contrario, se cobrará el <strong>50%</strong> del monto de la sesión.
               </p>
             </div>

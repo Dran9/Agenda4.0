@@ -138,16 +138,22 @@ export default function Config() {
 
   function handleCopy(fromDayKey) {
     const fromBlocks = availability[fromDayKey]?.blocks || [];
-    setAvailability(prev => {
-      const next = { ...prev };
-      for (const [dayKey, checked] of Object.entries(copyTo)) {
-        if (checked && dayKey !== fromDayKey) {
-          next[dayKey] = { ...next[dayKey], blocks: JSON.parse(JSON.stringify(fromBlocks)), enabled: true };
-        }
-      }
-      return next;
-    });
+    const targets = Object.entries(copyTo).filter(([k, v]) => v && k !== fromDayKey).map(([k]) => k);
+    if (targets.length === 0) return;
+
+    const updated = { ...availability };
+    for (const dayKey of targets) {
+      updated[dayKey] = {
+        ...updated[dayKey],
+        blocks: JSON.parse(JSON.stringify(fromBlocks)),
+        enabled: true,
+      };
+    }
+    setAvailability(updated);
     setCopyTo({});
+
+    const names = targets.map(k => DAYS.find(d => d.key === k)?.short).join(', ');
+    showToast(`Horario copiado a ${names}`);
   }
 
   function toggleCity(city) {
@@ -241,7 +247,12 @@ export default function Config() {
                 >
                   <div
                     className="flex items-center justify-between px-4 py-3 bg-gray-50 cursor-pointer"
-                    onClick={() => dayAvail.enabled && setExpandedDay(isExpanded ? null : day.key)}
+                    onClick={() => {
+                      if (!dayAvail.enabled) return;
+                      const next = isExpanded ? null : day.key;
+                      setExpandedDay(next);
+                      setCopyTo({});
+                    }}
                   >
                     <div className="flex items-center gap-3">
                       <input

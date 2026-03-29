@@ -7,7 +7,7 @@ import {
 import {
   ArrowRight, ArrowLeft, ChevronDown, Calendar as CalendarIcon,
   Clock, CalendarClock, CalendarCheck, Check, Sun, Sunset,
-  Coffee, Globe, Search, RefreshCw, Heart, MessageCircle, TriangleAlert, Info, MousePointerClick,
+  Coffee, Globe, Search, RefreshCw, Heart, MessageCircle, TriangleAlert, Info, MousePointerClick, Smartphone,
 } from 'lucide-react';
 
 const COUNTRY_CODES = [
@@ -430,32 +430,38 @@ export default function BookingFlow() {
       <Layout devMode={devMode}>
         <Logo width={90} />
         <div className="summary-card">
-          <div className="summary-card-icon"><CalendarIcon size={20} color="var(--azul-acero)" /></div>
+          <div className="summary-card-icon"><CalendarIcon size={20} color="white" /></div>
           <div>
             <div className="summary-card-text">{formatDateES(selectedDate)}</div>
             <div className="summary-card-sub">{displayTime(selectedSlot)} hs</div>
           </div>
         </div>
-        <h1 style={{ fontSize: 28, fontWeight: 600, textAlign: 'center', color: 'var(--negro)', marginBottom: 6 }}>Ingresa tu número</h1>
-        <p style={{ fontSize: 18, color: 'var(--gris-medio)', textAlign: 'center', marginBottom: 24 }}>Para confirmar tu sesión</p>
+        <h1 style={{ fontSize: 30, fontWeight: 600, textAlign: 'center', color: 'var(--negro)', marginBottom: 20 }}>Ingresa tu número de WhatsApp</h1>
         <div className="card">
           <form onSubmit={e => { e.preventDefault(); if (phoneComplete) handlePhoneSubmit(); }}>
-            <span className="field-label">NÚMERO DE WHATSAPP</span>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 0, marginBottom: 4 }}>
+            <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 16 }}>
+              <div style={{ width: 48, height: 48, borderRadius: '50%', background: '#CFE8E9', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <span style={{ fontSize: 22, fontWeight: 700, color: '#4E769B', lineHeight: 1 }}>#</span>
+              </div>
+            </div>
+            <div className="phone-unified-field">
               <span style={{
-                fontFamily: "'Work Sans', sans-serif", fontWeight: 800, fontSize: 28,
-                color: '#A4A4A6', letterSpacing: '0.1em', padding: '0 10px 0 0',
-                userSelect: 'none', whiteSpace: 'nowrap', lineHeight: '52px',
+                fontWeight: 600, fontSize: 24,
+                color: '#A4A4A6', letterSpacing: '0.1em',
+                userSelect: 'none', whiteSpace: 'nowrap', flexShrink: 0,
               }}>
-                {currentCountry.flag} {countryCode}
+                {countryCode}
               </span>
               <input type="tel" value={phoneNumber}
                 onChange={e => { const val = e.target.value.replace(/\D/g, ''); if (val.length <= expectedDigits) setPhoneNumber(val); }}
-                placeholder="71234567" className="input-field" style={{ flex: 1 }} autoFocus maxLength={expectedDigits} />
+                placeholder="71234567" className="phone-unified-input" autoFocus maxLength={expectedDigits} />
             </div>
-            <p className="phone-digit-hint" style={{ color: phoneComplete ? 'var(--turquesa)' : phoneDigits.length > 0 ? 'var(--gris-medio)' : 'transparent', marginBottom: 16 }}>
-              {phoneDigits.length}/{expectedDigits} dígitos
-            </p>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16, marginTop: 6 }}>
+              <span style={{ fontSize: 17, color: 'var(--gris-medio)' }}>{currentCountry.name}</span>
+              <span className="phone-digit-hint" style={{ fontSize: 17, color: phoneComplete ? 'var(--turquesa)' : phoneDigits.length > 0 ? 'var(--gris-medio)' : 'transparent' }}>
+                {phoneDigits.length}/{expectedDigits} dígitos
+              </span>
+            </div>
             {flow.error && <p style={{ color: 'var(--terracota)', fontSize: 16, marginBottom: 12 }}>{flow.error}</p>}
             <button type="submit" disabled={!phoneComplete || flow.loading} className="btn-primary" style={{ marginBottom: 12 }}>
               {flow.loading ? 'Verificando...' : 'Continuar'}{!flow.loading && <ArrowRight size={18} />}

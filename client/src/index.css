@@ -165,7 +165,7 @@ input, select, button, textarea {
   color: var(--btn-primary-text);
   border: none;
   border-radius: 12px;
-  font-size: 18px;
+  font-size: 20px;
   font-weight: 500;
   cursor: pointer;
   transition: opacity 200ms, transform 150ms;
@@ -202,7 +202,7 @@ input, select, button, textarea {
   color: var(--btn-secondary-text);
   border: 1.5px solid var(--btn-secondary-border);
   border-radius: 12px;
-  font-size: 18px;
+  font-size: 20px;
   font-weight: 500;
   cursor: pointer;
   transition: background 200ms, transform 150ms;
@@ -578,7 +578,7 @@ input, select, button, textarea {
   width: 42px;
   height: 42px;
   border-radius: 10px;
-  background: white;
+  background: #4E769B;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -594,8 +594,8 @@ input, select, button, textarea {
 
 .summary-card-sub {
   font-size: 15px;
-  color: var(--gris-medio);
-  font-weight: 400;
+  color: #4E769B;
+  font-weight: 700;
 }
 
 /* Onboarding slide-in */
@@ -610,6 +610,43 @@ input, select, button, textarea {
   max-height: 800px;
   opacity: 1;
   overflow: visible;
+}
+
+/* Phone unified field */
+.phone-unified-field {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 64px;
+  background: var(--bg-input);
+  border-radius: 12px;
+  border: 1.5px solid transparent;
+  padding: 0 16px;
+  transition: border-color 200ms, box-shadow 200ms;
+  margin-bottom: 0;
+}
+
+.phone-unified-field:focus-within {
+  border-color: var(--azul-acero);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--azul-acero) 15%, transparent);
+}
+
+.phone-unified-input {
+  flex: 1;
+  background: transparent;
+  border: none;
+  outline: none;
+  font-size: 26px;
+  font-weight: 700;
+  color: #3C3939;
+  font-family: inherit;
+  min-width: 0;
+  letter-spacing: 0.1em;
+}
+
+.phone-unified-input::placeholder {
+  color: var(--text-placeholder);
+  font-weight: 400;
 }
 
 /* Phone digit hint */

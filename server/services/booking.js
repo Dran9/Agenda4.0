@@ -183,6 +183,14 @@ async function createBooking(client, dateTime, tenantId) {
     [tenantId, client.id, dateTime, gcalEvent.id, isFirst, sessionNumber, client.phone]
   );
 
+  // Create pending payment
+  const fee = client.fee || 250;
+  await pool.query(
+    `INSERT INTO payments (tenant_id, client_id, appointment_id, amount, status)
+     VALUES (?, ?, ?, ?, 'Pendiente')`,
+    [tenantId, client.id, result.insertId, fee]
+  );
+
   // Log activity
   await pool.query(
     `INSERT INTO webhooks_log (tenant_id, event, type, payload, status, client_phone, client_id, appointment_id)

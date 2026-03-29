@@ -252,6 +252,34 @@ async function rescheduleAppointment(clientId, oldAppointmentId, dateTime, tenan
   const result = await createBooking(clients[0], dateTime, tenantId);
   if (result.error) return result;
 
+  // Move confirmed payment from old appointment to new one
+  // (if client already paid, their payment stays valid after reschedule)
+  try {
+    const newApptId = result.appointment?.id;
+    if (newApptId) {
+      // Check if old appointment had a confirmed payment
+      const [oldPayments] = await pool.query(
+        `SELECT id FROM payments WHERE appointment_id = ? AND tenant_id = ? AND status = 'Confirmado' LIMIT 1`,
+        [oldAppointmentId, tenantId]
+      );
+      if (oldPayments.length > 0) {
+        // Move the confirmed payment to the new appointment
+        await pool.query(
+          `UPDATE payments SET appointment_id = ? WHERE id = ?`,
+          [newApptId, oldPayments[0].id]
+        );
+        // Delete the new "Pendiente" payment that createBooking just made (it's redundant)
+        await pool.query(
+          `DELETE FROM payments WHERE appointment_id = ? AND tenant_id = ? AND status = 'Pendiente' AND id != ?`,
+          [newApptId, tenantId, oldPayments[0].id]
+        );
+        console.log(`[reschedule] Moved confirmed payment ${oldPayments[0].id} from appt ${oldAppointmentId} → ${newApptId}`);
+      }
+    }
+  } catch (payErr) {
+    console.error('[reschedule] Payment transfer failed (non-fatal):', payErr.message);
+  }
+
   // Log activity
   await pool.query(
     `INSERT INTO webhooks_log (tenant_id, event, type, payload, status, client_phone, client_id, appointment_id)

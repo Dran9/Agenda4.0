@@ -480,17 +480,17 @@ input, select, button, textarea {
   align-items: center;
   gap: 6px;
   padding: 10px 20px;
-  background: var(--blanco-gris);
   border: 1px solid var(--platino);
   border-radius: 10px;
   cursor: pointer;
-  font-size: 16px;
+  font-size: 18px;
   font-weight: 600;
   color: var(--grafito);
   transition: color 200ms, background 200ms;
   margin: 0 auto;
-  min-width: 260px;
+  min-width: 312px;
   justify-content: center;
+  background: #D2E9ED;
 }
 
 .timezone-selector:hover {

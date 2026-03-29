@@ -307,7 +307,7 @@ export default function BookingFlow() {
             <ChevronDown size={12} />
           </button>
         </div>
-        <p style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5, fontSize: 16, fontWeight: 600, color: '#B34E35', textAlign: 'center', marginTop: 6 }}>
+        <p style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5, fontSize: 18, fontWeight: 600, color: '#B34E35', textAlign: 'center', marginTop: 6 }}>
           <MousePointerClick size={15} color="#B34E35" />
           Confirma tu país
         </p>
@@ -373,7 +373,7 @@ export default function BookingFlow() {
         {selectedDate && (
           <div className="card">
             <TimezoneSelector />
-            <h2 style={{ fontSize: 19, fontWeight: 600, color: 'var(--negro)', marginBottom: 16 }}>
+            <h2 style={{ fontSize: 19, fontWeight: 600, color: 'var(--negro)', marginBottom: 16, textAlign: 'center' }}>
               {formatDateES(selectedDate)}
             </h2>
 

@@ -231,7 +231,7 @@ router.post('/', async (req, res) => {
                 // ─── OCR + Auto-match payment by phone ──────────────
                 // Only process OCR if there's payment context in recent conversation
                 // (avoids wasting Vision API on random photos like wedding pics)
-                if (clientId && (mimeType.startsWith('image/') || msg.type === 'image')) {
+                if (clientId && (mimeType.startsWith('image/') || msg.type === 'image' || mimeType === 'application/pdf')) {
                   let hasPaymentContext = false;
                   try {
                     // Check last 60 min of conversation for payment-related context
@@ -263,7 +263,7 @@ router.post('/', async (req, res) => {
                     console.log(`[webhook] Image from ${phone} ignored — no payment context`);
                   } else try {
                     const { extractReceiptData } = require('../services/ocr');
-                    const ocrResult = await extractReceiptData(buffer);
+                    const ocrResult = await extractReceiptData(buffer, mimeType);
 
                     if (ocrResult && ocrResult.amount) {
                       console.log(`[webhook] OCR: ${ocrResult.name}, Bs ${ocrResult.amount}, ${ocrResult.date}, ref: ${ocrResult.reference}`);

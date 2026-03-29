@@ -2,20 +2,23 @@
 // Supports: Google Vision API (recommended) or Tesseract.js (fallback)
 
 /**
- * Extract payment info from a receipt image buffer
+ * Extract payment info from a receipt image or PDF buffer
  * Returns: { name, amount, date, reference, bank, raw_text }
  */
-async function extractReceiptData(imageBuffer) {
+async function extractReceiptData(imageBuffer, mimeType = 'image/jpeg') {
   const apiKey = process.env.GOOGLE_VISION_API_KEY;
 
   if (apiKey) {
-    return extractWithGoogleVision(imageBuffer, apiKey);
+    const isPdf = mimeType === 'application/pdf';
+    return isPdf
+      ? extractPdfWithGoogleVision(imageBuffer, apiKey)
+      : extractImageWithGoogleVision(imageBuffer, apiKey);
   }
   console.warn('[ocr] No GOOGLE_VISION_API_KEY set — OCR disabled');
   return null;
 }
 
-async function extractWithGoogleVision(imageBuffer, apiKey) {
+async function extractImageWithGoogleVision(imageBuffer, apiKey) {
   const base64 = imageBuffer.toString('base64');
 
   const body = {
@@ -48,6 +51,48 @@ async function extractWithGoogleVision(imageBuffer, apiKey) {
     return null;
   }
 
+  return parseBolivianReceipt(fullText);
+}
+
+async function extractPdfWithGoogleVision(pdfBuffer, apiKey) {
+  const base64 = pdfBuffer.toString('base64');
+
+  const body = {
+    requests: [{
+      inputConfig: {
+        content: base64,
+        mimeType: 'application/pdf',
+      },
+      features: [{ type: 'DOCUMENT_TEXT_DETECTION' }],
+    }],
+  };
+
+  const res = await fetch(
+    `https://vision.googleapis.com/v1/files:annotate?key=${apiKey}`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    }
+  );
+
+  if (!res.ok) {
+    const err = await res.text();
+    console.error('[ocr] Vision API PDF error:', err);
+    throw new Error('Google Vision API PDF error');
+  }
+
+  const data = await res.json();
+  // files:annotate returns responses[].responses[] (double nested)
+  const pages = data.responses?.[0]?.responses || [];
+  const fullText = pages.map(p => p.fullTextAnnotation?.text || '').join('\n');
+
+  if (!fullText.trim()) {
+    console.warn('[ocr] No text detected in PDF');
+    return null;
+  }
+
+  console.log(`[ocr] PDF text extracted (${fullText.length} chars, ${pages.length} pages)`);
   return parseBolivianReceipt(fullText);
 }
 

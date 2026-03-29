@@ -83,9 +83,9 @@ router.post('/:id/receipt', authMiddleware, async (req, res) => {
     if (!image) return res.status(400).json({ error: 'No image provided' });
 
     // Decode base64
-    const base64Data = image.replace(/^data:image\/\w+;base64,/, '');
+    const base64Data = image.replace(/^data:[^;]+;base64,/, '');
     const imageBuffer = Buffer.from(base64Data, 'base64');
-    const mimeType = image.match(/^data:(image\/\w+);/)?.[1] || 'image/jpeg';
+    const mimeType = image.match(/^data:([^;]+);/)?.[1] || 'image/jpeg';
 
     // Save receipt to storage
     const fileKey = `receipt_${req.params.id}`;
@@ -100,7 +100,7 @@ router.post('/:id/receipt', authMiddleware, async (req, res) => {
     // Run OCR
     let ocrResult = null;
     try {
-      ocrResult = await extractReceiptData(imageBuffer);
+      ocrResult = await extractReceiptData(imageBuffer, mimeType);
       if (ocrResult) {
         await pool.query(
           'UPDATE payments SET ocr_extracted_amount = ?, ocr_extracted_ref = ? WHERE id = ? AND tenant_id = ?',
@@ -148,11 +148,12 @@ router.post('/match-receipt', authMiddleware, async (req, res) => {
     const { image, phone } = req.body; // phone is the WhatsApp sender number
     if (!image) return res.status(400).json({ error: 'No image provided' });
 
-    const base64Data = image.replace(/^data:image\/\w+;base64,/, '');
+    const base64Data = image.replace(/^data:[^;]+;base64,/, '');
     const imageBuffer = Buffer.from(base64Data, 'base64');
+    const mimeType = image.match(/^data:([^;]+);/)?.[1] || 'image/jpeg';
 
     // Run OCR
-    const ocrResult = await extractReceiptData(imageBuffer);
+    const ocrResult = await extractReceiptData(imageBuffer, mimeType);
     if (!ocrResult) {
       return res.status(422).json({ error: 'No se pudo leer el comprobante' });
     }

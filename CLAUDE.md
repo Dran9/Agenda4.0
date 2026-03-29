@@ -218,6 +218,17 @@ Ver `.env.example` para la lista completa. Se configuran en hPanel de Hostinger.
 - `GET /api/admin/test-ocr` — verifica GOOGLE_VISION_API_KEY
 - `GET /api/admin/test-reminder?date=today|tomorrow&force=1` — trigger manual de recordatorios
 
+### Cambios sesión 2026-03-29 (tarde/noche)
+- **Appointments page overhaul**: Status y Pago son dropdowns inline con colores, columna "Registro" (created_at), renombrado "Fecha" → "Fecha agendada", eliminada columna "Acción"
+- **Reschedule DELETE**: Al reagendar, la cita vieja se BORRA del registro. La nueva queda con status "Reagendada". Pagos confirmados se migran automáticamente
+- **URL magic codes**: `?t=phone` (pre-fill teléfono), `?r=phone` (modo reagendar + banner + auto-submit), `?fee=amount` (override de arancel silencioso)
+- **OCR validación 3 criterios**: Destinatario verificado (Daniel Mac), monto coincide con arancel, fecha no muy vieja → "Confirmado". Si falla → "Mismatch" (naranja)
+- **Multi-bank OCR**: Parser mejorado para Mercantil Santa Cruz, BISA, BancoSol, Banco Ganadero, BCP
+- **OCR en WhatsApp inbox**: Datos extraídos del comprobante visibles en mensajes (remitente, monto, fecha, destinatario, banco, ref)
+- **Reminder toggle**: Botón on/off en Config para activar/desactivar recordatorios + time picker
+- **Window days libre**: Input numérico libre (antes era dropdown con valores fijos)
+- **Fix "Copiar a" en Config**: La función de copiar horarios a otros días no aplicaba cambios correctamente. Fix: state update directo + toast de confirmación + limpiar checkboxes al cambiar de día
+
 ### Cambios sesión 2026-03-29 (madrugada)
 - **Timezone mysql2**: `timezone: '-04:00'` en db.js — fix raíz para horas correctas en admin y WhatsApp
 - **WhatsApp reminder hora**: eliminada doble conversión timezone, usa Intl.DateTimeFormat directo
@@ -234,14 +245,32 @@ Ver `.env.example` para la lista completa. Se configuran en hPanel de Hostinger.
 - **Finance page**: conectada con datos reales, goal mensual, tabla de pagos con OCR
 - **Dashboard KPIs**: conectados a datos reales de analytics
 
-### Pendiente
-- **Verificar OCR de PDF en producción** — código desplegado, falta test real (enviar PDF por WhatsApp después de "Confirmo asistencia")
-- **Verificar phone input unificado en producción** — el código está listo, puede ser cache de LiteSpeed
+### Pendiente — Bugs activos
+- **Recordatorios no envían si no hay registro en DB** — El reminder encuentra eventos en GCal pero la tabla `appointments` tiene 0 registros. Si las citas se crearon directo en GCal (no por la app), el reminder no matchea. Fix: enviar reminder basado solo en datos de GCal cuando no hay match en DB
 - **NOW() en SQL vs Bolivia time** — potencial bug de 4h en queries con `date_time > NOW()`. Fix: SET time_zone = '-04:00' en cada conexión mysql2
-- **CalendarSync icon error en dev** — BookingFlow.jsx importa ícono que no existe en lucide-react instalado (solo afecta dev, no prod)
-- **Diseño visual** — solo estructura funcional, falta branding/colores/tipografía
-- **Analytics page** — placeholder
-- **WhatsApp inbox** — funciona lectura, falta pulir UI
+- **Variable `destAccount` sin definir en ocr.js** — referencia huérfana en fallback de referencia, no crashea pero lógica incorrecta
+
+### Pendiente — Verificar en producción
+- **OCR validación end-to-end** — agendar → confirmar asistencia → enviar comprobante → OCR → match → Confirmado o Mismatch
+- **URL magic codes** — `?t=`, `?r=`, `?fee=` (puede ser cache de LiteSpeed)
+
+### Pendiente — Features por implementar
+- **Auto-complete de citas** — cron para marcar "Completada" ~1h después de la hora de la cita
+- **No-show via WhatsApp** — resumen al final del día preguntando a Daniel si todos asistieron
+- **REAGEN_NOW auto-reply** — enviar link de reagendamiento (`?r=phone`) cuando cliente presiona "Reagendar" en WhatsApp
+- **DANIEL_NOW auto-reply** — notificar en dashboard + auto-reply cuando presiona "Hablar con Daniel"
+- **Status automáticos de clientes** — Nuevo/Activo/En pausa/Inactivo/Recurrente calculados por reglas
+- **Métricas por cliente** — total sesiones, tasa asistencia, total pagado, deuda
+- **Vista detalle de cliente** — panel slide-in con historial de citas y pagos
+- **Nota en citas** — agregar notas por cita desde admin
+- **Reagendar desde admin** — botón en Citas para cambiar horario directamente
+- **Analytics page** — gráficos, heatmap horarios, fuente de clientes, tendencias
+- **WhatsApp inbox mejorado** — panel dual, campo de mensaje manual, mensajes rápidos, broadcast
+- **Finance avanzado** — deducciones, ingreso neto, deuda/obligaciones, semanas lectivas
+- **OCR manual desde admin** — subir comprobante desde perfil del cliente
+- **Branding** — logo, colores, slug URL por terapeuta (multi-tenant visual)
+- **Google Sheets sync periódico** — sync automático cada hora (pagos, resumen semanal)
+- **Diseño visual** — branding/colores/tipografía de la app
 - **Limpiar endpoints de debug** cuando todo esté estable
 
 ### Numeración de Steps (referencia para hablar con Daniel)

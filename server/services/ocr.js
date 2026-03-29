@@ -199,49 +199,46 @@ function parseBolivianReceipt(text) {
     }
   }
 
-  // ─── Destination account + name (Daniel's account — for verification) ───
-  let destAccount = null;
+  // ─── Destination verification ───
+  // "Daniel Mac" (together or separated) ALWAYS identifies Daniel as recipient.
+  // We look for it near destination keywords: destino, a nombre de, motivo, para.
+  // This works across ALL Bolivian banks regardless of format.
+
+  // Collect all text near destination-related keywords
+  let destText = '';
+  const destKeywords = /cuenta\s*(de\s+)?destino|a\s+nombre\s+de|beneficiario|destinatario|motivo|concepto|para\b/i;
+  for (let i = 0; i < lines.length; i++) {
+    if (destKeywords.test(lines[i])) {
+      // Grab this line + next 3 lines as context
+      destText += ' ' + lines.slice(i, Math.min(i + 4, lines.length)).join(' ');
+    }
+  }
+
+  // Check if "Daniel Mac" appears in dest context (handles: Daniel MacLean, Daniel Mac Lean, Oscar Daniel Mac Lean Estrada)
+  const destVerified = /daniel\s+mac/i.test(destText);
+
+  // Extract the dest name for display (what the receipt says)
   let destName = null;
 
-  // Pattern 1: "Cuenta destino" / "Cuenta de destino" section
+  // Pattern 1: "Cuenta destino" / "Cuenta de destino" section — next lines
   const destIdx = lines.findIndex(l => /cuenta\s*(de\s+)?destino/i.test(l));
   if (destIdx >= 0) {
-    // Check if account number is on the SAME line (Mercantil: "Cuenta destino    30151182874355")
-    const sameLineAcc = lines[destIdx].match(/(\d[\d\-]{7,})/);
-    if (sameLineAcc) {
-      destAccount = sameLineAcc[1];
-    }
-    // Scan next lines for account number and name
-    for (let i = destIdx + 1; i < Math.min(destIdx + 6, lines.length); i++) {
+    for (let i = destIdx + 1; i < Math.min(destIdx + 5, lines.length); i++) {
       const line = lines[i];
-      // Stop if we hit another section
       if (/cuenta\s*(de\s+)?origen|fecha|monto|n[uú]mero|nro|concepto/i.test(line)) break;
-      const accMatch = line.match(/(\d[\d\-]{7,})/);
-      if (accMatch && !destAccount) destAccount = accMatch[1];
-      // Name: mixed or all-caps, not a label, not a bank name, not an account number
-      if (!destName && /^[A-ZÁÉÍÓÚÑa-záéíóúñ\s.]{4,}$/.test(line) && !/cuenta|destino|nit|ci\s*\/|banco|credito|solidario|ganadero|mercantil|bisa|bnb/i.test(line) && !/^\d/.test(line)) {
+      if (/^[A-ZÁÉÍÓÚÑa-záéíóúñ\s.]{4,}$/.test(line) && !/cuenta|destino|nit|ci\s*\/|banco|credito|solidario|ganadero|mercantil|bisa|bnb/i.test(line) && !/^\d/.test(line)) {
         destName = line;
+        break;
       }
     }
   }
 
-  // Pattern 2: BISA — "N° de cuenta" + "Banco destino" + "Para: Daniel MacLean"
-  if (!destAccount) {
-    const nCuentaMatch = fullText.match(/N[°º]\s*de\s*cuenta\s*(\d[\d\-]{7,})/i);
-    if (nCuentaMatch) destAccount = nCuentaMatch[1];
-  }
+  // Pattern 2: BISA "Para Daniel MacLean" / BCP "A nombre de" in dest section
   if (!destName) {
-    const paraMatch = fullText.match(/Para\s+([A-ZÁÉÍÓÚÑa-záéíóúñ\s.]+)/i);
+    const paraMatch = fullText.match(/(?:Para|Motivo)[:\s]+([A-ZÁÉÍÓÚÑa-záéíóúñ\s.]+)/i);
     if (paraMatch) destName = paraMatch[1].trim();
   }
-
-  // Pattern 3: BCP — "A la cuenta" → number, "A nombre de" (in dest section) → name
-  if (!destAccount) {
-    const aCuentaMatch = fullText.match(/A la cuenta\s*(\d[\d\-]{7,})/i);
-    if (aCuentaMatch) destAccount = aCuentaMatch[1];
-  }
   if (!destName) {
-    // Find "A nombre de" that appears AFTER "A la cuenta" or in dest section
     const aNombreDestIdx = lines.findIndex((l, i) => {
       const prevLines = lines.slice(Math.max(0, i - 4), i).join(' ');
       return /a nombre de/i.test(l) && (/a la cuenta|destino/i.test(prevLines));
@@ -249,12 +246,6 @@ function parseBolivianReceipt(text) {
     if (aNombreDestIdx >= 0 && aNombreDestIdx + 1 < lines.length) {
       destName = lines[aNombreDestIdx + 1];
     }
-  }
-
-  // Pattern 4: Ganadero — "Banco De Credito 30151182874355" on same line as bank
-  if (!destAccount) {
-    const bankAccMatch = fullText.match(/Banco\s+(?:De\s+)?Cr[eé]dito[^\n]*?(\d{10,})/i);
-    if (bankAccMatch) destAccount = bankAccMatch[1];
   }
 
   // ─── Reference / transaction code ───
@@ -309,13 +300,7 @@ function parseBolivianReceipt(text) {
     else if (/sol/i.test(fullText)) bank = 'BancoSol';
   }
 
-  // Build destAccount display: "Daniel MacLean — 30151182874355"
-  let destDisplay = null;
-  if (destName && destAccount) destDisplay = `${destName} — ${destAccount}`;
-  else if (destAccount) destDisplay = destAccount;
-  else if (destName) destDisplay = destName;
-
-  console.log(`[ocr] Extracted — name: ${name}, amount: ${amount}, date: ${date}, ref: ${reference}, bank: ${bank}, dest: ${destDisplay}`);
+  console.log(`[ocr] Extracted — name: ${name}, amount: ${amount}, date: ${date}, ref: ${reference}, bank: ${bank}, dest: ${destName}, destVerified: ${destVerified}`);
 
   return {
     name: name ? toTitleCase(name) : null,
@@ -323,7 +308,8 @@ function parseBolivianReceipt(text) {
     date,
     reference,
     bank,
-    destAccount: destDisplay,
+    destName: destName || null,
+    destVerified,
     raw_text: fullText,
   };
 }

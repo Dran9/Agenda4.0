@@ -290,6 +290,8 @@ async function initializeDatabase() {
     // wa_conversations: add image/document types + metadata column for OCR data
     await conn.query(`ALTER TABLE wa_conversations MODIFY COLUMN message_type ENUM('text','button_reply','template','auto_reply','image','document') NOT NULL`).catch(() => {});
     await conn.query(`ALTER TABLE wa_conversations ADD COLUMN IF NOT EXISTS metadata JSON DEFAULT NULL`).catch(() => {});
+    // payments: add Mismatch status for OCR validation failures
+    await conn.query(`ALTER TABLE payments MODIFY COLUMN status ENUM('Pendiente','Confirmado','Rechazado','Mismatch') DEFAULT 'Pendiente'`).catch(() => {});
 
     console.log('[DB] All 10 tables initialized');
   } finally {

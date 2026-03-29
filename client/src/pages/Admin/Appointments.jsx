@@ -15,7 +15,7 @@ function OcrBadge({ appt }) {
     <div className="relative">
       <div className="flex items-center gap-1">
         <span className={`text-xs px-2 py-1 rounded-full font-medium border ${PAYMENT_STYLES[appt.payment_status] || PAYMENT_STYLES.Pendiente}`}>
-          {appt.payment_status === 'Confirmado' ? 'Pagado' : 'Pendiente'}
+          {appt.payment_status === 'Confirmado' ? 'Pagado' : appt.payment_status === 'Mismatch' ? 'Mismatch' : 'Pendiente'}
         </span>
         {hasOcr && (
           <button
@@ -43,6 +43,11 @@ function OcrBadge({ appt }) {
               <span className="font-mono text-[11px]">{appt.ocr_extracted_ref}</span>
             </div>
           )}
+          {appt.payment_notes && (
+            <div className="mt-1 pt-1 border-t border-gray-100 text-orange-600 font-medium">
+              {appt.payment_notes}
+            </div>
+          )}
           <button type="button" onClick={() => setOpen(false)} className="mt-2 text-gray-400 hover:text-gray-600 text-[10px]">Cerrar</button>
         </div>
       )}
@@ -53,6 +58,7 @@ function OcrBadge({ appt }) {
 const PAYMENT_STYLES = {
   Confirmado: 'bg-green-100 text-green-700 border-green-200',
   Pendiente: 'bg-red-100 text-red-700 border-red-200',
+  Mismatch: 'bg-orange-100 text-orange-700 border-orange-200',
   Rechazado: 'bg-gray-100 text-gray-500 border-gray-200',
 };
 

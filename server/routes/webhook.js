@@ -267,7 +267,7 @@ router.post('/', async (req, res) => {
                     ocrResult = await extractReceiptData(buffer, mimeType);
 
                     if (ocrResult && ocrResult.amount) {
-                      console.log(`[webhook] OCR: ${ocrResult.name}, Bs ${ocrResult.amount}, ${ocrResult.date}, ref: ${ocrResult.reference}`);
+                      console.log(`[webhook] OCR: ${ocrResult.name}, Bs ${ocrResult.amount}, ${ocrResult.date}, ref: ${ocrResult.reference}, destVerified: ${ocrResult.destVerified}`);
 
                       // Find pending payment for this client (match by phone → client_id)
                       const [pendingPayments] = await pool.query(
@@ -291,42 +291,98 @@ router.post('/', async (req, res) => {
                           }
                         }
 
-                        // Auto-confirm payment
-                        await pool.query(
-                          `UPDATE payments SET status = 'Confirmado', confirmed_at = NOW(),
-                           receipt_file_key = ?, ocr_extracted_amount = ?, ocr_extracted_ref = ?
-                           WHERE id = ? AND tenant_id = ?`,
-                          [fileKey, ocrResult.amount, ocrResult.reference, bestMatch.id, tenantId]
-                        );
+                        // ─── 3 validations: dest, amount, date ───
+                        const problems = [];
 
-                        // Update GCal with $ prefix
-                        try {
-                          const calendarId = process.env.GOOGLE_CALENDAR_ID;
-                          if (calendarId && bestMatch.gcal_event_id) {
-                            const { updateEventSummary } = require('../services/calendar');
-                            const currentSummary = `Terapia ${bestMatch.first_name} ${bestMatch.last_name || ''} - ${bestMatch.client_phone}`.trim();
-                            // Check if already has checkmark prefix
-                            const base = currentSummary.replace(/^[\$✅]\s*/, '');
-                            await updateEventSummary(calendarId, bestMatch.gcal_event_id, `$ ✅ ${base}`);
-                            console.log(`[webhook] GCal updated with $ for payment ${bestMatch.id}`);
+                        // 1. Destinatario: "Daniel Mac" must appear near dest keywords
+                        if (!ocrResult.destVerified) {
+                          problems.push('destinatario');
+                        }
+
+                        // 2. Monto: OCR amount must match client fee or payment amount
+                        const expectedAmount = parseFloat(bestMatch.fee) || parseFloat(bestMatch.amount);
+                        if (expectedAmount && ocrResult.amount !== expectedAmount) {
+                          problems.push(`monto (esperado Bs ${expectedAmount}, recibido Bs ${ocrResult.amount})`);
+                        }
+
+                        // 3. Fecha: receipt date must not be before appointment booking date
+                        if (ocrResult.date && bestMatch.date_time) {
+                          let receiptDate = null;
+                          // Parse DD/MM/YYYY
+                          const ddmmyyyy = ocrResult.date.match(/(\d{2})\/(\d{2})\/(\d{4})/);
+                          if (ddmmyyyy) receiptDate = new Date(ddmmyyyy[3], ddmmyyyy[2] - 1, ddmmyyyy[1]);
+                          // Parse YYYY-MM-DD
+                          const yyyymmdd = ocrResult.date.match(/(\d{4})-(\d{2})-(\d{2})/);
+                          if (!receiptDate && yyyymmdd) receiptDate = new Date(yyyymmdd[1], yyyymmdd[2] - 1, yyyymmdd[3]);
+                          // Parse "23 de marzo, 2026"
+                          if (!receiptDate) {
+                            const spanishMatch = ocrResult.date.match(/(\d{1,2})\s+de\s+(\w+),?\s*(\d{4})/i);
+                            if (spanishMatch) {
+                              const months = { enero:0, febrero:1, marzo:2, abril:3, mayo:4, junio:5, julio:6, agosto:7, septiembre:8, octubre:9, noviembre:10, diciembre:11 };
+                              const mo = months[spanishMatch[2].toLowerCase()];
+                              if (mo !== undefined) receiptDate = new Date(spanishMatch[3], mo, spanishMatch[1]);
+                            }
                           }
-                        } catch (gcalErr) {
-                          console.error(`[webhook] GCal $ update failed (non-fatal):`, gcalErr.message);
+
+                          if (receiptDate) {
+                            // Appointment date (Bolivia time)
+                            const apptDate = new Date(bestMatch.date_time);
+                            apptDate.setHours(0, 0, 0, 0);
+                            receiptDate.setHours(0, 0, 0, 0);
+                            // Receipt date must not be more than 30 days before appointment
+                            const daysDiff = (apptDate - receiptDate) / (1000 * 60 * 60 * 24);
+                            if (daysDiff > 30) {
+                              problems.push(`fecha (comprobante ${ocrResult.date} muy antiguo)`);
+                            }
+                          }
                         }
 
-                        // Send confirmation reply
-                        try {
-                          const { sendTextMessage } = require('../services/whatsapp');
-                          const phoneNumberId = process.env.WA_PHONE_NUMBER_ID || '887756534426165';
-                          await sendTextMessage(phoneNumberId, phone,
-                            `Pago recibido: Bs ${ocrResult.amount}. Gracias, ${bestMatch.first_name}.`
+                        if (problems.length === 0) {
+                          // All validations passed → Confirmado
+                          await pool.query(
+                            `UPDATE payments SET status = 'Confirmado', confirmed_at = NOW(),
+                             receipt_file_key = ?, ocr_extracted_amount = ?, ocr_extracted_ref = ?
+                             WHERE id = ? AND tenant_id = ?`,
+                            [fileKey, ocrResult.amount, ocrResult.reference, bestMatch.id, tenantId]
                           );
-                          console.log(`[webhook] Payment confirmation sent to ${phone}`);
-                        } catch (replyErr) {
-                          console.error(`[webhook] Payment reply failed:`, replyErr.message);
-                        }
 
-                        console.log(`[webhook] Payment ${bestMatch.id} auto-confirmed via OCR for client ${clientId}`);
+                          // Update GCal with $ prefix
+                          try {
+                            const calendarId = process.env.GOOGLE_CALENDAR_ID;
+                            if (calendarId && bestMatch.gcal_event_id) {
+                              const { updateEventSummary } = require('../services/calendar');
+                              const currentSummary = `Terapia ${bestMatch.first_name} ${bestMatch.last_name || ''} - ${bestMatch.client_phone}`.trim();
+                              const base = currentSummary.replace(/^[\$✅]\s*/, '');
+                              await updateEventSummary(calendarId, bestMatch.gcal_event_id, `$ ✅ ${base}`);
+                              console.log(`[webhook] GCal updated with $ for payment ${bestMatch.id}`);
+                            }
+                          } catch (gcalErr) {
+                            console.error(`[webhook] GCal $ update failed (non-fatal):`, gcalErr.message);
+                          }
+
+                          // Send confirmation reply
+                          try {
+                            const { sendTextMessage } = require('../services/whatsapp');
+                            const phoneNumberId = process.env.WA_PHONE_NUMBER_ID || '887756534426165';
+                            await sendTextMessage(phoneNumberId, phone,
+                              `Pago recibido: Bs ${ocrResult.amount}. Gracias, ${bestMatch.first_name}.`
+                            );
+                          } catch (replyErr) {
+                            console.error(`[webhook] Payment reply failed:`, replyErr.message);
+                          }
+
+                          console.log(`[webhook] Payment ${bestMatch.id} auto-confirmed via OCR for client ${clientId}`);
+                        } else {
+                          // Validation failed → Mismatch
+                          await pool.query(
+                            `UPDATE payments SET status = 'Mismatch', receipt_file_key = ?,
+                             ocr_extracted_amount = ?, ocr_extracted_ref = ?,
+                             notes = ?
+                             WHERE id = ? AND tenant_id = ?`,
+                            [fileKey, ocrResult.amount, ocrResult.reference, `Problemas: ${problems.join(', ')}`, bestMatch.id, tenantId]
+                          );
+                          console.log(`[webhook] Payment ${bestMatch.id} MISMATCH: ${problems.join(', ')}`);
+                        }
                       } else {
                         console.log(`[webhook] OCR detected Bs ${ocrResult.amount} but no pending payment for client ${clientId}`);
                       }
@@ -350,7 +406,9 @@ router.post('/', async (req, res) => {
               ocr_amount: ocrResult.amount || null,
               ocr_date: ocrResult.date || null,
               ocr_reference: ocrResult.reference || null,
-              ocr_dest_account: ocrResult.destAccount || null,
+              ocr_dest_name: ocrResult.destName || null,
+              ocr_dest_verified: ocrResult.destVerified || false,
+              ocr_bank: ocrResult.bank || null,
             }) : null;
 
             await pool.query(

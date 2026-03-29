@@ -250,12 +250,14 @@ export default function WhatsApp() {
                             const meta = typeof msg.metadata === 'string' ? (() => { try { return JSON.parse(msg.metadata); } catch { return null; } })() : msg.metadata;
                             if (!meta || !meta.ocr_amount) return null;
                             return (
-                              <div className="mt-2 bg-gray-50 rounded-lg px-3 py-2 text-xs space-y-0.5 border border-gray-200 max-w-[280px]">
+                              <div className="mt-2 bg-gray-50 rounded-lg px-3 py-2 text-xs space-y-0.5 border border-gray-200 max-w-[300px]">
                                 <div className="text-[10px] font-medium text-gray-400 uppercase mb-1">Datos reconocidos (OCR)</div>
-                                {meta.ocr_name && <div><span className="text-gray-400">Nombre:</span> <span className="text-gray-700 font-medium">{meta.ocr_name}</span></div>}
+                                {meta.ocr_name && <div><span className="text-gray-400">Remitente:</span> <span className="text-gray-700 font-medium">{meta.ocr_name}</span></div>}
                                 {meta.ocr_amount && <div><span className="text-gray-400">Monto:</span> <span className="text-gray-700 font-medium">Bs {meta.ocr_amount}</span></div>}
                                 {meta.ocr_date && <div><span className="text-gray-400">Fecha:</span> <span className="text-gray-700">{meta.ocr_date}</span></div>}
-                                {meta.ocr_dest_account && <div><span className="text-gray-400">Cuenta destino:</span> <span className="text-gray-700">{meta.ocr_dest_account}</span></div>}
+                                {meta.ocr_dest_name && <div><span className="text-gray-400">Destinatario:</span> <span className={`font-medium ${meta.ocr_dest_verified ? 'text-green-700' : 'text-red-600'}`}>{meta.ocr_dest_name} {meta.ocr_dest_verified ? '' : '(NO verificado)'}</span></div>}
+                                {!meta.ocr_dest_name && meta.ocr_dest_verified !== undefined && <div><span className="text-gray-400">Destinatario:</span> <span className={meta.ocr_dest_verified ? 'text-green-700' : 'text-red-600'}>{meta.ocr_dest_verified ? 'Verificado' : 'No encontrado'}</span></div>}
+                                {meta.ocr_bank && <div><span className="text-gray-400">Banco:</span> <span className="text-gray-700">{meta.ocr_bank}</span></div>}
                                 {meta.ocr_reference && <div><span className="text-gray-400">Ref:</span> <span className="text-gray-700 font-mono">{meta.ocr_reference}</span></div>}
                               </div>
                             );

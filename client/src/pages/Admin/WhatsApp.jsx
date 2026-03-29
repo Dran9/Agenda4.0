@@ -239,12 +239,28 @@ export default function WhatsApp() {
                       </div>
                       <p className="text-sm text-gray-600 mt-0.5 break-words">{msg.content}</p>
                       {(msg.message_type === 'image' || msg.message_type === 'document') && msg.content?.includes('guardado:') && (
-                        <AuthImage
-                          fileKey={msg.content.match(/guardado: ([^)]+)/)?.[1]}
-                          alt="Comprobante"
-                          className="mt-2 max-w-[200px] rounded-lg border border-gray-200 cursor-pointer hover:opacity-80"
-                          onClick={e => window.open(e.target.src, '_blank')}
-                        />
+                        <>
+                          <AuthImage
+                            fileKey={msg.content.match(/guardado: ([^)]+)/)?.[1]}
+                            alt="Comprobante"
+                            className="mt-2 max-w-[200px] rounded-lg border border-gray-200 cursor-pointer hover:opacity-80"
+                            onClick={e => window.open(e.target.src, '_blank')}
+                          />
+                          {(() => {
+                            const meta = typeof msg.metadata === 'string' ? (() => { try { return JSON.parse(msg.metadata); } catch { return null; } })() : msg.metadata;
+                            if (!meta || !meta.ocr_amount) return null;
+                            return (
+                              <div className="mt-2 bg-gray-50 rounded-lg px-3 py-2 text-xs space-y-0.5 border border-gray-200 max-w-[280px]">
+                                <div className="text-[10px] font-medium text-gray-400 uppercase mb-1">Datos reconocidos (OCR)</div>
+                                {meta.ocr_name && <div><span className="text-gray-400">Nombre:</span> <span className="text-gray-700 font-medium">{meta.ocr_name}</span></div>}
+                                {meta.ocr_amount && <div><span className="text-gray-400">Monto:</span> <span className="text-gray-700 font-medium">Bs {meta.ocr_amount}</span></div>}
+                                {meta.ocr_date && <div><span className="text-gray-400">Fecha:</span> <span className="text-gray-700">{meta.ocr_date}</span></div>}
+                                {meta.ocr_dest_account && <div><span className="text-gray-400">Cuenta destino:</span> <span className="text-gray-700">{meta.ocr_dest_account}</span></div>}
+                                {meta.ocr_reference && <div><span className="text-gray-400">Ref:</span> <span className="text-gray-700 font-mono">{meta.ocr_reference}</span></div>}
+                              </div>
+                            );
+                          })()}
+                        </>
                       )}
                       <span className="text-[11px] text-gray-400 mt-1 block">{formatDate(msg.created_at)}</span>
                     </div>

@@ -528,21 +528,17 @@ export default function Config() {
             </div>
             <div>
               <label className="block text-xs text-gray-500 mb-1">Ventana de agendamiento</label>
-              <select
-                value={config?.window_days || 10}
-                onChange={e => setConfig(c => ({ ...c, window_days: parseInt(e.target.value) }))}
-                className="w-full px-3 py-2.5 border border-gray-200 rounded-lg text-sm bg-white"
-              >
-                <option value={7}>7 días</option>
-                <option value={10}>10 días</option>
-                <option value={14}>14 días</option>
-                <option value={21}>21 días</option>
-                <option value={30}>30 días</option>
-                <option value={35}>35 días</option>
-                <option value={40}>40 días</option>
-                <option value={45}>45 días</option>
-                <option value={50}>50 días</option>
-              </select>
+              <div className="flex items-center gap-2">
+                <input
+                  type="number"
+                  min={1}
+                  max={120}
+                  value={config?.window_days || 10}
+                  onChange={e => setConfig(c => ({ ...c, window_days: parseInt(e.target.value) || 10 }))}
+                  className="w-20 px-3 py-2.5 border border-gray-200 rounded-lg text-sm"
+                />
+                <span className="text-sm text-gray-400">días</span>
+              </div>
             </div>
             <div className="flex gap-3">
               <div className="flex-1">

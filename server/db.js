@@ -287,6 +287,9 @@ async function initializeDatabase() {
     await conn.query(`ALTER TABLE config ADD COLUMN IF NOT EXISTS monthly_goal DECIMAL(10,2) DEFAULT NULL`).catch(() => {});
     await conn.query(`ALTER TABLE appointments MODIFY COLUMN status ENUM('Agendada','Confirmada','Reagendada','Cancelada','Completada','No-show') DEFAULT 'Agendada'`).catch(() => {});
     await conn.query(`UPDATE appointments SET status = 'Agendada' WHERE status = 'Confirmada'`).catch(() => {});
+    // wa_conversations: add image/document types + metadata column for OCR data
+    await conn.query(`ALTER TABLE wa_conversations MODIFY COLUMN message_type ENUM('text','button_reply','template','auto_reply','image','document') NOT NULL`).catch(() => {});
+    await conn.query(`ALTER TABLE wa_conversations ADD COLUMN IF NOT EXISTS metadata JSON DEFAULT NULL`).catch(() => {});
 
     console.log('[DB] All 10 tables initialized');
   } finally {

@@ -206,6 +206,7 @@ router.post('/', async (req, res) => {
 
             // Download media from WhatsApp
             let mediaData = null;
+            let ocrResult = null;
             try {
               const token = process.env.WA_TOKEN;
               // Step 1: Get media URL
@@ -263,7 +264,7 @@ router.post('/', async (req, res) => {
                     console.log(`[webhook] Image from ${phone} ignored — no payment context`);
                   } else try {
                     const { extractReceiptData } = require('../services/ocr');
-                    const ocrResult = await extractReceiptData(buffer, mimeType);
+                    ocrResult = await extractReceiptData(buffer, mimeType);
 
                     if (ocrResult && ocrResult.amount) {
                       console.log(`[webhook] OCR: ${ocrResult.name}, Bs ${ocrResult.amount}, ${ocrResult.date}, ref: ${ocrResult.reference}`);
@@ -343,10 +344,19 @@ router.post('/', async (req, res) => {
               ? `[${msg.type === 'image' ? 'Imagen' : 'Documento'}] ${caption || filename || ''} (guardado: ${mediaData})`
               : `[${msg.type === 'image' ? 'Imagen' : 'Documento'}] ${caption || filename || ''} (no descargado)`;
 
+            // Build metadata with OCR data if available
+            const metadata = ocrResult ? JSON.stringify({
+              ocr_name: ocrResult.name || null,
+              ocr_amount: ocrResult.amount || null,
+              ocr_date: ocrResult.date || null,
+              ocr_reference: ocrResult.reference || null,
+              ocr_dest_account: ocrResult.destAccount || null,
+            }) : null;
+
             await pool.query(
-              `INSERT INTO wa_conversations (tenant_id, client_id, client_phone, direction, message_type, content, wa_message_id)
-               VALUES (?, ?, ?, 'inbound', ?, ?, ?)`,
-              [tenantId, clientId, phone, msg.type, content, msg.id]
+              `INSERT INTO wa_conversations (tenant_id, client_id, client_phone, direction, message_type, content, wa_message_id, metadata)
+               VALUES (?, ?, ?, 'inbound', ?, ?, ?, ?)`,
+              [tenantId, clientId, phone, msg.type, content, msg.id, metadata]
             );
 
             // Log as potential payment proof
@@ -381,7 +391,7 @@ router.get('/conversations', authMiddleware, async (req, res) => {
     params.push(parseInt(limit), offset);
 
     const [rows] = await pool.query(
-      `SELECT w.*, c.first_name, c.last_name
+      `SELECT w.*, w.metadata, c.first_name, c.last_name
        FROM wa_conversations w
        LEFT JOIN clients c ON w.client_id = c.id
        WHERE ${where}

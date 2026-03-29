@@ -179,6 +179,25 @@ function parseBolivianReceipt(text) {
     }
   }
 
+  // Extract destination account (Cuenta destino / beneficiario)
+  let destAccount = null;
+  const destIdx = lines.findIndex(l => /cuenta de destino|beneficiario|destinatario/i.test(l));
+  if (destIdx >= 0) {
+    for (let i = destIdx + 1; i < Math.min(destIdx + 5, lines.length); i++) {
+      const line = lines[i];
+      // Look for account number (digits, possibly with dashes)
+      const accMatch = line.match(/(\d[\d\-]{5,})/);
+      if (accMatch) {
+        destAccount = accMatch[1];
+        break;
+      }
+      // Or a name in all caps
+      if (!destAccount && /^[A-ZÁÉÍÓÚÑ\s]{4,}$/.test(line) && !/cuenta|destino|nit|ci\s/i.test(line)) {
+        destAccount = line;
+      }
+    }
+  }
+
   // Detect bank
   let bank = null;
   if (/mercantil|santa cruz/i.test(fullText)) bank = 'Mercantil Santa Cruz';
@@ -190,7 +209,7 @@ function parseBolivianReceipt(text) {
   else if (/ganadero/i.test(fullText)) bank = 'Banco Ganadero';
   else if (/sol/i.test(fullText)) bank = 'Banco Sol';
 
-  console.log(`[ocr] Extracted — name: ${name}, amount: ${amount}, date: ${date}, ref: ${reference}, bank: ${bank}`);
+  console.log(`[ocr] Extracted — name: ${name}, amount: ${amount}, date: ${date}, ref: ${reference}, bank: ${bank}, destAccount: ${destAccount}`);
 
   return {
     name: name ? toTitleCase(name) : null,
@@ -198,6 +217,7 @@ function parseBolivianReceipt(text) {
     date,
     reference,
     bank,
+    destAccount: destAccount ? toTitleCase(destAccount) : null,
     raw_text: fullText,
   };
 }

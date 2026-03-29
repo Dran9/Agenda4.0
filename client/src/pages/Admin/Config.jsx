@@ -191,6 +191,8 @@ export default function Config() {
         capital_cities: config._capitalCities?.join(',') || '',
         rate_limit_booking: config.rate_limit_booking,
         rate_limit_window: config.rate_limit_window,
+        reminder_enabled: config.reminder_enabled ? 1 : 0,
+        reminder_time: config.reminder_time || '18:40',
       });
       showToast('Configuración guardada');
     } catch (err) {
@@ -463,7 +465,50 @@ export default function Config() {
           </div>
         </div>
 
-        {/* SECTION 3: General Parameters */}
+        {/* SECTION 3: Recordatorios WhatsApp */}
+        <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
+          <h3 className="text-lg font-semibold mb-1">Recordatorios WhatsApp</h3>
+          <p className="text-sm text-gray-400 mb-5">Envío automático de recordatorios a pacientes.</p>
+
+          <div className="flex items-center justify-between">
+            <div>
+              <div className="font-medium text-sm">Enviar recordatorios</div>
+              <div className="text-xs text-gray-400">Se envían diariamente a la hora configurada para las citas del día siguiente</div>
+            </div>
+            <button
+              type="button"
+              onClick={() => setConfig(c => ({ ...c, reminder_enabled: c.reminder_enabled ? 0 : 1 }))}
+              className={`relative w-12 h-7 rounded-full transition-colors ${config?.reminder_enabled ? 'bg-gray-900' : 'bg-gray-300'}`}
+            >
+              <span className={`absolute top-0.5 left-0.5 w-6 h-6 bg-white rounded-full shadow transition-transform ${config?.reminder_enabled ? 'translate-x-5' : 'translate-x-0'}`} />
+            </button>
+          </div>
+
+          {config?.reminder_enabled ? (
+            <div className="mt-4 pt-4 border-t border-gray-100">
+              <label className="block text-xs text-gray-500 mb-1">Hora de envío (Bolivia)</label>
+              <select
+                value={config?.reminder_time || '18:40'}
+                onChange={e => setConfig(c => ({ ...c, reminder_time: e.target.value }))}
+                className="px-3 py-2.5 border border-gray-200 rounded-lg text-sm bg-white"
+              >
+                {Array.from({ length: 15 }, (_, i) => {
+                  const h = i + 8;
+                  return [
+                    <option key={`${h}:00`} value={`${String(h).padStart(2, '0')}:00`}>{String(h).padStart(2, '0')}:00</option>,
+                    <option key={`${h}:30`} value={`${String(h).padStart(2, '0')}:30`}>{String(h).padStart(2, '0')}:30</option>,
+                  ];
+                }).flat().filter(o => {
+                  const v = o.props.value;
+                  const [hh] = v.split(':').map(Number);
+                  return hh <= 22;
+                })}
+              </select>
+            </div>
+          ) : null}
+        </div>
+
+        {/* SECTION 4: General Parameters */}
         <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
           <h3 className="text-lg font-semibold mb-1">Parámetros generales</h3>
           <p className="text-sm text-gray-400 mb-5">Configuración de la sesión y ventana de agendamiento.</p>

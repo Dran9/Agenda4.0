@@ -2,17 +2,11 @@
   "version": "0.0.1",
   "configurations": [
     {
-      "name": "booking-dev",
+      "name": "client-dev",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "dev"],
+      "runtimeArgs": ["run", "dev", "--", "--host"],
       "port": 5173,
-      "cwd": "client"
-    },
-    {
-      "name": "phone-preview",
-      "runtimeExecutable": "npx",
-      "runtimeArgs": ["serve", "client", "-l", "3456", "--no-clipboard"],
-      "port": 3456
+      "cwd": "/Users/dran/Documents/Claude Code/agenda3.0/client"
     }
   ]
 }

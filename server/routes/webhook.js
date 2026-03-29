@@ -114,11 +114,11 @@ router.post('/', async (req, res) => {
               // Mark DB appointment as confirmed (if exists)
               if (clientId) {
                 const [appts] = await pool.query(
-                  `SELECT id FROM appointments WHERE client_id = ? AND status = 'Confirmada' AND date_time > NOW() ORDER BY date_time LIMIT 1`,
+                  `SELECT id FROM appointments WHERE client_id = ? AND status IN ('Agendada','Confirmada') AND date_time > NOW() ORDER BY date_time LIMIT 1`,
                   [clientId]
                 );
                 if (appts[0]) {
-                  await pool.query(`UPDATE appointments SET confirmed_at = NOW() WHERE id = ?`, [appts[0].id]);
+                  await pool.query(`UPDATE appointments SET status = 'Confirmada', confirmed_at = NOW() WHERE id = ?`, [appts[0].id]);
                 }
               }
             }

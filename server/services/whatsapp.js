@@ -9,10 +9,15 @@ async function sendConfirmationTemplate(phone, nombre, fechaISO) {
   const token = process.env.WA_TOKEN;
   const phoneNumberId = process.env.WA_PHONE_ID;
 
-  // Parse date — if no timezone offset, treat as Bolivia time (-04:00)
-  let dateStr = String(fechaISO).replace(' ', 'T');
-  if (!/[Z+]/.test(dateStr) && !/-\d{2}:\d{2}$/.test(dateStr)) dateStr += '-04:00';
-  const date = new Date(dateStr);
+  // Parse date — handle Date objects (from mysql2) and strings
+  let date;
+  if (fechaISO instanceof Date) {
+    date = fechaISO;
+  } else {
+    let dateStr = String(fechaISO).replace(' ', 'T');
+    if (!/[Z+]/.test(dateStr) && !/-\d{2}:\d{2}$/.test(dateStr)) dateStr += '-04:00';
+    date = new Date(dateStr);
+  }
 
   let nombrewa = nombre.split(' ')[0];
   nombrewa = nombrewa.charAt(0).toUpperCase() + nombrewa.slice(1).toLowerCase();

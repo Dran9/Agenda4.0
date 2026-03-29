@@ -39,7 +39,7 @@ router.get('/', authMiddleware, async (req, res) => {
     // Calculate status and future appointment for each
     for (const client of clients) {
       const [futureAppts] = await pool.query(
-        `SELECT id, date_time FROM appointments WHERE client_id = ? AND status = 'Confirmada' AND date_time > NOW() LIMIT 1`,
+        `SELECT id, date_time FROM appointments WHERE client_id = ? AND status IN ('Agendada','Confirmada') AND date_time > NOW() LIMIT 1`,
         [client.id]
       );
       const lastAppt = client.last_session ? { date_time: client.last_session } : null;

@@ -164,7 +164,7 @@ async function syncBookingToSheet(appointment, client) {
     client.phone,
     fecha,
     hora,
-    appointment.status || 'Confirmada',
+    appointment.status || 'Agendada',
     appointment.session_number || '',
     appointment.is_first ? 'Sí' : 'No',
     appointment.confirmed_at ? 'Sí' : '',

@@ -6,8 +6,9 @@ import { api } from '../../utils/api';
 const COLORS = ['#1a1a1a', '#3B82F6', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6', '#EC4899', '#14B8A6'];
 
 const STATUS_COLORS = {
-  Completada: '#10B981',
-  Confirmada: '#3B82F6',
+  Agendada: '#3B82F6',
+  Confirmada: '#10B981',
+  Completada: '#059669',
   Cancelada: '#EF4444',
   Reagendada: '#F59E0B',
   'No-show': '#9CA3AF',

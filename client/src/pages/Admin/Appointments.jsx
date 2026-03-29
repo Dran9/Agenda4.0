@@ -57,8 +57,9 @@ const PAYMENT_STYLES = {
 };
 
 const STATUS_STYLES = {
+  Agendada: 'bg-blue-100 text-blue-700',
   Confirmada: 'bg-green-100 text-green-700',
-  Completada: 'bg-blue-100 text-blue-700',
+  Completada: 'bg-emerald-100 text-emerald-700',
   Cancelada: 'bg-gray-100 text-gray-600',
   'No-show': 'bg-red-100 text-red-700',
   Reagendada: 'bg-yellow-100 text-yellow-700',
@@ -181,6 +182,7 @@ export default function Appointments() {
           className="px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white"
         >
           <option value="">Todos los status</option>
+          <option value="Agendada">Agendada</option>
           <option value="Confirmada">Confirmada</option>
           <option value="Completada">Completada</option>
           <option value="Cancelada">Cancelada</option>
@@ -264,10 +266,11 @@ export default function Appointments() {
                         className="text-xs border border-gray-200 rounded px-2 py-1 bg-white"
                       >
                         <option value="">Cambiar...</option>
+                        <option value="Agendada">Agendada</option>
+                        <option value="Confirmada">Confirmada</option>
                         <option value="Completada">Completada</option>
                         <option value="No-show">No-show</option>
                         <option value="Cancelada">Cancelada</option>
-                        <option value="Confirmada">Confirmada</option>
                       </select>
                     </td>
                     <td className="p-3">

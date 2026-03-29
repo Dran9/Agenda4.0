@@ -46,7 +46,7 @@ async function checkAndSendReminders({ date, tenantId, force } = {}) {
       let [appts] = await pool.query(
         `SELECT a.*, c.phone, c.first_name FROM appointments a
          JOIN clients c ON a.client_id = c.id
-         WHERE a.gcal_event_id = ? AND a.status = 'Confirmada' ${tenantFilter}`,
+         WHERE a.gcal_event_id = ? AND a.status IN ('Agendada','Confirmada') ${tenantFilter}`,
         params
       );
 
@@ -84,18 +84,6 @@ async function checkAndSendReminders({ date, tenantId, force } = {}) {
         continue;
       }
       const appt = appts[0];
-
-      // Check if reminder already sent (within last 24h)
-      const [logs] = await pool.query(
-        `SELECT id FROM webhooks_log WHERE client_phone = ? AND type = 'reminder_sent' AND created_at > DATE_SUB(NOW(), INTERVAL 24 HOUR)`,
-        [appt.phone]
-      );
-
-      if (logs.length > 0 && !force) {
-        console.log(`[reminder] Already sent to ${appt.phone}, skipping`);
-        skipped++;
-        continue;
-      }
 
       // Send WhatsApp reminder
       try {

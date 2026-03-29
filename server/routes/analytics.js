@@ -30,7 +30,7 @@ router.get('/', authMiddleware, async (req, res) => {
           (SELECT COUNT(*) FROM appointments WHERE tenant_id = ? AND status = 'No-show') as total_noshow,
           (SELECT COUNT(*) FROM appointments WHERE tenant_id = ? AND status = 'Reagendada') as total_rescheduled,
           (SELECT COUNT(*) FROM clients WHERE tenant_id = ? AND created_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)) as new_clients_30d,
-          (SELECT COUNT(*) FROM appointments WHERE tenant_id = ? AND date_time >= DATE_SUB(NOW(), INTERVAL 7 DAY) AND status IN ('Completada','Confirmada')) as sessions_this_week,
+          (SELECT COUNT(*) FROM appointments WHERE tenant_id = ? AND date_time >= DATE_SUB(NOW(), INTERVAL 7 DAY) AND status IN ('Completada','Confirmada','Agendada')) as sessions_this_week,
           (SELECT COALESCE(SUM(p.amount), 0) FROM payments p JOIN appointments a ON p.appointment_id = a.id WHERE p.tenant_id = ? AND p.status = 'Confirmado' AND MONTH(a.date_time) = MONTH(NOW()) AND YEAR(a.date_time) = YEAR(NOW())) as income_this_month
       `, [t, t, t, t, t, t, t, t, t]),
 
@@ -68,7 +68,7 @@ router.get('/', authMiddleware, async (req, res) => {
       // Popular hours
       pool.query(`
         SELECT HOUR(date_time) as hour, COUNT(*) as count
-        FROM appointments WHERE tenant_id = ? AND status IN ('Completada', 'Confirmada')
+        FROM appointments WHERE tenant_id = ? AND status IN ('Completada', 'Confirmada', 'Agendada')
         GROUP BY hour ORDER BY hour
       `, [t]),
 
@@ -97,7 +97,7 @@ router.get('/', authMiddleware, async (req, res) => {
         ) a ON a.client_id = c.id
         LEFT JOIN (
           SELECT client_id, COUNT(*) as future_appt
-          FROM appointments WHERE status = 'Confirmada' AND date_time > NOW()
+          FROM appointments WHERE status IN ('Agendada','Confirmada') AND date_time > NOW()
           GROUP BY client_id
         ) f ON f.client_id = c.id
         WHERE c.tenant_id = ? AND c.deleted_at IS NULL

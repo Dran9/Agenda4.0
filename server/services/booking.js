@@ -29,7 +29,7 @@ async function checkClientByPhone(phone, tenantId) {
   const client = clients[0];
   const [appointments] = await pool.query(
     `SELECT id, date_time FROM appointments
-     WHERE client_id = ? AND tenant_id = ? AND status = 'Confirmada' AND date_time > NOW()
+     WHERE client_id = ? AND tenant_id = ? AND status IN ('Agendada','Confirmada') AND date_time > NOW()
      ORDER BY date_time ASC LIMIT 1`,
     [client.id, tenantId]
   );
@@ -179,7 +179,7 @@ async function createBooking(client, dateTime, tenantId) {
 
   const [result] = await pool.query(
     `INSERT INTO appointments (tenant_id, client_id, date_time, gcal_event_id, status, confirmed_at, is_first, session_number, phone)
-     VALUES (?, ?, ?, ?, 'Confirmada', NOW(), ?, ?, ?)`,
+     VALUES (?, ?, ?, ?, 'Agendada', NOW(), ?, ?, ?)`,
     [tenantId, client.id, dateTime, gcalEvent.id, isFirst, sessionNumber, client.phone]
   );
 
@@ -196,7 +196,7 @@ async function createBooking(client, dateTime, tenantId) {
     gcal_event_id: gcalEvent.id,
     session_number: sessionNumber,
     is_first: isFirst,
-    status: 'Confirmada',
+    status: 'Agendada',
   };
 
   // Sync booking to Google Sheets (async, non-blocking)

@@ -92,7 +92,7 @@ async function initializeDatabase() {
         date_time DATETIME NOT NULL,
         duration INT DEFAULT 60,
         gcal_event_id VARCHAR(255),
-        status ENUM('Confirmada','Reagendada','Cancelada','Completada','No-show') DEFAULT 'Confirmada',
+        status ENUM('Agendada','Confirmada','Reagendada','Cancelada','Completada','No-show') DEFAULT 'Agendada',
         is_first BOOLEAN DEFAULT FALSE,
         session_number INT DEFAULT 1,
         phone VARCHAR(20),
@@ -285,6 +285,8 @@ async function initializeDatabase() {
 
     // Schema migrations (safe to re-run)
     await conn.query(`ALTER TABLE config ADD COLUMN IF NOT EXISTS monthly_goal DECIMAL(10,2) DEFAULT NULL`).catch(() => {});
+    await conn.query(`ALTER TABLE appointments MODIFY COLUMN status ENUM('Agendada','Confirmada','Reagendada','Cancelada','Completada','No-show') DEFAULT 'Agendada'`).catch(() => {});
+    await conn.query(`UPDATE appointments SET status = 'Agendada' WHERE status = 'Confirmada'`).catch(() => {});
 
     console.log('[DB] All 10 tables initialized');
   } finally {

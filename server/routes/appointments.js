@@ -53,7 +53,7 @@ router.get('/', authMiddleware, async (req, res) => {
 router.put('/:id/status', authMiddleware, async (req, res) => {
   try {
     const { status } = req.body;
-    const valid = ['Confirmada', 'Reagendada', 'Cancelada', 'Completada', 'No-show'];
+    const valid = ['Agendada', 'Confirmada', 'Reagendada', 'Cancelada', 'Completada', 'No-show'];
     if (!valid.includes(status)) return res.status(400).json({ error: 'Status inválido' });
 
     await pool.query(

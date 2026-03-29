@@ -247,7 +247,7 @@ router.get('/summary', authMiddleware, async (req, res) => {
       FROM appointments a
       LEFT JOIN payments p ON p.appointment_id = a.id AND p.tenant_id = ?
       WHERE a.tenant_id = ? AND YEAR(a.date_time) = ? AND MONTH(a.date_time) = ?
-        AND a.status IN ('Completada', 'Confirmada')
+        AND a.status IN ('Completada', 'Confirmada', 'Agendada')
     `, [t, t, y, m]);
 
     // Monthly history (last 6 months)
@@ -260,7 +260,7 @@ router.get('/summary', authMiddleware, async (req, res) => {
       FROM appointments a
       LEFT JOIN payments p ON p.appointment_id = a.id AND p.tenant_id = ?
       WHERE a.tenant_id = ? AND a.date_time >= DATE_SUB(NOW(), INTERVAL 6 MONTH)
-        AND a.status IN ('Completada', 'Confirmada')
+        AND a.status IN ('Completada', 'Confirmada', 'Agendada')
       GROUP BY YEAR(a.date_time), MONTH(a.date_time)
       ORDER BY year DESC, month DESC
     `, [t, t]);

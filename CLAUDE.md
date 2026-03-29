@@ -183,19 +183,20 @@ Recordatorio (18:40 diario):
 ## Variables de entorno
 Ver `.env.example` para la lista completa. Se configuran en hPanel de Hostinger.
 
-## Estado actual (2026-03-28)
+## Estado actual (2026-03-29)
 
 ### Funcionando
 - **Server Express** corriendo en Hostinger (tumvp.in), auto-deploy desde GitHub
 - **10 tablas MySQL** en `u926460478_agenda30` (localhost en Hostinger, srv2023.hstgr.io remoto)
 - **Google Calendar OAuth** funcionando — slots, eventos, recordatorios
 - **WhatsApp Cloud API** — recordatorios diarios 18:40 BOT, auto-reply a botones CONFIRM/REAGEN/DANIEL
-- **OCR de comprobantes** — Google Vision API reconoce montos, referencias, bancos bolivianos
-- **Auto-match pagos por teléfono** — imagen WhatsApp → OCR → match con pago pendiente → confirma automáticamente
+- **OCR de comprobantes** — Google Vision API reconoce montos, referencias, bancos bolivianos. **Soporta imágenes Y PDFs** (via `files:annotate` endpoint)
+- **Auto-match pagos por teléfono** — imagen/PDF WhatsApp → OCR → match con pago pendiente → confirma automáticamente
 - **QR de pago automático** — al confirmar asistencia, envía QR según arancel del cliente
 - **Payment badges** — verde "Pagado" / rojo "Pendiente" en Appointments y Dashboard
 - **Hard delete de clientes** — CASCADE por payments, appointments, wa_conversations
 - **Rate limiting** solo en /api/book, /api/reschedule, /api/client (NO en admin routes)
+- **Calendar prefetch por mes** — al cargar y al navegar meses, prefetchea TODOS los días disponibles del mes
 
 ### Deploy — Lecciones aprendidas (CRÍTICO)
 - **Hostinger ejecuta `npm run build` en cada deploy** → el script build en package.json raíz DEBE ser no-op
@@ -204,33 +205,40 @@ Ver `.env.example` para la lista completa. Se configuran en hPanel de Hostinger.
 - **`index.html` se sirve con `fs.readFileSync()`** (no sendFile) para evitar cache de Express
 - **Flujo correcto**: cambiar código → `cd client && npm run build` → commitear `client/dist/` → push → Hostinger deploys
 
+### Timezone — Lecciones aprendidas (CRÍTICO)
+- **`server/db.js` tiene `timezone: '-04:00'`** — NUNCA quitar. Sin esto, mysql2 interpreta DATETIME como UTC y todas las horas se muestran -4h
+- **NUNCA hacer doble conversión timezone**: `new Date(date.toLocaleString('en-US', { timeZone: 'America/La_Paz' }))` seguido de `.toLocaleTimeString({ timeZone: 'America/La_Paz' })` resta 4h DOS VECES
+- **Para formatear hora Bolivia**: usar `date.toLocaleTimeString('es-BO', { timeZone: 'America/La_Paz' })` directamente sobre un Date con timezone correcto — UNA sola conversión
+- **`window_days` = días CALENDARIO, no weekdays** — simple: `maxDate = today + windowDays`
+- **Posible bug pendiente**: `NOW()` en queries SQL devuelve hora del server MySQL (probablemente UTC), pero `date_time` en DB es Bolivia. Diferencia de 4h en comparaciones `date_time > NOW()`. No afecta en la práctica excepto citas cerca de medianoche.
+
 ### Endpoints de debug (TEMPORALES — borrar cuando todo esté estable)
 - `GET /api/debug-env` — longitud y parciales de credenciales
 - `GET /api/debug-dist` — lista archivos en client/dist en Hostinger
 - `GET /api/admin/test-ocr` — verifica GOOGLE_VISION_API_KEY
 - `GET /api/admin/test-reminder?date=today|tomorrow&force=1` — trigger manual de recordatorios
 
-### Cambios recientes (sesión 2026-03-28 tarde)
-- **Calendario**: sin borde, fuentes +2pt, #A4A4A6 para headers y días no disponibles, #000 fw900 para días con slots
-- **Calendar window_days**: ahora cuenta solo días de semana (lunes-viernes), no días calendario
-- **Prefetch**: 7 días de semana (salta sábados y domingos)
-- **Phone input unificado (EN PROGRESO — NECESITA VERIFICACIÓN)**:
-  - Código en `BookingFlow.jsx` ya modificado: eliminado dropdown de país en Screen 2
-  - Prefijo ahora es texto estático gris (#A4A4A6, Work Sans Extra Bold 28px) derivado del selector de timezone
-  - `countryCode` es un `useMemo` que lee `TZ_TO_PHONE_CODE[selectedTz?.tz]`
-  - Eliminados: `setCountryCode`, `showCountryDropdown`, useEffect de IP para country code
-  - **VERIFICAR EN PRODUCCIÓN**: Daniel reporta que no ve el cambio en el teléfono. Puede ser cache de LiteSpeed.
-    - Confirmar que `client/dist/` tiene los nuevos hashes después del push
-    - Verificar con `/api/debug-dist` que Hostinger sirve los archivos correctos
-    - Si no funciona, puede ser que el deploy no se ejecutó o LiteSpeed cacheó el HTML viejo
-  - El cambio SÍ funciona en dev local (preview confirmado en Vite dev server)
+### Cambios sesión 2026-03-29 (madrugada)
+- **Timezone mysql2**: `timezone: '-04:00'` en db.js — fix raíz para horas correctas en admin y WhatsApp
+- **WhatsApp reminder hora**: eliminada doble conversión timezone, usa Intl.DateTimeFormat directo
+- **Calendar window_days**: revertido a días calendario (no weekdays) en server, Calendar.jsx, CalendarScreen.jsx
+- **Prefetch completo por mes**: BookingFlow prefetchea todos los días del mes + onMonthChange handler
+- **Config dropdown**: extendido hasta 50 días
+- **OCR de PDFs**: `ocr.js` usa `files:annotate` de Vision API para PDFs nativamente
+
+### Cambios sesión 2026-03-28 tarde
+- **Calendario visual**: sin borde, fuentes +2pt, #A4A4A6 para headers y días no disponibles, #000 fw900 para días con slots
+- **Phone input unificado**: eliminado dropdown de país en Screen 2, prefijo derivado de timezone
 - **CONFIRM_NOW WhatsApp**: texto estático sin variables de fecha, delay 60s antes de enviar QR
 - **Blue checkmarks**: mensajes se marcan como leídos inmediatamente
 - **Finance page**: conectada con datos reales, goal mensual, tabla de pagos con OCR
 - **Dashboard KPIs**: conectados a datos reales de analytics
 
 ### Pendiente
-- **Verificar phone input unificado en producción** — el código está listo, verificar que el deploy llegó
+- **Verificar OCR de PDF en producción** — código desplegado, falta test real (enviar PDF por WhatsApp después de "Confirmo asistencia")
+- **Verificar phone input unificado en producción** — el código está listo, puede ser cache de LiteSpeed
+- **NOW() en SQL vs Bolivia time** — potencial bug de 4h en queries con `date_time > NOW()`. Fix: SET time_zone = '-04:00' en cada conexión mysql2
+- **CalendarSync icon error en dev** — BookingFlow.jsx importa ícono que no existe en lucide-react instalado (solo afecta dev, no prod)
 - **Diseño visual** — solo estructura funcional, falta branding/colores/tipografía
 - **Analytics page** — placeholder
 - **WhatsApp inbox** — funciona lectura, falta pulir UI

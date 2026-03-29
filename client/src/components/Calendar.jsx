@@ -104,7 +104,7 @@ export default function Calendar({ onSelectDate, selectedDate, availableDays = [
             <button
               type="button" key={i} onClick={() => handleClick(day)} disabled={!enabled}
               style={{
-                height: 44, borderRadius: 10, fontSize: 18, display: 'flex',
+                height: 44, borderRadius: 10, fontSize: 20, display: 'flex',
                 alignItems: 'center', justifyContent: 'center', border: 'none',
                 background: bg, cursor: enabled ? 'pointer' : 'not-allowed',
                 transition: 'all 200ms', fontWeight: fw, color,

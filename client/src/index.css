@@ -117,7 +117,7 @@ input, select, button, textarea {
 .card {
   background: var(--bg-card);
   border-radius: 16px;
-  padding: 22px 18px;
+  padding: 22px 14px;
   border: 1px solid var(--platino);
   width: 100%;
 }
@@ -126,7 +126,7 @@ input, select, button, textarea {
 .calendar-card {
   background: var(--bg-card);
   border-radius: 16px;
-  padding: 22px 8px;
+  padding: 22px 6px;
   border: none;
   width: 100%;
 }

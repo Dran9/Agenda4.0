@@ -30,16 +30,8 @@ async function getAvailableSlots(date, tenantId) {
   const today = new Date(now.toLocaleString('en-US', { timeZone: 'America/La_Paz' }));
   today.setHours(0, 0, 0, 0);
 
-  if (targetDate < today) return [];
-  // Count weekdays (Mon-Fri) between today and targetDate to match client calendar
-  let weekdaysCounted = 0;
-  const cursor = new Date(today);
-  while (cursor < targetDate) {
-    cursor.setDate(cursor.getDate() + 1);
-    const dow = cursor.getDay();
-    if (dow >= 1 && dow <= 5) weekdaysCounted++;
-  }
-  if (weekdaysCounted > windowDays) return [];
+  const diffDays = Math.floor((targetDate - today) / (1000 * 60 * 60 * 24));
+  if (diffDays < 0 || diffDays > windowDays) return [];
 
   // Check if day is available
   const dayIndex = targetDate.getUTCDay();
@@ -70,7 +62,7 @@ async function getAvailableSlots(date, tenantId) {
   // Current time in La Paz
   const nowLP = new Date(now.toLocaleString('en-US', { timeZone: 'America/La_Paz' }));
   const nowMinutes = nowLP.getHours() * 60 + nowLP.getMinutes();
-  const isToday = targetDate.toDateString() === today.toDateString();
+  const isToday = diffDays === 0;
 
   // Filter slots
   const freeSlots = [];

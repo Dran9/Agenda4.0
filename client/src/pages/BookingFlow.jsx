@@ -193,19 +193,53 @@ export default function BookingFlow() {
       .catch(() => {});
   }, []);
 
-  // Pre-fetch 7 weekdays of slots
+  // Pre-fetch current month's available dates
+  const DAY_MAP = { 0: 'domingo', 1: 'lunes', 2: 'martes', 3: 'miercoles', 4: 'jueves', 5: 'viernes', 6: 'sabado' };
+
+  const getDatesForMonth = useCallback((year, month, cfg) => {
+    const dates = [];
+    const daysInMonth = new Date(year, month + 1, 0).getDate();
+    const today = new Date(); today.setHours(0, 0, 0, 0);
+    const maxDate = new Date(today);
+    maxDate.setDate(maxDate.getDate() + (cfg.window_days || 10));
+    const availDays = cfg.available_days || [];
+    for (let d = 1; d <= daysInMonth; d++) {
+      const date = new Date(year, month, d);
+      if (date >= today && date <= maxDate && availDays.includes(DAY_MAP[date.getDay()])) {
+        dates.push(`${year}-${String(month + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`);
+      }
+    }
+    return dates;
+  }, []);
+
+  const prefetchDates = useCallback((dates) => {
+    const toFetch = dates.filter(d => !slotsCache.has(d));
+    if (toFetch.length === 0) return;
+    Promise.all(
+      toFetch.map(date =>
+        api.get(`/slots?date=${date}`)
+          .then(data => ({ date, slots: data.slots || [] }))
+          .catch(() => ({ date, slots: [] }))
+      )
+    ).then(results => {
+      setSlotsCache(prev => {
+        const next = new Map(prev);
+        results.forEach(r => next.set(r.date, r.slots));
+        return next;
+      });
+    });
+  }, [slotsCache]);
+
   useEffect(() => {
     if (!config) return;
     const today = new Date();
-    const dates = [];
-    const d = new Date(today);
-    while (dates.length < 7) {
-      dates.push(d.toISOString().split('T')[0]);
-      // Advance to next weekday (Mon-Fri)
-      do { d.setDate(d.getDate() + 1); } while (d.getDay() === 0 || d.getDay() === 6);
-    }
+    const dates = getDatesForMonth(today.getFullYear(), today.getMonth(), config);
+    // Also prefetch next month if window extends into it
+    const nextMonth = new Date(today.getFullYear(), today.getMonth() + 1, 1);
+    const nextDates = getDatesForMonth(nextMonth.getFullYear(), nextMonth.getMonth(), config);
+    const allDates = [...dates, ...nextDates];
     Promise.all(
-      dates.map(date =>
+      allDates.map(date =>
         api.get(`/slots?date=${date}`)
           .then(data => ({ date, slots: data.slots || [] }))
           .catch(() => ({ date, slots: [] }))
@@ -215,10 +249,18 @@ export default function BookingFlow() {
       results.forEach(r => cache.set(r.date, r.slots));
       setSlotsCache(cache);
       setPrefetchDone(true);
-      setSelectedDate(dates[0]);
-      setSlots(cache.get(dates[0]) || []);
+      if (allDates.length > 0) {
+        setSelectedDate(allDates[0]);
+        setSlots(cache.get(allDates[0]) || []);
+      }
     });
   }, [config]);
+
+  const handleMonthChange = useCallback((year, month) => {
+    if (!config) return;
+    const dates = getDatesForMonth(year, month, config);
+    prefetchDates(dates);
+  }, [config, getDatesForMonth, prefetchDates]);
 
   useEffect(() => { setIsInternational(countryCode !== '+591'); }, [countryCode]);
 
@@ -368,6 +410,7 @@ export default function BookingFlow() {
             onSelectDate={handleDateSelect} selectedDate={selectedDate}
             availableDays={config?.available_days || []} windowDays={config?.window_days || 10}
             daysWithSlots={daysWithSlots}
+            onMonthChange={handleMonthChange}
           />
         </div>
 

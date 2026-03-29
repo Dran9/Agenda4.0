@@ -11,14 +11,8 @@ const DAY_MAP = { 0: 'domingo', 1: 'lunes', 2: 'martes', 3: 'miercoles', 4: 'jue
 export default function Calendar({ onSelectDate, selectedDate, availableDays = [], windowDays = 10, daysWithSlots, onMonthChange }) {
   const today = useMemo(() => { const d = new Date(); d.setHours(0,0,0,0); return d; }, []);
   const maxDate = useMemo(() => {
-    // windowDays counts weekdays (Mon-Fri), not calendar days
     const d = new Date(today);
-    let weekdaysCounted = 0;
-    while (weekdaysCounted < windowDays) {
-      d.setDate(d.getDate() + 1);
-      const dow = d.getDay();
-      if (dow >= 1 && dow <= 5) weekdaysCounted++;
-    }
+    d.setDate(d.getDate() + windowDays);
     return d;
   }, [today, windowDays]);
 

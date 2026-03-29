@@ -7,7 +7,7 @@ import {
 import {
   ArrowRight, ArrowLeft, ChevronDown, Calendar as CalendarIcon,
   Clock, CalendarClock, CalendarCheck, Check, Sun, Sunset,
-  Coffee, Globe, Search, RefreshCw, Heart, MessageCircle, TriangleAlert, Info, MousePointerClick, Smartphone, SmilePlus,
+  Coffee, Globe, Search, RefreshCw, Heart, MessageSquareHeart, ShieldAlert, Info, MousePointerClick, Smartphone, SmilePlus,
 } from 'lucide-react';
 
 const COUNTRY_CODES = [
@@ -385,9 +385,8 @@ export default function BookingFlow() {
               <>
                 {morningSlots.length > 0 && (
                   <div style={{ marginBottom: afternoonSlots.length > 0 ? 18 : 16 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 10 }}>
-                      <Sun size={20} color="#1B2B43" />
-                      <span style={{ fontSize: 15, fontWeight: 500, textTransform: 'uppercase', letterSpacing: 1.5, color: 'var(--gris-medio)' }}>Mañana</span>
+                    <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 10 }}>
+                      <Sun size={22} color="#1B2B43" />
                     </div>
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8 }}>
                       {morningSlots.map(s => (
@@ -400,9 +399,8 @@ export default function BookingFlow() {
                 )}
                 {afternoonSlots.length > 0 && (
                   <div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 10 }}>
-                      <Sunset size={20} color="#1B2B43" />
-                      <span style={{ fontSize: 15, fontWeight: 500, textTransform: 'uppercase', letterSpacing: 1.5, color: 'var(--gris-medio)' }}>Tarde</span>
+                    <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 10 }}>
+                      <Sunset size={22} color="#1B2B43" />
                     </div>
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8 }}>
                       {afternoonSlots.map(s => (
@@ -610,15 +608,15 @@ export default function BookingFlow() {
           </div>
         )}
         <div className="notice-box" style={{ marginBottom: 24 }}>
-          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
-            <MessageCircle size={18} color="var(--grafito)" style={{ flexShrink: 0, marginTop: 1 }} />
-            <p style={{ fontSize: 17, color: 'var(--grafito)', lineHeight: 1.5 }}>Te llegará un recordatorio el día antes de tu cita.</p>
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6 }}>
+            <MessageSquareHeart size={22} color="#1A1A17" />
+            <p style={{ fontSize: 17, fontWeight: 500, color: 'var(--grafito)', lineHeight: 1.5, textAlign: 'center', margin: 0 }}>Te llegará un recordatorio el día antes de tu cita.</p>
           </div>
           <div style={{ borderTop: '1px solid rgba(0,0,0,0.06)', marginTop: 12, paddingTop: 12 }}>
-            <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
-              <TriangleAlert size={18} color="var(--terracota)" style={{ flexShrink: 0, marginTop: 1 }} />
-              <p style={{ fontSize: 17, color: 'var(--grafito)', lineHeight: 1.5 }}>
-                Toda cancelación o cambio se debe hacer con mínimo <strong>6 horas</strong> de anticipación, caso contrario se cobrará el <strong>50%</strong> del monto de la sesión.
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6 }}>
+              <ShieldAlert size={22} color="#1A1A17" />
+              <p style={{ fontSize: 17, fontWeight: 500, color: 'var(--grafito)', lineHeight: 1.5, textAlign: 'center', margin: 0 }}>
+                Toda cancelación o cambio debe realizarse con mínimo <strong>6 horas</strong> de anticipación, caso contrario, se cobrará el <strong>50%</strong> del monto de la sesión.
               </p>
             </div>
           </div>

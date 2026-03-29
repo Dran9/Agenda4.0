@@ -30,8 +30,16 @@ async function getAvailableSlots(date, tenantId) {
   const today = new Date(now.toLocaleString('en-US', { timeZone: 'America/La_Paz' }));
   today.setHours(0, 0, 0, 0);
 
-  const diffDays = Math.floor((targetDate - today) / (1000 * 60 * 60 * 24));
-  if (diffDays < 0 || diffDays > windowDays) return [];
+  if (targetDate < today) return [];
+  // Count weekdays (Mon-Fri) between today and targetDate to match client calendar
+  let weekdaysCounted = 0;
+  const cursor = new Date(today);
+  while (cursor < targetDate) {
+    cursor.setDate(cursor.getDate() + 1);
+    const dow = cursor.getDay();
+    if (dow >= 1 && dow <= 5) weekdaysCounted++;
+  }
+  if (weekdaysCounted > windowDays) return [];
 
   // Check if day is available
   const dayIndex = targetDate.getUTCDay();

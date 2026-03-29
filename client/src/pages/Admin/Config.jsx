@@ -493,6 +493,10 @@ export default function Config() {
                 <option value={14}>14 días</option>
                 <option value={21}>21 días</option>
                 <option value={30}>30 días</option>
+                <option value={35}>35 días</option>
+                <option value={40}>40 días</option>
+                <option value={45}>45 días</option>
+                <option value={50}>50 días</option>
               </select>
             </div>
             <div className="flex gap-3">

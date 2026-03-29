@@ -20,7 +20,13 @@ export default function CalendarScreen({ state, dispatch, config, slots, slotsLo
     const dates = [];
     const daysInMonth = new Date(year, month + 1, 0).getDate();
     const today = new Date(); today.setHours(0,0,0,0);
-    const maxDate = new Date(today); maxDate.setDate(maxDate.getDate() + (config.window_days || 10));
+    const maxDate = new Date(today);
+    let wdCount = 0;
+    while (wdCount < (config.window_days || 10)) {
+      maxDate.setDate(maxDate.getDate() + 1);
+      const dow = maxDate.getDay();
+      if (dow >= 1 && dow <= 5) wdCount++;
+    }
     for (let d = 1; d <= daysInMonth; d++) {
       const date = new Date(year, month, d);
       const dow = date.getDay();

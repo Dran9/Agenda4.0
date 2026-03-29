@@ -70,7 +70,7 @@ async function getAvailableSlots(date, tenantId) {
   // Current time in La Paz
   const nowLP = new Date(now.toLocaleString('en-US', { timeZone: 'America/La_Paz' }));
   const nowMinutes = nowLP.getHours() * 60 + nowLP.getMinutes();
-  const isToday = diffDays === 0;
+  const isToday = targetDate.toDateString() === today.toDateString();
 
   // Filter slots
   const freeSlots = [];

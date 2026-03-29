@@ -9,12 +9,20 @@ async function sendConfirmationTemplate(phone, nombre, fechaISO) {
   const token = process.env.WA_TOKEN;
   const phoneNumberId = process.env.WA_PHONE_ID;
 
-  const date = new Date(fechaISO);
+  // Parse date — if no timezone offset, treat as Bolivia time (-04:00)
+  let dateStr = String(fechaISO).replace(' ', 'T');
+  if (!/[Z+]/.test(dateStr) && !/-\d{2}:\d{2}$/.test(dateStr)) dateStr += '-04:00';
+  const date = new Date(dateStr);
+
   let nombrewa = nombre.split(' ')[0];
   nombrewa = nombrewa.charAt(0).toUpperCase() + nombrewa.slice(1).toLowerCase();
-  const boliviaDate = new Date(date.toLocaleString('en-US', { timeZone: 'America/La_Paz' }));
-  const fechawa = getDayInSpanish(boliviaDate) + ' ' + boliviaDate.getDate();
-  const horawa = boliviaDate.toLocaleTimeString('es-BO', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'America/La_Paz' });
+
+  // Format day and time in Bolivia timezone (single conversion via Intl — no double-conversion)
+  const lpOpts = { timeZone: 'America/La_Paz' };
+  const dayName = new Intl.DateTimeFormat('es-BO', { weekday: 'long', ...lpOpts }).format(date);
+  const dayNum = new Intl.DateTimeFormat('es-BO', { day: 'numeric', ...lpOpts }).format(date);
+  const fechawa = dayName.charAt(0).toUpperCase() + dayName.slice(1) + ' ' + dayNum;
+  const horawa = date.toLocaleTimeString('es-BO', { hour: '2-digit', minute: '2-digit', hour12: false, ...lpOpts });
 
   const payload = {
     messaging_product: 'whatsapp',

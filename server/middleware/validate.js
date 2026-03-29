@@ -6,6 +6,7 @@ const bookingSchema = z.object({
   date_time: z.string().regex(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/),
   client_id: z.number().int().positive().optional(),
   code: z.string().max(50).optional(),
+  fee_override: z.union([z.string(), z.number()]).optional(),
   onboarding: z.object({
     first_name: z.string().min(1).max(100),
     last_name: z.string().min(1).max(100),

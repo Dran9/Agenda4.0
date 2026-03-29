@@ -20,7 +20,7 @@ const bookingLimiter = rateLimit({
 // POST /api/book
 router.post('/book', bookingLimiter, validate(bookingSchema), async (req, res) => {
   try {
-    const { phone, date_time, onboarding, client_id } = req.validated;
+    const { phone, date_time, onboarding, client_id, fee_override } = req.validated;
     const tenantId = req.tenantId || DEFAULT_TENANT;
 
     // Admin flow: uses client_id directly
@@ -42,7 +42,7 @@ router.post('/book', bookingLimiter, validate(bookingSchema), async (req, res) =
       if (!onboarding || !onboarding.first_name || !onboarding.last_name) {
         return res.json({ status: 'needs_onboarding' });
       }
-      const newClient = await createClient(phone, onboarding, tenantId);
+      const newClient = await createClient(phone, onboarding, tenantId, null, fee_override);
       const result = await createBooking(newClient, date_time, tenantId);
       if (result.error) return res.status(result.status).json({ error: result.error });
       return res.json({ status: 'booked', ...result });
@@ -55,7 +55,15 @@ router.post('/book', bookingLimiter, validate(bookingSchema), async (req, res) =
     // Returning client — book directly
     const { pool } = require('../db');
     const [clients] = await pool.query('SELECT * FROM clients WHERE id = ? AND tenant_id = ?', [check.client_id, tenantId]);
-    const result = await createBooking(clients[0], date_time, tenantId);
+    const client = clients[0];
+    // Apply fee override if provided (from ?fee= URL param)
+    if (fee_override && parseFloat(fee_override) > 0) {
+      const newFee = parseFloat(fee_override);
+      await pool.query('UPDATE clients SET fee = ? WHERE id = ?', [newFee, client.id]);
+      client.fee = newFee;
+      console.log(`[booking] Fee override: client ${client.id} → Bs ${newFee}`);
+    }
+    const result = await createBooking(client, date_time, tenantId);
     if (result.error) return res.status(result.status).json({ error: result.error });
     return res.json({ status: 'booked', ...result });
   } catch (err) {

@@ -137,7 +137,9 @@ const pageParams = new URLSearchParams(window.location.search);
 
 export default function BookingFlow() {
   const devMode = pageParams.get('devmode') === '1';
-  const urlPhone = pageParams.get('t') || '';
+  const urlPhone = pageParams.get('t') || pageParams.get('r') || '';
+  const urlReschedule = !!pageParams.get('r');
+  const urlFee = pageParams.get('fee') || '';
   const urlCode = pageParams.get('code') || '';
 
   const [flow, dispatch] = useReducer(flowReducer, initialFlowState);
@@ -178,6 +180,15 @@ export default function BookingFlow() {
   const phoneDigits = phoneNumber.replace(/\D/g, '');
   const expectedDigits = currentCountry.digits;
   const phoneComplete = phoneDigits.length === expectedDigits;
+
+  // Pre-fill phone from URL param (?t= or ?r=)
+  useEffect(() => {
+    if (urlPhone) {
+      // Take last 8 digits (no country code)
+      const digits = urlPhone.replace(/\D/g, '').slice(-8);
+      if (digits.length > 0) setPhoneNumber(digits);
+    }
+  }, []);
 
   // Load config
   useEffect(() => { api.get('/config/public').then(setConfig).catch(() => {}); }, []);
@@ -305,6 +316,7 @@ export default function BookingFlow() {
     try {
       const phone = countryCode.replace('+', '') + phoneDigits;
       const body = { phone, date_time: `${selectedDate}T${selectedSlot}` };
+      if (urlFee) body.fee_override = urlFee;
       if (urlCode) body.code = urlCode;
       const data = await api.post('/book', body);
       if (data.status === 'needs_onboarding') dispatch({ type: 'PHONE_NEW' });
@@ -319,6 +331,7 @@ export default function BookingFlow() {
       const phone = countryCode.replace('+', '') + phoneDigits;
       const body = { phone, date_time: `${selectedDate}T${selectedSlot}` };
       if (onboarding) body.onboarding = onboarding;
+      if (urlFee) body.fee_override = urlFee;
       if (urlCode) body.code = urlCode;
       const data = await api.post('/book', body);
       if (data.status === 'needs_onboarding') dispatch({ type: 'BOOK_NEEDS_ONBOARDING' });
@@ -390,7 +403,28 @@ export default function BookingFlow() {
 
     function handleSlotClick(time) {
       setSelectedSlot(time);
+      // If ?r= mode with pre-filled phone, auto-submit phone (skip Screen 2)
+      if (urlReschedule && phoneComplete && !flow.rescheduleMode) {
+        // We need to set the slot first, then auto-submit
+        // Use a small timeout to let state update
+        setTimeout(() => autoSubmitPhone(time), 50);
+        return;
+      }
       dispatch({ type: 'PICK_SLOT' });
+    }
+
+    async function autoSubmitPhone(time) {
+      dispatch({ type: 'PHONE_CHECK_START' });
+      try {
+        const phone = countryCode.replace('+', '') + phoneDigits;
+        const body = { phone, date_time: `${selectedDate}T${time}` };
+        if (urlFee) body.fee_override = urlFee;
+        if (urlCode) body.code = urlCode;
+        const data = await api.post('/book', body);
+        if (data.status === 'needs_onboarding') dispatch({ type: 'PHONE_NEW' });
+        else if (data.status === 'booked') dispatch({ type: 'BOOK_SUCCESS', appointment: { date: selectedDate, time }, clientName: data.client_name });
+        else if (data.status === 'has_appointment') dispatch({ type: 'PHONE_HAS_APPOINTMENT', appointment: data.appointment, clientId: data.client_id, clientName: data.client_name });
+      } catch (err) { dispatch({ type: 'PHONE_ERROR', error: err.message }); }
     }
 
     return (
@@ -399,10 +433,10 @@ export default function BookingFlow() {
         <h1 style={{ fontSize: 30, fontWeight: 600, textAlign: 'center', color: 'var(--negro)', marginBottom: 16, lineHeight: 1.15 }}>
           {flow.rescheduleMode ? 'Elige tu nueva hora' : 'Encuentra el mejor momento para tu sesión'}
         </h1>
-        {flow.rescheduleMode && (
-          <p style={{ fontSize: 18, fontWeight: 600, color: 'var(--gris-medio)', textAlign: 'center', marginBottom: 12 }}>
-            Selecciona una fecha y hora para reagendar
-          </p>
+        {(flow.rescheduleMode || urlReschedule) && (
+          <div style={{ background: 'var(--dorado)', textAlign: 'center', padding: '8px 16px', borderRadius: 12, marginBottom: 12, fontSize: 15, fontWeight: 600, color: 'var(--negro)' }}>
+            Vamos a reprogramar tu cita
+          </div>
         )}
 
         <div className="card" style={{ marginBottom: 16 }}>
@@ -458,6 +492,14 @@ export default function BookingFlow() {
               </>
             )}
           </div>
+        )}
+        {flow.loading && (
+          <div style={{ textAlign: 'center', padding: '16px 0', fontSize: 16, color: 'var(--gris-medio)' }}>
+            Verificando...
+          </div>
+        )}
+        {flow.error && (
+          <p style={{ color: 'var(--terracota)', fontSize: 16, textAlign: 'center', marginTop: 8 }}>{flow.error}</p>
         )}
         <ProgressDots current={1} />
       </Layout>

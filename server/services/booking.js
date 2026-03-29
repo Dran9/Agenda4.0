@@ -242,8 +242,18 @@ async function rescheduleAppointment(clientId, oldAppointmentId, dateTime, tenan
     }
   }
 
-  // Mark old as Reagendada
-  await pool.query(`UPDATE appointments SET status = 'Reagendada' WHERE id = ?`, [oldAppointmentId]);
+  // Save old appointment payments before deleting
+  // Move any confirmed payment to the new appointment later
+  const [oldPayments] = await pool.query(
+    `SELECT id, status FROM payments WHERE appointment_id = ? AND tenant_id = ?`,
+    [oldAppointmentId, tenantId]
+  );
+
+  // Delete old appointment (and its pending payments)
+  // Confirmed payments will be moved to the new appointment below
+  await pool.query(`DELETE FROM payments WHERE appointment_id = ? AND tenant_id = ? AND status = 'Pendiente'`, [oldAppointmentId, tenantId]);
+  await pool.query(`DELETE FROM appointments WHERE id = ?`, [oldAppointmentId]);
+  console.log(`[reschedule] Deleted old appointment ${oldAppointmentId}`);
 
   // Get client and book new
   const [clients] = await pool.query('SELECT * FROM clients WHERE id = ? AND tenant_id = ?', [clientId, tenantId]);
@@ -252,29 +262,27 @@ async function rescheduleAppointment(clientId, oldAppointmentId, dateTime, tenan
   const result = await createBooking(clients[0], dateTime, tenantId);
   if (result.error) return result;
 
+  // Mark new appointment as Reagendada
+  if (result.appointment?.id) {
+    await pool.query(`UPDATE appointments SET status = 'Reagendada' WHERE id = ?`, [result.appointment.id]);
+  }
+
   // Move confirmed payment from old appointment to new one
-  // (if client already paid, their payment stays valid after reschedule)
   try {
     const newApptId = result.appointment?.id;
-    if (newApptId) {
-      // Check if old appointment had a confirmed payment
-      const [oldPayments] = await pool.query(
-        `SELECT id FROM payments WHERE appointment_id = ? AND tenant_id = ? AND status = 'Confirmado' LIMIT 1`,
-        [oldAppointmentId, tenantId]
+    const confirmedPayment = oldPayments.find(p => p.status === 'Confirmado');
+    if (newApptId && confirmedPayment) {
+      // Move the confirmed payment to the new appointment
+      await pool.query(
+        `UPDATE payments SET appointment_id = ? WHERE id = ?`,
+        [newApptId, confirmedPayment.id]
       );
-      if (oldPayments.length > 0) {
-        // Move the confirmed payment to the new appointment
-        await pool.query(
-          `UPDATE payments SET appointment_id = ? WHERE id = ?`,
-          [newApptId, oldPayments[0].id]
-        );
-        // Delete the new "Pendiente" payment that createBooking just made (it's redundant)
-        await pool.query(
-          `DELETE FROM payments WHERE appointment_id = ? AND tenant_id = ? AND status = 'Pendiente' AND id != ?`,
-          [newApptId, tenantId, oldPayments[0].id]
-        );
-        console.log(`[reschedule] Moved confirmed payment ${oldPayments[0].id} from appt ${oldAppointmentId} → ${newApptId}`);
-      }
+      // Delete the new "Pendiente" payment that createBooking just made (redundant)
+      await pool.query(
+        `DELETE FROM payments WHERE appointment_id = ? AND tenant_id = ? AND status = 'Pendiente' AND id != ?`,
+        [newApptId, tenantId, confirmedPayment.id]
+      );
+      console.log(`[reschedule] Moved confirmed payment ${confirmedPayment.id} → new appt ${newApptId}`);
     }
   } catch (payErr) {
     console.error('[reschedule] Payment transfer failed (non-fatal):', payErr.message);

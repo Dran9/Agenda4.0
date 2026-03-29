@@ -1,35 +1,27 @@
 import { useState, useEffect } from 'react';
-import { Trash2, Search, DollarSign, Eye } from 'lucide-react';
+import { Trash2, Search, Eye } from 'lucide-react';
 import AdminLayout from '../../components/AdminLayout';
 import { api } from '../../utils/api';
 import { useToast, Toast } from '../../hooks/useToast';
 import { formatDateBolivia, formatTimeBolivia } from '../../utils/dates';
 
-function OcrBadge({ appt }) {
+function OcrPopover({ appt }) {
   const [open, setOpen] = useState(false);
-  if (!appt.payment_id) return <span className="text-xs text-gray-300">—</span>;
-
   const hasOcr = appt.ocr_extracted_amount || appt.ocr_extracted_ref;
+  if (!hasOcr) return null;
 
   return (
-    <div className="relative">
-      <div className="flex items-center gap-1">
-        <span className={`text-xs px-2 py-1 rounded-full font-medium border ${PAYMENT_STYLES[appt.payment_status] || PAYMENT_STYLES.Pendiente}`}>
-          {appt.payment_status === 'Confirmado' ? 'Pagado' : appt.payment_status === 'Mismatch' ? 'Mismatch' : 'Pendiente'}
-        </span>
-        {hasOcr && (
-          <button
-            type="button"
-            onClick={() => setOpen(!open)}
-            className="text-gray-400 hover:text-gray-600 transition-colors"
-            title="Ver datos OCR"
-          >
-            <Eye size={14} />
-          </button>
-        )}
-      </div>
-      {open && hasOcr && (
-        <div className="absolute z-20 top-8 left-0 bg-white border border-gray-200 rounded-lg shadow-lg p-3 text-xs min-w-[200px]">
+    <div className="relative inline-block ml-1">
+      <button
+        type="button"
+        onClick={() => setOpen(!open)}
+        className="text-gray-400 hover:text-gray-600 transition-colors align-middle"
+        title="Ver datos OCR"
+      >
+        <Eye size={13} />
+      </button>
+      {open && (
+        <div className="absolute z-20 top-6 left-0 bg-white border border-gray-200 rounded-lg shadow-lg p-3 text-xs min-w-[200px]">
           <div className="font-semibold text-gray-700 mb-2">Datos del comprobante</div>
           {appt.ocr_extracted_amount && (
             <div className="flex justify-between mb-1">
@@ -55,6 +47,13 @@ function OcrBadge({ appt }) {
   );
 }
 
+const PAYMENT_LABELS = {
+  Confirmado: 'Pagado',
+  Pendiente: 'Pendiente',
+  Mismatch: 'Mismatch',
+  Rechazado: 'Rechazado',
+};
+
 const PAYMENT_STYLES = {
   Confirmado: 'bg-green-100 text-green-700 border-green-200',
   Pendiente: 'bg-red-100 text-red-700 border-red-200',
@@ -63,13 +62,25 @@ const PAYMENT_STYLES = {
 };
 
 const STATUS_STYLES = {
-  Agendada: 'bg-blue-100 text-blue-700',
-  Confirmada: 'bg-green-100 text-green-700',
-  Completada: 'bg-emerald-100 text-emerald-700',
-  Cancelada: 'bg-gray-100 text-gray-600',
-  'No-show': 'bg-red-100 text-red-700',
-  Reagendada: 'bg-yellow-100 text-yellow-700',
+  Agendada: 'bg-blue-100 text-blue-700 border-blue-200',
+  Confirmada: 'bg-green-100 text-green-700 border-green-200',
+  Completada: 'bg-emerald-100 text-emerald-700 border-emerald-200',
+  Cancelada: 'bg-gray-100 text-gray-600 border-gray-200',
+  'No-show': 'bg-red-100 text-red-700 border-red-200',
+  Reagendada: 'bg-yellow-100 text-yellow-700 border-yellow-200',
 };
+
+const STATUSES = ['Agendada', 'Confirmada', 'Completada', 'Reagendada', 'Cancelada', 'No-show'];
+const PAYMENT_STATUSES = ['Pendiente', 'Confirmado', 'Mismatch', 'Rechazado'];
+
+function formatRegistro(dateStr) {
+  if (!dateStr) return '—';
+  const d = new Date(dateStr);
+  return d.toLocaleDateString('es-BO', {
+    day: '2-digit', month: 'short',
+    timeZone: 'America/La_Paz',
+  });
+}
 
 export default function Appointments() {
   const [appointments, setAppointments] = useState([]);
@@ -109,13 +120,12 @@ export default function Appointments() {
       await api.put(`/appointments/${id}/status`, { status });
       setAppointments(prev => prev.map(a => a.id === id ? { ...a, status } : a));
     } catch (err) {
-      console.error(err);
+      showToast('Error: ' + err.message, 'error');
     }
   }
 
-  async function handlePaymentToggle(appt) {
+  async function handlePaymentChange(appt, newStatus) {
     if (!appt.payment_id) return;
-    const newStatus = appt.payment_status === 'Confirmado' ? 'Pendiente' : 'Confirmado';
     try {
       await api.put(`/payments/${appt.payment_id}/status`, { status: newStatus });
       setAppointments(prev => prev.map(a => a.id === appt.id ? { ...a, payment_status: newStatus } : a));
@@ -188,12 +198,7 @@ export default function Appointments() {
           className="px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white"
         >
           <option value="">Todos los status</option>
-          <option value="Agendada">Agendada</option>
-          <option value="Confirmada">Confirmada</option>
-          <option value="Completada">Completada</option>
-          <option value="Cancelada">Cancelada</option>
-          <option value="No-show">No-show</option>
-          <option value="Reagendada">Reagendada</option>
+          {STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
         </select>
         <input type="date" value={filters.from} onChange={e => { setFilters(f => ({ ...f, from: e.target.value })); setPage(1); }} className="px-3 py-2 border border-gray-200 rounded-lg text-sm" />
         <input type="date" value={filters.to} onChange={e => { setFilters(f => ({ ...f, to: e.target.value })); setPage(1); }} className="px-3 py-2 border border-gray-200 rounded-lg text-sm" />
@@ -228,13 +233,13 @@ export default function Appointments() {
                       className="w-4 h-4 accent-black rounded"
                     />
                   </th>
-                  <th className="text-left p-3 font-medium">Fecha</th>
+                  <th className="text-left p-3 font-medium">Fecha agendada</th>
                   <th className="text-left p-3 font-medium">Hora</th>
                   <th className="text-left p-3 font-medium">Cliente</th>
                   <th className="text-left p-3 font-medium">Teléfono</th>
+                  <th className="text-left p-3 font-medium">Registro</th>
                   <th className="text-left p-3 font-medium">Status</th>
                   <th className="text-left p-3 font-medium">Pago</th>
-                  <th className="text-left p-3 font-medium">Acción</th>
                   <th className="text-left p-3 font-medium w-10"></th>
                 </tr>
               </thead>
@@ -257,27 +262,31 @@ export default function Appointments() {
                         {appt.client_phone}
                       </a>
                     </td>
-                    <td className="p-3">
-                      <span className={`text-xs px-2 py-1 rounded-full font-medium ${STATUS_STYLES[appt.status] || 'bg-gray-100 text-gray-600'}`}>
-                        {appt.status}
-                      </span>
-                    </td>
-                    <td className="p-3">
-                      <OcrBadge appt={appt} />
-                    </td>
+                    <td className="p-3 text-xs text-gray-400">{formatRegistro(appt.created_at)}</td>
                     <td className="p-3">
                       <select
-                        value=""
-                        onChange={e => { if (e.target.value) handleStatusChange(appt.id, e.target.value); }}
-                        className="text-xs border border-gray-200 rounded px-2 py-1 bg-white"
+                        value={appt.status}
+                        onChange={e => handleStatusChange(appt.id, e.target.value)}
+                        className={`text-xs px-2 py-1 rounded-full font-medium border appearance-none cursor-pointer ${STATUS_STYLES[appt.status] || 'bg-gray-100 text-gray-600 border-gray-200'}`}
                       >
-                        <option value="">Cambiar...</option>
-                        <option value="Agendada">Agendada</option>
-                        <option value="Confirmada">Confirmada</option>
-                        <option value="Completada">Completada</option>
-                        <option value="No-show">No-show</option>
-                        <option value="Cancelada">Cancelada</option>
+                        {STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
                       </select>
+                    </td>
+                    <td className="p-3">
+                      {appt.payment_id ? (
+                        <div className="flex items-center">
+                          <select
+                            value={appt.payment_status || 'Pendiente'}
+                            onChange={e => handlePaymentChange(appt, e.target.value)}
+                            className={`text-xs px-2 py-1 rounded-full font-medium border appearance-none cursor-pointer ${PAYMENT_STYLES[appt.payment_status] || PAYMENT_STYLES.Pendiente}`}
+                          >
+                            {PAYMENT_STATUSES.map(s => <option key={s} value={s}>{PAYMENT_LABELS[s]}</option>)}
+                          </select>
+                          <OcrPopover appt={appt} />
+                        </div>
+                      ) : (
+                        <span className="text-xs text-gray-300">—</span>
+                      )}
                     </td>
                     <td className="p-3">
                       <button

@@ -11,7 +11,8 @@ const pool = mysql.createPool({
   waitForConnections: true,
   connectionLimit: 10,
   queueLimit: 0,
-  charset: 'utf8mb4'
+  charset: 'utf8mb4',
+  timezone: '-04:00', // Bolivia time — DATETIME values in DB are stored in La Paz time
 });
 
 // Transaction helper — wraps callback in BEGIN/COMMIT/ROLLBACK

@@ -7,7 +7,7 @@ import {
 import {
   ArrowRight, ArrowLeft, ChevronDown, Calendar as CalendarIcon,
   Clock, CalendarClock, CalendarCheck, Check, Sun, Sunset,
-  Coffee, Globe, Search, RefreshCw, Heart, MessageCircle, TriangleAlert, Info, MousePointerClick, Smartphone,
+  Coffee, Globe, Search, RefreshCw, Heart, MessageCircle, TriangleAlert, Info, MousePointerClick, Smartphone, SmilePlus,
 } from 'lucide-react';
 
 const COUNTRY_CODES = [
@@ -496,12 +496,21 @@ export default function BookingFlow() {
     return (
       <Layout devMode={devMode}>
         <Logo width={90} />
-        <h1 style={{ fontSize: 28, fontWeight: 600, textAlign: 'center', color: 'var(--negro)', marginBottom: 6 }}>
-          {flow.showOnboarding ? 'Completa tus datos' : flow.isReturning ? `${flow.clientName}, qué bueno verte de nuevo` : 'Confirma tu sesión'}
+        <h1 style={{ fontSize: 26, fontWeight: 600, textAlign: 'center', color: 'var(--negro)', marginBottom: 12, lineHeight: 1.2 }}>
+          {flow.showOnboarding ? '¡Hola! Para darte un mejor servicio, déjanos hacerte unas preguntas.' : flow.isReturning ? `${flow.clientName}, qué bueno verte de nuevo` : 'Confirma tu sesión'}
         </h1>
-        <p style={{ fontSize: 18, color: flow.showOnboarding ? 'var(--gris-medio)' : flow.isReturning ? 'var(--turquesa)' : 'var(--terracota)', textAlign: 'center', marginBottom: 24 }}>
-          {flow.showOnboarding ? 'Es tu primera vez, necesitamos algunos datos' : 'Revisa los detalles antes de confirmar'}
-        </p>
+        {flow.showOnboarding && (
+          <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 16 }}>
+            <div style={{ width: 48, height: 48, borderRadius: '50%', background: '#CFE8E9', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <SmilePlus size={22} color="#4E769B" />
+            </div>
+          </div>
+        )}
+        {!flow.showOnboarding && (
+          <p style={{ fontSize: 18, color: flow.isReturning ? 'var(--turquesa)' : 'var(--terracota)', textAlign: 'center', marginBottom: 24 }}>
+            Revisa los detalles antes de confirmar
+          </p>
+        )}
         <div className="card" style={{ marginBottom: 20 }}>
           <div className="detail-row" style={{ paddingTop: 0 }}>
             <div className="detail-icon"><CalendarIcon size={18} color="var(--gris-medio)" /></div>
@@ -520,20 +529,20 @@ export default function BookingFlow() {
               <span style={{ fontSize: 16, color: 'var(--terracota)' }}>Todos los campos son obligatorios</span>
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-              <div><span className="field-label">NOMBRE *</span><input value={firstName} onChange={e => setFirstName(e.target.value)} className="input-field" placeholder="Tu nombre" /></div>
-              <div><span className="field-label">APELLIDO *</span><input value={lastName} onChange={e => setLastName(e.target.value)} className="input-field" placeholder="Tu apellido" /></div>
+              <div><span className="field-label">NOMBRE <span style={{color:'#B34E35'}}>*</span></span><input value={firstName} onChange={e => setFirstName(e.target.value)} className="input-field" placeholder="Un solo nombre" /></div>
+              <div><span className="field-label">APELLIDO <span style={{color:'#B34E35'}}>*</span></span><input value={lastName} onChange={e => setLastName(e.target.value)} className="input-field" placeholder="Un solo apellido" /></div>
               <div>
-                <span className="field-label">EDAD *</span>
+                <span className="field-label">EDAD <span style={{color:'#B34E35'}}>*</span></span>
                 <input type="number" value={age} onChange={e => setAge(e.target.value)} min={minAge} max={maxAge} className="input-field" style={{ width: 120 }} placeholder={`${minAge}`} />
                 {ageOutOfRange
                   ? <p style={{ fontSize: 16, color: 'var(--terracota)', marginTop: 6, fontWeight: 600 }}>Solo atiendo pacientes entre {minAge} y {maxAge} años</p>
                   : <p style={{ fontSize: 14, color: 'var(--gris-medio)', marginTop: 6 }}>Entre {minAge} y {maxAge} años</p>}
               </div>
               {isInternational ? (
-                <div><span className="field-label">PAÍS *</span><input value={country} onChange={e => setCountry(e.target.value)} className="input-field" placeholder="Tu país" /></div>
+                <div><span className="field-label">PAÍS <span style={{color:'#B34E35'}}>*</span></span><input value={country} onChange={e => setCountry(e.target.value)} className="input-field" placeholder="Tu país" /></div>
               ) : (
                 <div>
-                  <span className="field-label">CIUDAD *</span>
+                  <span className="field-label">CIUDAD <span style={{color:'#B34E35'}}>*</span></span>
                   <div style={{ position: 'relative' }}>
                     <select value={city} onChange={e => setCity(e.target.value)} className="input-field" style={{ appearance: 'none', paddingRight: 40 }}>
                       {CITIES.map(c => <option key={c} value={c}>{c}</option>)}
@@ -543,12 +552,12 @@ export default function BookingFlow() {
                 </div>
               )}
               <div>
-                <span className="field-label" style={{ marginBottom: 10 }}>¿CÓMO SUPISTE DE DANIEL? *</span>
+                <span className="field-label" style={{ marginBottom: 10 }}>¿CÓMO SUPISTE DE DANIEL? <span style={{color:'#B34E35'}}>*</span></span>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                   {SOURCES.map(s => (
                     <label key={s} className="radio-option">
                       <div className={`radio-circle ${source === s ? 'active' : ''}`}>{source === s && <div className="radio-circle-inner" />}</div>
-                      <span style={{ fontSize: 18 }}>{s}</span>
+                      <span style={{ fontSize: 18, fontWeight: 500 }}>{s}</span>
                       <input type="radio" name="source" value={s} checked={source === s} onChange={e => setSource(e.target.value)} style={{ position: 'absolute', opacity: 0, pointerEvents: 'none' }} />
                     </label>
                   ))}

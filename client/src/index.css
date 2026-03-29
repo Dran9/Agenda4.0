@@ -6,7 +6,7 @@
 
 :root {
   /* Neutrals */
-  --negro: #1A1A17;
+  --negro: #3C3939;
   --grafito: #3C3939;
   --gris-medio: #A4A4A6;
   --gris-claro: #C5C2C0;
@@ -34,7 +34,7 @@
   --bg-page: #FAF8F1;
   --bg-card: #FFFFFF;
   --bg-input: #F0EEF0;
-  --text-primary: #1A1A17;
+  --text-primary: #3C3939;
   --text-secondary: #A4A4A6;
   --text-placeholder: #C5C2C0;
   --text-error: #B34E35;
@@ -139,7 +139,8 @@ input, select, button, textarea {
   border-radius: 12px;
   border: none;
   padding: 0 16px;
-  font-size: 18px;
+  font-size: 22px;
+  font-weight: 600;
   color: var(--text-primary);
   outline: none;
   transition: box-shadow 200ms;
@@ -219,7 +220,7 @@ input, select, button, textarea {
 /* Field label */
 .field-label {
   display: block;
-  font-size: 16px;
+  font-size: 18px;
   font-weight: 500;
   text-transform: uppercase;
   letter-spacing: 1.5px;

@@ -189,7 +189,7 @@ router.post('/', async (req, res) => {
                     } catch (qrErr) {
                       console.error(`[webhook] QR send failed for ${phone}:`, qrErr.message);
                     }
-                    }, 60000); // 60 second delay
+                    }, 15000); // 15 second delay
                   }
                 } catch (waErr) {
                   console.error(`[webhook] Auto-reply failed for ${phone}:`, waErr.message);

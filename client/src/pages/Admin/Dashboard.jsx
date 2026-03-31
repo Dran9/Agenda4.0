@@ -1,177 +1,493 @@
-import { useState, useEffect } from 'react';
+import { useEffect, useState } from 'react';
+import {
+  Activity,
+  ArrowUpRight,
+  BellRing,
+  CalendarClock,
+  CheckCheck,
+  ChevronRight,
+  CircleDollarSign,
+  Command,
+  FileWarning,
+  MessageSquareMore,
+  ShieldCheck,
+  Sparkles,
+  TrendingUp,
+  Users,
+  Waypoints,
+} from 'lucide-react';
 import AdminLayout from '../../components/AdminLayout';
 import { api } from '../../utils/api';
-import { useToast, Toast } from '../../hooks/useToast';
-import { formatTimeBolivia } from '../../utils/dates';
+import { formatRelativeTime, formatTimeBolivia } from '../../utils/dates';
+import { Toast, useToast } from '../../hooks/useToast';
+import './Preview.css';
+
+const AUTOMATIONS = [
+  '24h antes: recordatorio si no hubo confirmación.',
+  '12h después: reintentar cobro si la cita sigue pendiente.',
+  '21 días sin agenda: reactivación por WhatsApp.',
+];
+
+function toneClasses(tone) {
+  if (tone === 'rose') return 'bg-rose-100 text-rose-700 border-rose-200';
+  if (tone === 'amber') return 'bg-amber-100 text-amber-700 border-amber-200';
+  return 'bg-sky-100 text-sky-700 border-sky-200';
+}
+
+function appointmentStatusClasses(state) {
+  if (state === 'Confirmada') return 'bg-emerald-100 text-emerald-700';
+  if (state === 'Completada') return 'bg-slate-900 text-white';
+  if (state === 'Agendada') return 'bg-amber-100 text-amber-700';
+  if (state === 'No-show') return 'bg-rose-100 text-rose-700';
+  if (state === 'Cancelada') return 'bg-slate-200 text-slate-600';
+  return 'bg-sky-100 text-sky-700';
+}
+
+function paymentClasses(state) {
+  if (state === 'Confirmado') return 'text-emerald-700';
+  if (state === 'Mismatch') return 'text-rose-700';
+  if (state === 'Rechazado') return 'text-rose-600';
+  return 'text-slate-500';
+}
+
+function formatMoney(amount) {
+  return `Bs ${Number(amount || 0).toLocaleString('es-BO')}`;
+}
+
+function formatClientStatus(status) {
+  if (!status) return 'Sin estado';
+  return status;
+}
+
+function PreviewPanel({ eyebrow, title, description, children, className = '', delay = 0 }) {
+  return (
+    <section
+      className={`preview-enter rounded-[28px] border border-white/70 bg-white/82 backdrop-blur-xl shadow-[0_30px_80px_rgba(15,23,42,0.08)] ${className}`}
+      style={{ animationDelay: `${delay}ms` }}
+    >
+      <div className="border-b border-slate-200/70 px-6 py-5">
+        <div className="mb-2 text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-400">{eyebrow}</div>
+        <div>
+          <h3 className="text-xl font-semibold text-slate-900">{title}</h3>
+          {description ? <p className="mt-1 text-sm leading-6 text-slate-500">{description}</p> : null}
+        </div>
+      </div>
+      {children}
+    </section>
+  );
+}
 
 export default function Dashboard() {
   const [todayAppts, setTodayAppts] = useState([]);
   const [stats, setStats] = useState(null);
+  const [payments, setPayments] = useState([]);
+  const [conversations, setConversations] = useState([]);
+  const [clients, setClients] = useState([]);
   const [loading, setLoading] = useState(true);
   const { toast, show: showToast } = useToast();
 
   useEffect(() => {
-    Promise.all([
-      api.get('/appointments/today'),
-      api.get('/analytics').catch(() => null),
-    ]).then(([appts, analytics]) => {
-      setTodayAppts(appts);
-      if (analytics) setStats(analytics.totals);
-    }).catch(err => console.error(err))
-      .finally(() => setLoading(false));
+    loadDashboard();
   }, []);
+
+  async function loadDashboard() {
+    setLoading(true);
+    try {
+      const [appts, analytics, paymentsData, convoData, clientsData] = await Promise.all([
+        api.get('/appointments/today'),
+        api.get('/analytics').catch(() => null),
+        api.get('/payments?limit=12').catch(() => ({ payments: [] })),
+        api.get('/webhook/conversations?limit=6').catch(() => ({ conversations: [] })),
+        api.get('/clients').catch(() => []),
+      ]);
+      setTodayAppts(appts || []);
+      setStats(analytics?.totals || null);
+      setPayments(paymentsData?.payments || []);
+      setConversations(convoData?.conversations || []);
+      setClients(Array.isArray(clientsData) ? clientsData : []);
+    } catch (err) {
+      showToast(`Error cargando dashboard: ${err.message}`, 'error');
+    } finally {
+      setLoading(false);
+    }
+  }
 
   async function handlePaymentToggle(appt) {
     if (!appt.payment_id) return;
     const newStatus = appt.payment_status === 'Confirmado' ? 'Pendiente' : 'Confirmado';
     try {
       await api.put(`/payments/${appt.payment_id}/status`, { status: newStatus });
-      setTodayAppts(prev => prev.map(a => a.id === appt.id ? { ...a, payment_status: newStatus } : a));
+      setTodayAppts((prev) => prev.map((a) => (a.id === appt.id ? { ...a, payment_status: newStatus } : a)));
+      showToast(`Pago marcado como ${newStatus.toLowerCase()}`);
     } catch (err) {
-      console.error(err);
+      showToast(`Error: ${err.message}`, 'error');
     }
   }
 
   async function handleStatusChange(id, status) {
     try {
       await api.put(`/appointments/${id}/status`, { status });
-      setTodayAppts(prev => prev.map(a => a.id === id ? { ...a, status } : a));
+      setTodayAppts((prev) => prev.map((a) => (a.id === id ? { ...a, status } : a)));
+      showToast(`Cita actualizada a ${status}`);
     } catch (err) {
-      console.error(err);
+      showToast(`Error: ${err.message}`, 'error');
     }
   }
 
-  async function handleTriggerReminder(date, force = false) {
+  async function handleTriggerReminder(date) {
     try {
-      const url = `/admin/test-reminder?date=${date}&force=1`;
-      const result = await api.get(url);
-      if (result.sent > 0) {
-        showToast(`${result.sent} recordatorio(s) enviado(s)`);
-      } else {
-        showToast('No hay citas para enviar recordatorio');
-      }
+      const result = await api.get(`/admin/test-reminder?date=${date}&force=1`);
+      if (result.sent > 0) showToast(`${result.sent} recordatorio(s) enviado(s)`);
+      else showToast('No hubo mensajes para enviar');
     } catch (err) {
-      showToast('Error: ' + err.message, 'error');
+      showToast(`Error: ${err.message}`, 'error');
     }
   }
+
+  const mismatches = payments.filter((payment) => payment.status === 'Mismatch');
+  const pendingPayments = payments.filter((payment) => payment.status === 'Pendiente');
+  const atRiskClients = clients
+    .filter((client) => ['En pausa', 'Inactivo'].includes(client.calculated_status))
+    .slice(0, 4);
+  const inboxThreads = conversations.slice(0, 3);
+  const projectedIncome = (Number(stats?.income_this_month) || 0) + pendingPayments.reduce((sum, payment) => sum + Number(payment.amount || 0), 0);
+  const todayConfirmedRevenue = todayAppts
+    .filter((appt) => appt.payment_status === 'Confirmado')
+    .reduce((sum, appt) => sum + Number(appt.payment_amount || 0), 0);
+  const needsConfirmation = todayAppts.filter((appt) => !['Confirmada', 'Completada'].includes(appt.status)).length;
+  const weekSessions = Number(stats?.sessions_this_week || 0);
+
+  const attentionQueue = [
+    mismatches[0] && {
+      title: 'Pago con mismatch',
+      detail: `${mismatches[0].first_name} ${mismatches[0].last_name || ''} • ${formatMoney(mismatches[0].amount)} pendiente de revisión`,
+      tone: 'rose',
+    },
+    pendingPayments[0] && {
+      title: 'Cobro pendiente',
+      detail: `${pendingPayments[0].first_name} ${pendingPayments[0].last_name || ''} • cita ${pendingPayments[0].date_time ? formatTimeBolivia(pendingPayments[0].date_time) : 'sin hora'}`,
+      tone: 'amber',
+    },
+    atRiskClients[0] && {
+      title: 'Paciente en riesgo',
+      detail: `${atRiskClients[0].first_name} ${atRiskClients[0].last_name} • ${formatClientStatus(atRiskClients[0].calculated_status)}`,
+      tone: 'sky',
+    },
+  ].filter(Boolean);
+
+  const priorityStrip = [
+    { label: 'Sin confirmar', value: String(needsConfirmation), tone: 'amber' },
+    { label: 'Mismatch', value: String(mismatches.length), tone: 'rose' },
+    { label: 'Seguimiento', value: String(atRiskClients.length), tone: 'sky' },
+  ];
 
   return (
-    <AdminLayout title="Dashboard">
+    <AdminLayout title="Hoy">
       <Toast toast={toast} />
-      {/* KPI Cards */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-        <div className="bg-white rounded-xl border border-gray-200 p-4">
-          <div className="text-xs text-gray-500 font-medium">Sesiones esta semana</div>
-          <div className="text-2xl font-bold mt-1">{stats?.sessions_this_week ?? '--'}</div>
-        </div>
-        <div className="bg-white rounded-xl border border-gray-200 p-4">
-          <div className="text-xs text-gray-500 font-medium">Clientes activos</div>
-          <div className="text-2xl font-bold mt-1">{stats?.total_clients ?? '--'}</div>
-        </div>
-        <div className="bg-white rounded-xl border border-gray-200 p-4">
-          <div className="text-xs text-gray-500 font-medium">Tasa asistencia</div>
-          <div className="text-2xl font-bold mt-1">
-            {stats && stats.total_completed > 0
-              ? `${Math.round((stats.total_completed / (stats.total_completed + (stats.total_noshow || 0))) * 100)}%`
-              : '--'}
-          </div>
-        </div>
-        <div className="bg-white rounded-xl border border-gray-200 p-4">
-          <div className="text-xs text-gray-500 font-medium">Ingresos del mes</div>
-          <div className="text-2xl font-bold mt-1">
-            {stats?.income_this_month != null ? `Bs ${Number(stats.income_this_month).toLocaleString()}` : '--'}
-          </div>
-        </div>
-      </div>
 
-      {/* Today's appointments */}
-      <div className="bg-white rounded-xl border border-gray-200">
-        <div className="p-4 border-b border-gray-100 flex items-center justify-between">
-          <h3 className="font-semibold">Citas de hoy</h3>
-          <div className="flex gap-2">
-            <button type="button" onClick={() => handleTriggerReminder('today')} className="text-xs px-3 py-1.5 bg-gray-100 rounded-lg hover:bg-gray-200 font-medium">
-              Recordatorio hoy
-            </button>
-            <button type="button" onClick={() => handleTriggerReminder('tomorrow')} className="text-xs px-3 py-1.5 bg-gray-100 rounded-lg hover:bg-gray-200 font-medium">
-              Recordatorio mañana
-            </button>
+      <div className="preview-admin-shell relative -mx-4 -mt-4 px-4 pb-6 pt-4 lg:-mx-6 lg:-mt-6 lg:px-6 lg:pb-8 lg:pt-6">
+        <div className="preview-halo preview-halo-a" />
+        <div className="preview-halo preview-halo-b" />
+
+        <div className="preview-enter border-b border-black/5 pb-6" style={{ animationDelay: '60ms' }}>
+          <div className="flex flex-col gap-5 xl:flex-row xl:items-center xl:justify-between">
+            <div>
+              <div className="text-xs font-semibold uppercase tracking-[0.26em] text-slate-400">Command Center</div>
+              <div className="mt-2 flex flex-wrap items-center gap-3">
+                <h1 className="text-[clamp(2rem,3vw,3.35rem)] font-semibold tracking-[-0.04em] text-slate-950">Hoy</h1>
+                <span className="inline-flex items-center gap-2 rounded-full bg-white/80 px-3 py-1 text-sm text-slate-500">
+                  <span className="h-2 w-2 rounded-full bg-emerald-500 shadow-[0_0_0_6px_rgba(16,185,129,0.15)]" />
+                  {loading ? 'Sincronizando' : 'Operación activa'}
+                </span>
+              </div>
+              <p className="mt-3 max-w-2xl text-sm leading-7 text-slate-500">
+                Agenda, cobros, pacientes e inbox en un solo tablero. Esto ya no es un resumen: es una superficie para decidir y operar.
+              </p>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-3">
+              <button
+                type="button"
+                onClick={() => handleTriggerReminder('today')}
+                className="rounded-2xl border border-white/70 bg-white/80 px-4 py-3 text-sm font-medium text-slate-700 transition hover:bg-white"
+              >
+                Recordatorio hoy
+              </button>
+              <button
+                type="button"
+                onClick={() => handleTriggerReminder('tomorrow')}
+                className="rounded-2xl bg-[#1f2937] px-4 py-3 text-sm font-medium text-white shadow-[0_16px_34px_rgba(15,23,42,0.18)] transition hover:bg-slate-800"
+              >
+                Recordatorio mañana
+              </button>
+            </div>
+          </div>
+
+          <div className="mt-5 flex flex-wrap gap-3">
+            {priorityStrip.map((item, index) => (
+              <div key={item.label} className={`preview-enter rounded-2xl border px-4 py-3 ${toneClasses(item.tone)}`} style={{ animationDelay: `${120 + index * 70}ms` }}>
+                <div className="text-[11px] font-semibold uppercase tracking-[0.18em]">{item.label}</div>
+                <div className="mt-1 text-2xl font-semibold">{item.value}</div>
+              </div>
+            ))}
           </div>
         </div>
 
-        {loading ? (
-          <div className="p-8 text-center text-gray-400">Cargando...</div>
-        ) : todayAppts.length === 0 ? (
-          <div className="p-8 text-center text-gray-400">No hay sesiones programadas para hoy</div>
-        ) : (
-          <table className="w-full">
-            <thead>
-              <tr className="text-xs text-gray-500 border-b border-gray-100">
-                <th className="text-left p-3 font-medium">Hora</th>
-                <th className="text-left p-3 font-medium">Cliente</th>
-                <th className="text-left p-3 font-medium">Teléfono</th>
-                <th className="text-left p-3 font-medium">Status</th>
-                <th className="text-left p-3 font-medium">Pago</th>
-                <th className="text-left p-3 font-medium">Acción</th>
-              </tr>
-            </thead>
-            <tbody>
-              {todayAppts.map(appt => (
-                <tr key={appt.id} className="border-b border-gray-50 hover:bg-gray-50">
-                  <td className="p-3 text-sm font-medium">
-                    {formatTimeBolivia(appt.date_time)}
-                  </td>
-                  <td className="p-3 text-sm">{appt.first_name} {appt.last_name}</td>
-                  <td className="p-3 text-sm">
-                    <a href={`https://wa.me/${appt.client_phone}`} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">
-                      {appt.client_phone}
-                    </a>
-                  </td>
-                  <td className="p-3">
-                    <span className={`text-xs px-2 py-1 rounded-full font-medium ${
-                      appt.status === 'Agendada' ? 'bg-blue-100 text-blue-700' :
-                      appt.status === 'Confirmada' ? 'bg-green-100 text-green-700' :
-                      appt.status === 'Completada' ? 'bg-emerald-100 text-emerald-700' :
-                      appt.status === 'No-show' ? 'bg-red-100 text-red-700' :
-                      appt.status === 'Cancelada' ? 'bg-gray-100 text-gray-600' :
-                      'bg-yellow-100 text-yellow-700'
-                    }`}>
-                      {appt.status}
-                    </span>
-                  </td>
-                  <td className="p-3">
-                    {appt.payment_id ? (
-                      <button
-                        type="button"
-                        onClick={() => handlePaymentToggle(appt)}
-                        className={`text-xs px-2 py-1 rounded-full font-medium border cursor-pointer transition-colors ${
-                          appt.payment_status === 'Confirmado' ? 'bg-green-100 text-green-700 border-green-200' :
-                          'bg-red-100 text-red-700 border-red-200'
-                        }`}
-                        title={`Click para cambiar a ${appt.payment_status === 'Confirmado' ? 'Pendiente' : 'Confirmado'}`}
+        <div className="mt-6 grid gap-6 xl:grid-cols-[minmax(0,1.45fr)_390px]">
+          <div className="space-y-6">
+            <PreviewPanel
+              eyebrow="Workspace"
+              title="Agenda viva del día"
+              description="Citas de hoy con cobro, contexto y acciones rápidas en el mismo lugar."
+              delay={140}
+            >
+              <div className="grid gap-5 px-6 py-6 lg:grid-cols-[minmax(0,1fr)_220px]">
+                <div className="space-y-3">
+                  {loading ? (
+                    <div className="rounded-[24px] border border-slate-200/80 bg-[#fcfbf8] px-4 py-10 text-center text-sm text-slate-400">
+                      Cargando agenda...
+                    </div>
+                  ) : todayAppts.length === 0 ? (
+                    <div className="rounded-[24px] border border-slate-200/80 bg-[#fcfbf8] px-4 py-10 text-center text-sm text-slate-400">
+                      No hay citas hoy. Si quieres vender la demo mejor, corre el seeder de ejemplo.
+                    </div>
+                  ) : (
+                    todayAppts.map((appt, index) => (
+                      <div
+                        key={appt.id}
+                        className="group flex flex-col gap-4 rounded-[24px] border border-slate-200/80 bg-[#fcfbf8] px-4 py-4 transition-all duration-200 hover:-translate-y-0.5 hover:border-slate-300 hover:shadow-[0_18px_40px_rgba(15,23,42,0.07)] md:flex-row md:items-center"
                       >
-                        {appt.payment_status === 'Confirmado' ? 'Pagado' : 'Pendiente'}
-                      </button>
+                        <div className="flex items-center gap-4 md:w-[122px] md:flex-none">
+                          <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-[#1f2937] text-sm font-semibold text-white">
+                            {index + 1}
+                          </div>
+                          <div>
+                            <div className="text-lg font-semibold tracking-tight text-slate-900">{formatTimeBolivia(appt.date_time)}</div>
+                            <div className="text-xs uppercase tracking-[0.18em] text-slate-400">
+                              {appt.session_number ? `sesión ${appt.session_number}` : 'agenda'}
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="min-w-0 flex-1">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <div className="text-base font-semibold text-slate-900">{appt.first_name} {appt.last_name}</div>
+                            <span className={`rounded-full px-2.5 py-1 text-xs font-medium ${appointmentStatusClasses(appt.status)}`}>{appt.status}</span>
+                          </div>
+                          <div className="mt-1 text-sm text-slate-500">
+                            {appt.client_phone || 'Sin teléfono'} {appt.payment_amount ? `• ${formatMoney(appt.payment_amount)}` : ''}
+                          </div>
+                        </div>
+
+                        <div className="flex items-center justify-between gap-4 md:w-[196px] md:flex-none md:justify-end">
+                          <button
+                            type="button"
+                            onClick={() => handlePaymentToggle(appt)}
+                            disabled={!appt.payment_id}
+                            className={`text-sm font-semibold ${paymentClasses(appt.payment_status)} ${appt.payment_id ? 'hover:underline' : 'cursor-not-allowed opacity-40'}`}
+                          >
+                            {appt.payment_status || 'Sin pago'}
+                          </button>
+                          <select
+                            value=""
+                            onChange={(e) => {
+                              if (e.target.value) handleStatusChange(appt.id, e.target.value);
+                            }}
+                            className="rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-600 outline-none transition hover:border-slate-300"
+                          >
+                            <option value="">Acción</option>
+                            <option value="Confirmada">Confirmar</option>
+                            <option value="Completada">Completar</option>
+                            <option value="No-show">No-show</option>
+                            <option value="Cancelada">Cancelar</option>
+                          </select>
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+
+                <div className="border-t border-slate-200/80 pt-5 lg:border-l lg:border-t-0 lg:pl-5 lg:pt-0">
+                  <div className="mb-4 flex items-center gap-2 text-sm font-medium text-slate-700">
+                    <BellRing size={16} />
+                    Atención inmediata
+                  </div>
+                  <div className="space-y-3">
+                    {attentionQueue.length === 0 ? (
+                      <div className="rounded-[22px] border border-dashed border-slate-200 px-4 py-5 text-sm text-slate-400">
+                        Sin alertas críticas por ahora.
+                      </div>
                     ) : (
-                      <span className="text-xs text-gray-300">—</span>
+                      attentionQueue.map((item) => (
+                        <div key={item.title} className={`rounded-[22px] border px-4 py-4 ${toneClasses(item.tone)}`}>
+                          <div className="text-sm font-semibold">{item.title}</div>
+                          <div className="mt-1 text-sm leading-6 opacity-90">{item.detail}</div>
+                        </div>
+                      ))
                     )}
-                  </td>
-                  <td className="p-3">
-                    <select
-                      value=""
-                      onChange={e => { if (e.target.value) handleStatusChange(appt.id, e.target.value); }}
-                      className="text-xs border border-gray-200 rounded px-2 py-1 bg-white"
+                  </div>
+                </div>
+              </div>
+            </PreviewPanel>
+
+            <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(260px,0.8fr)]">
+              <PreviewPanel
+                eyebrow="Patients"
+                title="Radar de cartera"
+                description="Segmentos útiles para seguimiento, reactivación y venta recurrente."
+                className="overflow-hidden"
+                delay={210}
+              >
+                <div className="divide-y divide-slate-200/70 px-6">
+                  {[
+                    { label: 'Nuevos', value: stats?.new_clients_30d ?? 0, sub: 'captados últimos 30 días' },
+                    { label: 'Activos', value: clients.filter((client) => client.calculated_status === 'Activo').length, sub: 'con continuidad saludable' },
+                    { label: 'En riesgo', value: clients.filter((client) => ['En pausa', 'Inactivo'].includes(client.calculated_status)).length, sub: 'requieren seguimiento' },
+                    { label: 'Recurrentes', value: clients.filter((client) => client.calculated_status === 'Recurrente').length, sub: 'base premium del consultorio' },
+                  ].map((item) => (
+                    <div key={item.label} className="flex items-center justify-between py-4">
+                      <div>
+                        <div className="text-sm font-medium text-slate-700">{item.label}</div>
+                        <div className="text-sm text-slate-400">{item.sub}</div>
+                      </div>
+                      <div className="text-3xl font-semibold tracking-tight text-slate-950">{item.value}</div>
+                    </div>
+                  ))}
+                </div>
+              </PreviewPanel>
+
+              <PreviewPanel
+                eyebrow="Automation"
+                title="Rutinas visibles"
+                description="El producto se vende mejor cuando las automatizaciones se pueden ver y entender."
+                delay={260}
+              >
+                <div className="space-y-3 px-6 py-6">
+                  {AUTOMATIONS.map((item) => (
+                    <div key={item} className="flex items-start gap-3 rounded-[20px] bg-[#f7f3ee] px-4 py-4">
+                      <CheckCheck size={18} className="mt-0.5 text-[#b3643d]" />
+                      <div className="text-sm leading-6 text-slate-600">{item}</div>
+                    </div>
+                  ))}
+                </div>
+              </PreviewPanel>
+            </div>
+          </div>
+
+          <div className="space-y-6">
+            <PreviewPanel
+              eyebrow="Inbox"
+              title="Conversaciones que requieren respuesta"
+              description="Mensajes vivos, no logs. Prioridad real para venta, cobro y seguimiento."
+              delay={180}
+            >
+              <div className="space-y-3 px-6 py-6">
+                {inboxThreads.length === 0 ? (
+                  <div className="rounded-[22px] border border-dashed border-slate-200 px-4 py-5 text-sm text-slate-400">
+                    Aún no hay hilos recientes.
+                  </div>
+                ) : (
+                  inboxThreads.map((thread) => (
+                    <button
+                      key={thread.id}
+                      type="button"
+                      className="flex w-full items-start gap-4 rounded-[24px] border border-slate-200/80 bg-[#fcfbf8] px-4 py-4 text-left transition-all duration-200 hover:-translate-y-0.5 hover:border-slate-300 hover:shadow-[0_18px_36px_rgba(15,23,42,0.06)]"
                     >
-                      <option value="">Cambiar...</option>
-                      <option value="Completada">Completada</option>
-                      <option value="No-show">No-show</option>
-                      <option value="Cancelada">Cancelada</option>
-                    </select>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
+                      <div className="flex h-11 w-11 flex-none items-center justify-center rounded-2xl bg-[#d8704a] text-sm font-semibold text-white">
+                        {(thread.first_name || thread.client_phone || '?').charAt(0)}
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center justify-between gap-3">
+                          <div className="text-sm font-semibold text-slate-900">
+                            {thread.first_name ? `${thread.first_name} ${thread.last_name || ''}`.trim() : thread.client_phone}
+                          </div>
+                          <div className="text-xs uppercase tracking-[0.18em] text-slate-400">{formatRelativeTime(thread.created_at)}</div>
+                        </div>
+                        <div className="mt-1 line-clamp-2 text-sm leading-6 text-slate-500">{thread.content || 'Sin contenido'}</div>
+                      </div>
+                      <div className="rounded-full bg-slate-900 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-white">
+                        {thread.direction === 'inbound' ? 'Inbox' : 'Salida'}
+                      </div>
+                    </button>
+                  ))
+                )}
+              </div>
+            </PreviewPanel>
+
+            <PreviewPanel
+              eyebrow="Revenue"
+              title="Pulso comercial"
+              description="Lo que está entrando, lo que está trabado y dónde conviene actuar hoy."
+              delay={230}
+            >
+              <div className="grid gap-4 px-6 py-6">
+                <div className="rounded-[24px] bg-[#1f2937] p-5 text-white">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <div className="text-xs uppercase tracking-[0.18em] text-white/50">Ingreso proyectado</div>
+                      <div className="mt-2 text-4xl font-semibold tracking-tight">{formatMoney(projectedIncome)}</div>
+                    </div>
+                    <TrendingUp size={24} className="text-emerald-300" />
+                  </div>
+                  <div className="mt-4 h-2 overflow-hidden rounded-full bg-white/10">
+                    <div
+                      className="h-full rounded-full bg-gradient-to-r from-emerald-300 to-cyan-300"
+                      style={{ width: `${Math.min(100, projectedIncome > 0 ? Math.round(((Number(stats?.income_this_month) || 0) / projectedIncome) * 100) : 0)}%` }}
+                    />
+                  </div>
+                  <div className="mt-3 text-sm text-white/60">
+                    {formatMoney(stats?.income_this_month || 0)} ya confirmado este mes
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="rounded-[22px] bg-[#f6f1ea] p-4">
+                    <div className="flex items-center gap-2 text-sm font-medium text-slate-500">
+                      <FileWarning size={16} className="text-rose-500" />
+                      En revisión
+                    </div>
+                    <div className="mt-3 text-3xl font-semibold text-slate-950">{formatMoney(mismatches.reduce((sum, item) => sum + Number(item.amount || 0), 0))}</div>
+                    <div className="mt-1 text-sm text-slate-400">{mismatches.length} pago(s) con duda</div>
+                  </div>
+                  <div className="rounded-[22px] bg-[#f6f1ea] p-4">
+                    <div className="flex items-center gap-2 text-sm font-medium text-slate-500">
+                      <ShieldCheck size={16} className="text-emerald-500" />
+                      Cobrado hoy
+                    </div>
+                    <div className="mt-3 text-3xl font-semibold text-slate-950">{formatMoney(todayConfirmedRevenue)}</div>
+                    <div className="mt-1 text-sm text-slate-400">{weekSessions} sesiones esta semana</div>
+                  </div>
+                </div>
+              </div>
+            </PreviewPanel>
+
+            <PreviewPanel
+              eyebrow="Direction"
+              title="Por qué esta pantalla ya se puede vender"
+              description="Hace visible operación, ingreso, seguimiento y conversación en una sola capa."
+              delay={290}
+            >
+              <div className="space-y-4 px-6 py-6 text-sm leading-7 text-slate-500">
+                <div className="flex items-start gap-3">
+                  <Command size={18} className="mt-1 text-[#b3643d]" />
+                  <div>El admin deja de ser un conjunto de módulos y pasa a ser un escritorio operativo.</div>
+                </div>
+                <div className="flex items-start gap-3">
+                  <MessageSquareMore size={18} className="mt-1 text-[#b3643d]" />
+                  <div>Inbox, cobro y agenda dejan de vivir separados y se conectan al día a día del consultorio.</div>
+                </div>
+                <div className="flex items-start gap-3">
+                  <Waypoints size={18} className="mt-1 text-[#b3643d]" />
+                  <div>Las automatizaciones dejan de ser “magia escondida” y se vuelven parte del producto.</div>
+                </div>
+                <div className="flex items-start gap-3">
+                  <ArrowUpRight size={18} className="mt-1 text-[#b3643d]" />
+                  <div>Con datos demo suficientes, esta pantalla ya sirve para una venta o demo comercial seria.</div>
+                </div>
+              </div>
+            </PreviewPanel>
+          </div>
+        </div>
       </div>
     </AdminLayout>
   );

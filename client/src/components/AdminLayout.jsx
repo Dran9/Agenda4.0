@@ -3,13 +3,13 @@ import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { LayoutDashboard, Users, CalendarDays, BarChart3, Settings, MessageSquare, DollarSign, LogOut, Menu, X } from 'lucide-react';
 
 const NAV_ITEMS = [
-  { path: '/admin', label: 'Dashboard', icon: LayoutDashboard },
+  { path: '/admin', label: 'Hoy', icon: LayoutDashboard },
+  { path: '/admin/appointments', label: 'Agenda', icon: CalendarDays },
   { path: '/admin/clients', label: 'Clientes', icon: Users },
-  { path: '/admin/appointments', label: 'Citas', icon: CalendarDays },
-  { path: '/admin/analytics', label: 'Analytics', icon: BarChart3 },
-  { path: '/admin/config', label: 'Configuración', icon: Settings },
-  { path: '/admin/whatsapp', label: 'WhatsApp', icon: MessageSquare },
-  { path: '/admin/finance', label: 'Finanzas', icon: DollarSign },
+  { path: '/admin/whatsapp', label: 'Inbox', icon: MessageSquare },
+  { path: '/admin/finance', label: 'Cobros', icon: DollarSign },
+  { path: '/admin/analytics', label: 'Insights', icon: BarChart3 },
+  { path: '/admin/config', label: 'Ajustes', icon: Settings },
 ];
 
 export default function AdminLayout({ children, title }) {
@@ -29,18 +29,19 @@ export default function AdminLayout({ children, title }) {
   }
 
   return (
-    <div className="min-h-screen bg-sky-100 flex">
+    <div className="min-h-screen bg-[#f4efe7] flex text-slate-900">
       {/* Sidebar */}
       <aside className={`
-        fixed inset-y-0 left-0 z-30 w-60 bg-sky-50 border-r border-sky-200 transform transition-transform
+        fixed inset-y-0 left-0 z-30 w-64 bg-[#f8f3ec]/95 border-r border-black/5 backdrop-blur-xl transform transition-transform
         lg:translate-x-0 lg:static lg:inset-0
         ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}
       `}>
-        <div className="p-4 border-b border-sky-200">
-          <h1 className="font-bold text-lg text-sky-950">Agenda 4.0</h1>
+        <div className="p-5 border-b border-black/5">
+          <div className="text-[11px] font-semibold uppercase tracking-[0.24em] text-[#b3643d]">Agenda 4.0</div>
+          <h1 className="mt-2 font-semibold text-xl text-slate-950 tracking-tight">Admin Desk</h1>
         </div>
 
-        <nav className="p-2 space-y-0.5">
+        <nav className="p-3 space-y-1.5">
           {NAV_ITEMS.map(item => {
             const Icon = item.icon;
             const active = location.pathname === item.path;
@@ -50,8 +51,8 @@ export default function AdminLayout({ children, title }) {
                 to={item.path}
                 onClick={() => setSidebarOpen(false)}
                 className={`
-                  flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors
-                  ${active ? 'bg-sky-200 text-sky-950' : 'text-slate-700 hover:bg-sky-100 hover:text-sky-950'}
+                  flex items-center gap-3 px-4 py-3 rounded-2xl text-sm font-medium transition-colors
+                  ${active ? 'bg-[#1f2937] text-white shadow-[0_16px_36px_rgba(15,23,42,0.18)]' : 'text-slate-600 hover:bg-white/75 hover:text-slate-900'}
                 `}
               >
                 <Icon size={18} />
@@ -61,11 +62,11 @@ export default function AdminLayout({ children, title }) {
           })}
         </nav>
 
-        <div className="absolute bottom-0 left-0 right-0 p-2 border-t border-sky-200">
+        <div className="absolute bottom-0 left-0 right-0 p-3 border-t border-black/5">
           <button
             type="button"
             onClick={handleLogout}
-            className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-slate-600 hover:bg-sky-100 hover:text-sky-900 w-full"
+            className="flex items-center gap-3 px-4 py-3 rounded-2xl text-sm font-medium text-slate-600 hover:bg-white/75 hover:text-slate-900 w-full"
           >
             <LogOut size={18} />
             Cerrar sesión
@@ -80,7 +81,7 @@ export default function AdminLayout({ children, title }) {
 
       {/* Main content */}
       <div className="flex-1 min-w-0">
-        <header className="bg-sky-50/95 border-b border-sky-200 px-4 py-3 flex items-center gap-3 lg:px-6">
+        <header className="bg-[#f8f3ec]/75 backdrop-blur-xl border-b border-black/5 px-4 py-4 flex items-center gap-3 lg:px-6">
           <button
             type="button"
             onClick={() => setSidebarOpen(true)}
@@ -88,7 +89,7 @@ export default function AdminLayout({ children, title }) {
           >
             <Menu size={20} />
           </button>
-          <h2 className="text-lg font-semibold">{title}</h2>
+          <h2 className="text-lg font-semibold tracking-tight">{title}</h2>
         </header>
 
         <main className="p-4 lg:p-6">

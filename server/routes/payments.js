@@ -163,6 +163,7 @@ router.post('/match-receipt', authMiddleware, async (req, res) => {
     }
 
     let matches = [];
+    let matchedBy = null;
 
     // Priority 1: Match by phone number (most reliable — the patient sends from their WhatsApp)
     if (phone) {
@@ -177,6 +178,7 @@ router.post('/match-receipt', authMiddleware, async (req, res) => {
         [req.tenantId, phone]
       );
       matches = rows;
+      if (rows.length > 0) matchedBy = 'phone';
     }
 
     // Priority 2: Match by amount (when admin uploads manually without phone)
@@ -192,6 +194,7 @@ router.post('/match-receipt', authMiddleware, async (req, res) => {
         [req.tenantId, ocrResult.amount, ocrResult.amount]
       );
       matches = rows;
+      if (rows.length > 0) matchedBy = 'amount';
     }
 
     // Priority 3: Name from OCR (least reliable — someone else may have paid)
@@ -212,12 +215,13 @@ router.post('/match-receipt', authMiddleware, async (req, res) => {
           [req.tenantId, ...nameParams]
         );
         matches = rows;
+        if (rows.length > 0) matchedBy = 'name';
       }
     }
 
     res.json({
       ocr: { name: ocrResult.name, amount: ocrResult.amount, date: ocrResult.date, reference: ocrResult.reference, bank: ocrResult.bank },
-      matched_by: matches.length > 0 ? (phone ? 'phone' : ocrResult.amount ? 'amount' : 'name') : null,
+      matched_by: matches.length > 0 ? matchedBy : null,
       matches: matches.map(m => ({
         payment_id: m.id,
         client_name: `${m.first_name} ${m.last_name || ''}`.trim(),

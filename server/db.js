@@ -36,6 +36,26 @@ async function withTransaction(callback) {
   }
 }
 
+async function withAdvisoryLock(lockName, timeoutSeconds, callback) {
+  const conn = await pool.getConnection();
+  try {
+    const [rows] = await conn.query('SELECT GET_LOCK(?, ?) AS acquired', [lockName, timeoutSeconds]);
+    if (!rows[0]?.acquired) {
+      const err = new Error('No se pudo adquirir el lock de reserva');
+      err.code = 'LOCK_TIMEOUT';
+      throw err;
+    }
+    return await callback();
+  } finally {
+    try {
+      await conn.query('SELECT RELEASE_LOCK(?) AS released', [lockName]);
+    } catch (_) {
+      // best effort
+    }
+    conn.release();
+  }
+}
+
 // Schema: 10 tables, multi-tenant from day 1
 async function initializeDatabase() {
   const conn = await pool.getConnection();
@@ -329,4 +349,4 @@ async function initializeDatabase() {
   }
 }
 
-module.exports = { pool, withTransaction, initializeDatabase };
+module.exports = { pool, withTransaction, withAdvisoryLock, initializeDatabase };

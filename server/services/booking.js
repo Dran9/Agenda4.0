@@ -1,18 +1,19 @@
-const { pool, withTransaction } = require('../db');
+const { pool, withTransaction, withAdvisoryLock } = require('../db');
 const { listEvents, createEvent, deleteEvent } = require('./calendar');
 
 const CALENDAR_ID = () => process.env.CALENDAR_ID || 'danielmacleann@gmail.com';
 
 // ─── Check client status by phone ────────────────────────────────
-async function checkClientByPhone(phone, tenantId) {
+async function checkClientByPhone(phone, tenantId, options = {}) {
+  const { reactivateDeleted = false } = options;
   // First check active clients
   let [clients] = await pool.query(
     'SELECT * FROM clients WHERE phone = ? AND tenant_id = ? AND deleted_at IS NULL',
     [phone, tenantId]
   );
 
-  // If not found, check soft-deleted and reactivate
-  if (clients.length === 0) {
+  // If not found, optionally reactivate a soft-deleted client during real booking flows
+  if (clients.length === 0 && reactivateDeleted) {
     const [deleted] = await pool.query(
       'SELECT * FROM clients WHERE phone = ? AND tenant_id = ? AND deleted_at IS NOT NULL',
       [phone, tenantId]
@@ -117,114 +118,122 @@ async function createClient(phone, onboarding, tenantId, conn, feeOverride) {
 // ─── Create booking (GCal + DB with compensation) ───────────────
 async function createBooking(client, dateTime, tenantId) {
   const calendarId = CALENDAR_ID();
-
-  // Load config for duration
-  const [cfgRows] = await pool.query(
-    'SELECT appointment_duration FROM config WHERE tenant_id = ?', [tenantId]
-  );
-  const duration = cfgRows[0]?.appointment_duration || 60;
-
-  // Verify slot is free (race condition check)
-  const dayStr = dateTime.split('T')[0];
-  const timeMin = new Date(`${dayStr}T00:00:00-04:00`).toISOString();
-  const timeMax = new Date(`${dayStr}T23:59:59-04:00`).toISOString();
-  const events = await listEvents(calendarId, timeMin, timeMax);
-
-  const [hh, mm] = dateTime.split('T')[1].split(':').map(Number);
-  const slotStartMin = hh * 60 + mm;
-  const slotEndMin = slotStartMin + duration;
-
-  const conflict = events.some(e => {
-    const es = new Date(e.start.dateTime || e.start.date);
-    const ee = new Date(e.end.dateTime || e.end.date);
-    const esLP = new Date(es.toLocaleString('en-US', { timeZone: 'America/La_Paz' }));
-    const eeLP = new Date(ee.toLocaleString('en-US', { timeZone: 'America/La_Paz' }));
-    const eStart = esLP.getHours() * 60 + esLP.getMinutes();
-    const eEnd = eeLP.getHours() * 60 + eeLP.getMinutes();
-    return slotStartMin < eEnd && slotEndMin > eStart;
-  });
-
-  if (conflict) {
-    return { error: 'El horario ya no está disponible', status: 409 };
-  }
-
-  // Build GCal times in -04:00 format
-  const startISO = `${dateTime}:00-04:00`;
-  const totalMin = hh * 60 + mm + duration;
-  const endH = String(Math.floor(totalMin / 60) % 24).padStart(2, '0');
-  const endM = String(totalMin % 60).padStart(2, '0');
-  const endISO = `${dayStr}T${endH}:${endM}:00-04:00`;
-
-  // Create GCal event first (external system)
-  let gcalEvent;
   try {
-    gcalEvent = await createEvent(calendarId, {
-      summary: `Terapia ${client.first_name} ${client.last_name} - ${client.phone}`,
-      description: `Teléfono: ${client.phone}`,
-      startDateTime: startISO,
-      endDateTime: endISO,
+    return await withAdvisoryLock(`booking:${tenantId}:${dateTime}`, 10, async () => {
+      // Load config for duration
+      const [cfgRows] = await pool.query(
+        'SELECT appointment_duration FROM config WHERE tenant_id = ?', [tenantId]
+      );
+      const duration = cfgRows[0]?.appointment_duration || 60;
+
+      // Verify slot is free while holding an advisory lock for this exact slot
+      const dayStr = dateTime.split('T')[0];
+      const timeMin = new Date(`${dayStr}T00:00:00-04:00`).toISOString();
+      const timeMax = new Date(`${dayStr}T23:59:59-04:00`).toISOString();
+      const events = await listEvents(calendarId, timeMin, timeMax);
+
+      const [hh, mm] = dateTime.split('T')[1].split(':').map(Number);
+      const slotStartMin = hh * 60 + mm;
+      const slotEndMin = slotStartMin + duration;
+
+      const conflict = events.some(e => {
+        const es = new Date(e.start.dateTime || e.start.date);
+        const ee = new Date(e.end.dateTime || e.end.date);
+        const esLP = new Date(es.toLocaleString('en-US', { timeZone: 'America/La_Paz' }));
+        const eeLP = new Date(ee.toLocaleString('en-US', { timeZone: 'America/La_Paz' }));
+        const eStart = esLP.getHours() * 60 + esLP.getMinutes();
+        const eEnd = eeLP.getHours() * 60 + eeLP.getMinutes();
+        return slotStartMin < eEnd && slotEndMin > eStart;
+      });
+
+      if (conflict) {
+        return { error: 'El horario ya no está disponible', status: 409 };
+      }
+
+      // Build GCal times in -04:00 format
+      const startISO = `${dateTime}:00-04:00`;
+      const totalMin = hh * 60 + mm + duration;
+      const endH = String(Math.floor(totalMin / 60) % 24).padStart(2, '0');
+      const endM = String(totalMin % 60).padStart(2, '0');
+      const endISO = `${dayStr}T${endH}:${endM}:00-04:00`;
+
+      // Create GCal event first (external system)
+      let gcalEvent;
+      try {
+        gcalEvent = await createEvent(calendarId, {
+          summary: `Terapia ${client.first_name} ${client.last_name} - ${client.phone}`,
+          description: `Teléfono: ${client.phone}`,
+          startDateTime: startISO,
+          endDateTime: endISO,
+        });
+        console.log(`[booking] GCal event created: ${gcalEvent.id} for ${dateTime}`);
+      } catch (gcalErr) {
+        console.error('[booking] GCal create FAILED:', gcalErr.message);
+        throw new Error('No se pudo crear el evento en Google Calendar');
+      }
+
+      // DB inserts in transaction — if any fail, compensate by deleting GCal event
+      let newAppt;
+      try {
+        newAppt = await withTransaction(async (conn) => {
+          const [prevAppts] = await conn.query(
+            'SELECT COUNT(*) as cnt FROM appointments WHERE client_id = ? AND tenant_id = ?',
+            [client.id, tenantId]
+          );
+          const sessionNumber = (prevAppts[0]?.cnt || 0) + 1;
+          const isFirst = sessionNumber === 1;
+
+          const [result] = await conn.query(
+            `INSERT INTO appointments (tenant_id, client_id, date_time, gcal_event_id, status, confirmed_at, is_first, session_number, phone)
+             VALUES (?, ?, ?, ?, 'Agendada', NULL, ?, ?, ?)`,
+            [tenantId, client.id, dateTime, gcalEvent.id, isFirst, sessionNumber, client.phone]
+          );
+
+          const fee = client.fee || 250;
+          await conn.query(
+            `INSERT INTO payments (tenant_id, client_id, appointment_id, amount, status)
+             VALUES (?, ?, ?, ?, 'Pendiente')`,
+            [tenantId, client.id, result.insertId, fee]
+          );
+
+          await conn.query(
+            `INSERT INTO webhooks_log (tenant_id, event, type, payload, status, client_phone, client_id, appointment_id)
+             VALUES (?, ?, 'booking', ?, 'procesado', ?, ?, ?)`,
+            [tenantId, `booking_${result.insertId}`, JSON.stringify({ date_time: dateTime }), client.phone, client.id, result.insertId]
+          );
+
+          return {
+            id: result.insertId,
+            date_time: dateTime,
+            gcal_event_id: gcalEvent.id,
+            session_number: sessionNumber,
+            is_first: isFirst,
+            status: 'Agendada',
+          };
+        });
+      } catch (dbErr) {
+        // DB failed — compensate by removing the GCal event we just created
+        console.error('[booking] DB insert failed, rolling back GCal event:', dbErr.message);
+        try { await deleteEvent(calendarId, gcalEvent.id); } catch (e) { /* best effort */ }
+        throw dbErr;
+      }
+
+      // Sync booking to Google Sheets (async, non-blocking)
+      try {
+        const { syncBookingToSheet } = require('./sheets');
+        syncBookingToSheet(newAppt, client).catch(err => console.error('[sheets] Booking sync failed (non-fatal):', err.message));
+      } catch (err) {
+        console.error('[sheets] Import failed:', err.message);
+      }
+
+      return { success: true, appointment: newAppt };
     });
-    console.log(`[booking] GCal event created: ${gcalEvent.id} for ${dateTime}`);
-  } catch (gcalErr) {
-    console.error('[booking] GCal create FAILED:', gcalErr.message);
-    throw new Error('No se pudo crear el evento en Google Calendar');
-  }
-
-  // DB inserts in transaction — if any fail, compensate by deleting GCal event
-  let newAppt;
-  try {
-    newAppt = await withTransaction(async (conn) => {
-      const [prevAppts] = await conn.query(
-        'SELECT COUNT(*) as cnt FROM appointments WHERE client_id = ? AND tenant_id = ?',
-        [client.id, tenantId]
-      );
-      const sessionNumber = (prevAppts[0]?.cnt || 0) + 1;
-      const isFirst = sessionNumber === 1;
-
-      const [result] = await conn.query(
-        `INSERT INTO appointments (tenant_id, client_id, date_time, gcal_event_id, status, confirmed_at, is_first, session_number, phone)
-         VALUES (?, ?, ?, ?, 'Agendada', NOW(), ?, ?, ?)`,
-        [tenantId, client.id, dateTime, gcalEvent.id, isFirst, sessionNumber, client.phone]
-      );
-
-      const fee = client.fee || 250;
-      await conn.query(
-        `INSERT INTO payments (tenant_id, client_id, appointment_id, amount, status)
-         VALUES (?, ?, ?, ?, 'Pendiente')`,
-        [tenantId, client.id, result.insertId, fee]
-      );
-
-      await conn.query(
-        `INSERT INTO webhooks_log (tenant_id, event, type, payload, status, client_phone, client_id, appointment_id)
-         VALUES (?, ?, 'booking', ?, 'procesado', ?, ?, ?)`,
-        [tenantId, `booking_${result.insertId}`, JSON.stringify({ date_time: dateTime }), client.phone, client.id, result.insertId]
-      );
-
-      return {
-        id: result.insertId,
-        date_time: dateTime,
-        gcal_event_id: gcalEvent.id,
-        session_number: sessionNumber,
-        is_first: isFirst,
-        status: 'Agendada',
-      };
-    });
-  } catch (dbErr) {
-    // DB failed — compensate by removing the GCal event we just created
-    console.error('[booking] DB insert failed, rolling back GCal event:', dbErr.message);
-    try { await deleteEvent(calendarId, gcalEvent.id); } catch (e) { /* best effort */ }
-    throw dbErr;
-  }
-
-  // Sync booking to Google Sheets (async, non-blocking)
-  try {
-    const { syncBookingToSheet } = require('./sheets');
-    syncBookingToSheet(newAppt, client).catch(err => console.error('[sheets] Booking sync failed (non-fatal):', err.message));
   } catch (err) {
-    console.error('[sheets] Import failed:', err.message);
+    if (err.code === 'LOCK_TIMEOUT') {
+      return { error: 'El horario ya no está disponible', status: 409 };
+    }
+    throw err;
   }
-
-  return { success: true, appointment: newAppt };
 }
 
 // ─── Reschedule appointment ──────────────────────────────────────
@@ -251,35 +260,61 @@ async function rescheduleAppointment(clientId, oldAppointmentId, dateTime, tenan
   if (result.error) return result; // Failed — old appointment untouched, no data loss
 
   // 4. New booking succeeded — now safe to clean up old appointment
-  const newApptId = result.appointment?.id;
+  const newAppt = result.appointment;
+  const newApptId = newAppt?.id;
 
-  // Mark new appointment as Reagendada
-  if (newApptId) {
-    await pool.query(`UPDATE appointments SET status = 'Reagendada' WHERE id = ?`, [newApptId]);
-  }
-
-  // Move confirmed payment from old → new
+  // Move/remove old payments and delete old appointment atomically
   try {
-    const [oldPayments] = await pool.query(
-      `SELECT id, status FROM payments WHERE appointment_id = ? AND tenant_id = ?`,
-      [oldAppointmentId, tenantId]
-    );
-    const confirmedPayment = oldPayments.find(p => p.status === 'Confirmado');
-    if (newApptId && confirmedPayment) {
-      await pool.query(`UPDATE payments SET appointment_id = ? WHERE id = ?`, [newApptId, confirmedPayment.id]);
-      await pool.query(
-        `DELETE FROM payments WHERE appointment_id = ? AND tenant_id = ? AND status = 'Pendiente' AND id != ?`,
-        [newApptId, tenantId, confirmedPayment.id]
-      );
-      console.log(`[reschedule] Moved confirmed payment ${confirmedPayment.id} → new appt ${newApptId}`);
-    }
-  } catch (payErr) {
-    console.error('[reschedule] Payment transfer failed (non-fatal):', payErr.message);
-  }
+    await withTransaction(async (conn) => {
+      // Mark new appointment as Reagendada
+      if (newApptId) {
+        await conn.query(`UPDATE appointments SET status = 'Reagendada', confirmed_at = NULL WHERE id = ? AND tenant_id = ?`, [newApptId, tenantId]);
+      }
 
-  // Delete old pending payments + old appointment
-  await pool.query(`DELETE FROM payments WHERE appointment_id = ? AND tenant_id = ? AND status = 'Pendiente'`, [oldAppointmentId, tenantId]);
-  await pool.query(`DELETE FROM appointments WHERE id = ? AND tenant_id = ?`, [oldAppointmentId, tenantId]);
+      const [oldPayments] = await conn.query(
+        `SELECT id, status FROM payments WHERE appointment_id = ? AND tenant_id = ?`,
+        [oldAppointmentId, tenantId]
+      );
+
+      const confirmedPayment = oldPayments.find(p => p.status === 'Confirmado');
+      if (newApptId && confirmedPayment) {
+        await conn.query(
+          `UPDATE payments SET appointment_id = ? WHERE id = ? AND tenant_id = ?`,
+          [newApptId, confirmedPayment.id, tenantId]
+        );
+        await conn.query(
+          `DELETE FROM payments WHERE appointment_id = ? AND tenant_id = ? AND id != ?`,
+          [newApptId, tenantId, confirmedPayment.id]
+        );
+        console.log(`[reschedule] Moved confirmed payment ${confirmedPayment.id} → new appt ${newApptId}`);
+      }
+
+      await conn.query(`DELETE FROM payments WHERE appointment_id = ? AND tenant_id = ?`, [oldAppointmentId, tenantId]);
+      await conn.query(`DELETE FROM appointments WHERE id = ? AND tenant_id = ?`, [oldAppointmentId, tenantId]);
+
+      await conn.query(
+        `INSERT INTO webhooks_log (tenant_id, event, type, payload, status, client_phone, client_id, appointment_id)
+         VALUES (?, ?, 'reschedule', ?, 'procesado', ?, ?, ?)`,
+        [tenantId, `reschedule_${newApptId}`, JSON.stringify({ old_id: oldAppointmentId, new_date_time: dateTime }), clients[0].phone, clientId, newApptId]
+      );
+    });
+  } catch (cleanupErr) {
+    console.error('[reschedule] Cleanup failed, rolling back new appointment:', cleanupErr.message);
+    try {
+      await withTransaction(async (conn) => {
+        await conn.query(`DELETE FROM payments WHERE appointment_id = ? AND tenant_id = ?`, [newApptId, tenantId]);
+        await conn.query(`DELETE FROM appointments WHERE id = ? AND tenant_id = ?`, [newApptId, tenantId]);
+      });
+      if (newAppt?.gcal_event_id) {
+        try { await deleteEvent(calendarId, newAppt.gcal_event_id); } catch (e) {
+          console.error('[reschedule] Failed to delete new GCal event during rollback:', e.message);
+        }
+      }
+    } catch (rollbackErr) {
+      console.error('[reschedule] Failed to rollback new appointment:', rollbackErr.message);
+    }
+    throw cleanupErr;
+  }
 
   // Delete old GCal event (non-fatal)
   if (oldAppt.gcal_event_id) {
@@ -289,13 +324,6 @@ async function rescheduleAppointment(clientId, oldAppointmentId, dateTime, tenan
   }
 
   console.log(`[reschedule] Old appointment ${oldAppointmentId} deleted, new ${newApptId} created`);
-
-  // Log activity
-  await pool.query(
-    `INSERT INTO webhooks_log (tenant_id, event, type, payload, status, client_phone, client_id, appointment_id)
-     VALUES (?, ?, 'reschedule', ?, 'procesado', ?, ?, ?)`,
-    [tenantId, `reschedule_${newApptId}`, JSON.stringify({ old_id: oldAppointmentId, new_date_time: dateTime }), clients[0].phone, clientId, newApptId]
-  );
 
   return { success: true, status: 'rescheduled', ...result };
 }

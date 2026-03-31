@@ -1,8 +1,28 @@
 const { Router } = require('express');
 const { pool } = require('../db');
 const { authMiddleware } = require('../middleware/auth');
+const { deleteEvent } = require('../services/calendar');
 
 const router = Router();
+const CALENDAR_ID = () => process.env.CALENDAR_ID || 'danielmacleann@gmail.com';
+const PAYMENT_JOIN = `
+  LEFT JOIN payments p ON p.id = (
+    SELECT p2.id
+    FROM payments p2
+    WHERE p2.appointment_id = a.id AND p2.tenant_id = a.tenant_id
+    ORDER BY p2.updated_at DESC, p2.id DESC
+    LIMIT 1
+  )
+`;
+
+async function deleteCalendarEventIfPresent(eventId) {
+  if (!eventId) return;
+  try {
+    await deleteEvent(CALENDAR_ID(), eventId);
+  } catch (err) {
+    if (![404, 410].includes(err.code)) throw err;
+  }
+}
 
 // GET /api/appointments — list with filters (admin)
 router.get('/', authMiddleware, async (req, res) => {
@@ -29,7 +49,7 @@ router.get('/', authMiddleware, async (req, res) => {
               p.ocr_extracted_amount, p.ocr_extracted_ref, p.receipt_file_key, p.notes as payment_notes
        FROM appointments a
        JOIN clients c ON a.client_id = c.id
-       LEFT JOIN payments p ON p.appointment_id = a.id
+       ${PAYMENT_JOIN}
        WHERE ${where}
        ORDER BY a.date_time DESC
        LIMIT ? OFFSET ?`,
@@ -39,7 +59,10 @@ router.get('/', authMiddleware, async (req, res) => {
     // Total count for pagination
     const countParams = params.slice(0, -2);
     const [countResult] = await pool.query(
-      `SELECT COUNT(*) as total FROM appointments a JOIN clients c ON a.client_id = c.id LEFT JOIN payments p ON p.appointment_id = a.id WHERE ${where}`,
+      `SELECT COUNT(*) as total
+       FROM appointments a
+       JOIN clients c ON a.client_id = c.id
+       WHERE ${where}`,
       countParams
     );
 
@@ -57,8 +80,15 @@ router.put('/:id/status', authMiddleware, async (req, res) => {
     if (!valid.includes(status)) return res.status(400).json({ error: 'Status inválido' });
 
     const [updateResult] = await pool.query(
-      'UPDATE appointments SET status = ? WHERE id = ? AND tenant_id = ?',
-      [status, req.params.id, req.tenantId]
+      `UPDATE appointments
+       SET status = ?,
+           confirmed_at = CASE
+             WHEN ? = 'Confirmada' THEN COALESCE(confirmed_at, NOW())
+             WHEN ? IN ('Agendada', 'Reagendada', 'Cancelada', 'No-show') THEN NULL
+             ELSE confirmed_at
+           END
+       WHERE id = ? AND tenant_id = ?`,
+      [status, status, status, req.params.id, req.tenantId]
     );
 
     if (updateResult.affectedRows === 0) {
@@ -114,7 +144,7 @@ router.get('/today', authMiddleware, async (req, res) => {
               p.ocr_extracted_amount, p.ocr_extracted_ref, p.receipt_file_key, p.notes as payment_notes
        FROM appointments a
        JOIN clients c ON a.client_id = c.id
-       LEFT JOIN payments p ON p.appointment_id = a.id
+       ${PAYMENT_JOIN}
        WHERE a.tenant_id = ? AND DATE(a.date_time) = CURDATE()
        ORDER BY a.date_time ASC`,
       [req.tenantId]
@@ -128,7 +158,17 @@ router.get('/today', authMiddleware, async (req, res) => {
 // DELETE /api/appointments/:id — delete appointment (admin)
 router.delete('/:id', authMiddleware, async (req, res) => {
   try {
-    // Also delete associated payment if any
+    const [rows] = await pool.query(
+      'SELECT gcal_event_id FROM appointments WHERE id = ? AND tenant_id = ?',
+      [req.params.id, req.tenantId]
+    );
+    if (rows.length === 0) {
+      return res.status(404).json({ error: 'Cita no encontrada' });
+    }
+
+    const gcalEventId = rows[0].gcal_event_id;
+    await deleteCalendarEventIfPresent(gcalEventId);
+
     await pool.query('DELETE FROM payments WHERE appointment_id = ? AND tenant_id = ?', [req.params.id, req.tenantId]);
     await pool.query('DELETE FROM appointments WHERE id = ? AND tenant_id = ?', [req.params.id, req.tenantId]);
     res.json({ success: true });

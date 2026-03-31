@@ -3,8 +3,19 @@ const { pool } = require('../db');
 const { authMiddleware } = require('../middleware/auth');
 const { validate, clientSchema } = require('../middleware/validate');
 const { calculateRetentionStatus } = require('../services/retention');
+const { deleteEvent } = require('../services/calendar');
 
 const router = Router();
+const CALENDAR_ID = () => process.env.CALENDAR_ID || 'danielmacleann@gmail.com';
+
+async function deleteCalendarEventIfPresent(eventId) {
+  if (!eventId) return;
+  try {
+    await deleteEvent(CALENDAR_ID(), eventId);
+  } catch (err) {
+    if (![404, 410].includes(err.code)) throw err;
+  }
+}
 
 // Helper: calculate client status based on rules from SPECS
 function calculateStatus(client, lastAppt, futureAppt, completedCount) {
@@ -146,6 +157,23 @@ router.put('/:id', authMiddleware, async (req, res) => {
 // DELETE /api/clients/:id — hard delete (admin)
 router.delete('/:id', authMiddleware, async (req, res) => {
   try {
+    const [clientRows] = await pool.query(
+      'SELECT id FROM clients WHERE id = ? AND tenant_id = ?',
+      [req.params.id, req.tenantId]
+    );
+    if (clientRows.length === 0) {
+      return res.status(404).json({ error: 'Cliente no encontrado' });
+    }
+
+    const [appointments] = await pool.query(
+      'SELECT gcal_event_id FROM appointments WHERE client_id = ? AND tenant_id = ? AND gcal_event_id IS NOT NULL',
+      [req.params.id, req.tenantId]
+    );
+
+    for (const appt of appointments) {
+      await deleteCalendarEventIfPresent(appt.gcal_event_id);
+    }
+
     // Delete related records first (foreign keys)
     await pool.query('DELETE FROM payments WHERE client_id = ? AND tenant_id = ?', [req.params.id, req.tenantId]);
     await pool.query('DELETE FROM appointments WHERE client_id = ? AND tenant_id = ?', [req.params.id, req.tenantId]);
@@ -164,7 +192,7 @@ router.post('/check', async (req, res) => {
     if (!phone) return res.status(400).json({ error: 'Campo requerido: phone' });
     const { checkClientByPhone } = require('../services/booking');
     const tenantId = req.tenantId || 1;
-    const result = await checkClientByPhone(phone, tenantId);
+    const result = await checkClientByPhone(phone, tenantId, { reactivateDeleted: false });
     res.json(result);
   } catch (err) {
     res.status(500).json({ error: err.message });

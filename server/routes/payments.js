@@ -58,14 +58,18 @@ router.get('/', authMiddleware, async (req, res) => {
 router.put('/:id/status', authMiddleware, async (req, res) => {
   try {
     const { status } = req.body;
-    const valid = ['Pendiente', 'Confirmado', 'Rechazado'];
+    const valid = ['Pendiente', 'Confirmado', 'Rechazado', 'Mismatch'];
     if (!valid.includes(status)) return res.status(400).json({ error: 'Status inválido' });
 
     // Update payment
-    await pool.query(
+    const confirmedAt = status === 'Confirmado' ? new Date() : null;
+    const [updateResult] = await pool.query(
       'UPDATE payments SET status = ?, confirmed_at = ? WHERE id = ? AND tenant_id = ?',
-      [status, status === 'Confirmado' ? new Date() : null, req.params.id, req.tenantId]
+      [status, confirmedAt, req.params.id, req.tenantId]
     );
+    if (updateResult.affectedRows === 0) {
+      return res.status(404).json({ error: 'Pago no encontrado' });
+    }
 
     // Update GCal event summary with $ prefix
     await updateGCalPaymentPrefix(req.params.id, req.tenantId, status === 'Confirmado');
@@ -323,7 +327,7 @@ async function updateGCalPaymentPrefix(paymentId, tenantId, isPaid) {
     const baseSummary = `Terapia ${first_name} ${last_name} - ${phone}`;
     const newSummary = isPaid ? `$ ${baseSummary}` : baseSummary;
 
-    const calendarId = process.env.GOOGLE_CALENDAR_ID;
+    const calendarId = process.env.CALENDAR_ID || process.env.GOOGLE_CALENDAR_ID;
     if (!calendarId) return;
 
     await updateEventSummary(calendarId, gcal_event_id, newSummary);

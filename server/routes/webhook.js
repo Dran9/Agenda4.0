@@ -2,6 +2,7 @@ const { Router } = require('express');
 const { pool } = require('../db');
 
 const router = Router();
+const CALENDAR_ID = () => process.env.CALENDAR_ID || process.env.GOOGLE_CALENDAR_ID || 'danielmacleann@gmail.com';
 
 // GET /api/webhook — Meta verification
 router.get('/', (req, res) => {
@@ -79,7 +80,7 @@ router.post('/', async (req, res) => {
             if (payload === 'CONFIRM_NOW') {
               try {
                 const { updateEventSummary, listEvents } = require('../services/calendar');
-                const calendarId = process.env.CALENDAR_ID || 'danielmacleann@gmail.com';
+                const calendarId = CALENDAR_ID();
                 const phoneShort = phone.slice(-8);
                 const now = new Date();
                 const timeMin = new Date(`${now.toLocaleDateString('en-CA', { timeZone: 'America/La_Paz' })}T00:00:00-04:00`).toISOString();
@@ -114,11 +115,16 @@ router.post('/', async (req, res) => {
               // Mark DB appointment as confirmed (if exists)
               if (clientId) {
                 const [appts] = await pool.query(
-                  `SELECT id FROM appointments WHERE client_id = ? AND status IN ('Agendada','Confirmada') AND date_time > NOW() ORDER BY date_time LIMIT 1`,
-                  [clientId]
+                  `SELECT id FROM appointments
+                   WHERE client_id = ? AND tenant_id = ? AND status IN ('Agendada','Confirmada') AND date_time > NOW()
+                   ORDER BY date_time LIMIT 1`,
+                  [clientId, tenantId]
                 );
                 if (appts[0]) {
-                  await pool.query(`UPDATE appointments SET status = 'Confirmada', confirmed_at = NOW() WHERE id = ?`, [appts[0].id]);
+                  await pool.query(
+                    `UPDATE appointments SET status = 'Confirmada', confirmed_at = NOW() WHERE id = ? AND tenant_id = ?`,
+                    [appts[0].id, tenantId]
+                  );
                 }
               }
             }
@@ -349,7 +355,7 @@ router.post('/', async (req, res) => {
 
                           // Update GCal with $ prefix
                           try {
-                            const calendarId = process.env.GOOGLE_CALENDAR_ID;
+                            const calendarId = CALENDAR_ID();
                             if (calendarId && bestMatch.gcal_event_id) {
                               const { updateEventSummary } = require('../services/calendar');
                               const currentSummary = `Terapia ${bestMatch.first_name} ${bestMatch.last_name || ''} - ${bestMatch.client_phone}`.trim();
@@ -364,10 +370,7 @@ router.post('/', async (req, res) => {
                           // Send confirmation reply
                           try {
                             const { sendTextMessage } = require('../services/whatsapp');
-                            const phoneNumberId = process.env.WA_PHONE_NUMBER_ID || '887756534426165';
-                            await sendTextMessage(phoneNumberId, phone,
-                              `Pago recibido: Bs ${ocrResult.amount}. Gracias, ${bestMatch.first_name}.`
-                            );
+                            await sendTextMessage(phone, `Pago recibido: Bs ${ocrResult.amount}. Gracias, ${bestMatch.first_name}.`);
                           } catch (replyErr) {
                             console.error(`[webhook] Payment reply failed:`, replyErr.message);
                           }
@@ -517,7 +520,7 @@ router.get('/file/:key', authMiddleware, async (req, res) => {
 router.get('/debug-check/:phone', authMiddleware, async (req, res) => {
   try {
     const { updateEventSummary, listEvents } = require('../services/calendar');
-    const calendarId = process.env.CALENDAR_ID || 'danielmacleann@gmail.com';
+    const calendarId = CALENDAR_ID();
     const phone = req.params.phone;
     const dryRun = req.query.dry !== '0'; // default: dry run (don't actually update)
 

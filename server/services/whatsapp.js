@@ -5,29 +5,35 @@ function getDayInSpanish(date) {
   return days[date.getDay()];
 }
 
+function parseLaPazDate(fechaISO) {
+  if (fechaISO instanceof Date) return fechaISO;
+  let dateStr = String(fechaISO).replace(' ', 'T');
+  if (!/[Z+]/.test(dateStr) && !/-\d{2}:\d{2}$/.test(dateStr)) dateStr += '-04:00';
+  return new Date(dateStr);
+}
+
+function formatTemplateDateParts(date) {
+  const lpOpts = { timeZone: 'America/La_Paz' };
+  const dayName = new Intl.DateTimeFormat('es-BO', { weekday: 'long', ...lpOpts }).format(date);
+  const dayNum = new Intl.DateTimeFormat('es-BO', { day: 'numeric', ...lpOpts }).format(date);
+  return {
+    fecha: dayName.charAt(0).toUpperCase() + dayName.slice(1) + ' ' + dayNum,
+    hora: date.toLocaleTimeString('es-BO', { hour: '2-digit', minute: '2-digit', hour12: false, ...lpOpts }),
+  };
+}
+
 async function sendConfirmationTemplate(phone, nombre, fechaISO) {
   const token = process.env.WA_TOKEN;
   const phoneNumberId = process.env.WA_PHONE_ID;
 
   // Parse date — handle Date objects (from mysql2) and strings
-  let date;
-  if (fechaISO instanceof Date) {
-    date = fechaISO;
-  } else {
-    let dateStr = String(fechaISO).replace(' ', 'T');
-    if (!/[Z+]/.test(dateStr) && !/-\d{2}:\d{2}$/.test(dateStr)) dateStr += '-04:00';
-    date = new Date(dateStr);
-  }
+  const date = parseLaPazDate(fechaISO);
 
   let nombrewa = nombre.split(' ')[0];
   nombrewa = nombrewa.charAt(0).toUpperCase() + nombrewa.slice(1).toLowerCase();
 
   // Format day and time in Bolivia timezone (single conversion via Intl — no double-conversion)
-  const lpOpts = { timeZone: 'America/La_Paz' };
-  const dayName = new Intl.DateTimeFormat('es-BO', { weekday: 'long', ...lpOpts }).format(date);
-  const dayNum = new Intl.DateTimeFormat('es-BO', { day: 'numeric', ...lpOpts }).format(date);
-  const fechawa = dayName.charAt(0).toUpperCase() + dayName.slice(1) + ' ' + dayNum;
-  const horawa = date.toLocaleTimeString('es-BO', { hour: '2-digit', minute: '2-digit', hour12: false, ...lpOpts });
+  const { fecha: fechawa, hora: horawa } = formatTemplateDateParts(date);
 
   const payload = {
     messaging_product: 'whatsapp',
@@ -55,6 +61,50 @@ async function sendConfirmationTemplate(phone, nombre, fechaISO) {
         { type: 'button', sub_type: 'quick_reply', index: '0', parameters: [{ type: 'payload', payload: 'CONFIRM_NOW' }] },
         { type: 'button', sub_type: 'quick_reply', index: '1', parameters: [{ type: 'payload', payload: 'REAGEN_NOW' }] },
         { type: 'button', sub_type: 'quick_reply', index: '2', parameters: [{ type: 'payload', payload: 'DANIEL_NOW' }] }
+      ]
+    }
+  };
+
+  const response = await fetch(`${GRAPH_API_URL}/${phoneNumberId}/messages`, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${token}`,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify(payload)
+  });
+
+  const data = await response.json();
+  if (!response.ok) throw new Error(`WhatsApp API error ${response.status}: ${JSON.stringify(data)}`);
+  return data;
+}
+
+async function sendPaymentReminderTemplate(phone, nombre, fechaISO, amount) {
+  const token = process.env.WA_TOKEN;
+  const phoneNumberId = process.env.WA_PHONE_ID;
+  const templateName = process.env.WA_PAYMENT_REMINDER_TEMPLATE || 'recordatorio_pago_pendiente';
+
+  const date = parseLaPazDate(fechaISO);
+  const firstName = (nombre || '').split(' ')[0] || 'hola';
+  const nombrewa = firstName.charAt(0).toUpperCase() + firstName.slice(1).toLowerCase();
+  const { fecha, hora } = formatTemplateDateParts(date);
+
+  const payload = {
+    messaging_product: 'whatsapp',
+    to: phone,
+    type: 'template',
+    template: {
+      name: templateName,
+      language: { code: 'es' },
+      components: [
+        {
+          type: 'body',
+          parameters: [
+            { type: 'text', text: nombrewa },
+            { type: 'text', text: `${fecha} ${hora}`.trim() },
+            { type: 'text', text: String(amount ?? '') },
+          ]
+        }
       ]
     }
   };
@@ -128,4 +178,4 @@ async function sendImageMessage(phone, imageUrl, caption) {
   return data;
 }
 
-module.exports = { sendConfirmationTemplate, sendTextMessage, sendImageMessage };
+module.exports = { sendConfirmationTemplate, sendPaymentReminderTemplate, sendTextMessage, sendImageMessage };

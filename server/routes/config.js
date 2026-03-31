@@ -3,6 +3,7 @@ const { pool } = require('../db');
 const { authMiddleware } = require('../middleware/auth');
 const multer = require('multer');
 const { saveFile, getFile, listFiles } = require('../services/storage');
+const { getSchedulerRuntime, refreshConfigSchedulers } = require('../cron/scheduler');
 
 const router = Router();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024 } });
@@ -12,7 +13,7 @@ router.get('/', authMiddleware, async (req, res) => {
   try {
     const [rows] = await pool.query('SELECT * FROM config WHERE tenant_id = ?', [req.tenantId]);
     if (rows.length === 0) return res.status(404).json({ error: 'Config no encontrada' });
-    res.json(rows[0]);
+    res.json({ ...rows[0], _runtime: getSchedulerRuntime() });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -26,6 +27,7 @@ router.put('/', authMiddleware, async (req, res) => {
       'appointment_duration', 'break_start', 'break_end', 'min_age', 'max_age',
       'default_fee', 'capital_fee', 'special_fee', 'foreign_fee', 'foreign_currency',
       'capital_cities', 'reminder_time', 'reminder_enabled',
+      'payment_reminder_enabled', 'payment_reminder_hours',
       'auto_reply_confirm', 'auto_reply_reschedule', 'auto_reply_contact',
       'qr_url_capital', 'qr_url_provincia', 'qr_url_especial', 'qr_url_generico',
       'rate_limit_booking', 'rate_limit_window',
@@ -42,6 +44,14 @@ router.put('/', authMiddleware, async (req, res) => {
     const setClauses = Object.keys(updates).map(k => `${k} = ?`).join(', ');
     const values = [...Object.values(updates), req.tenantId];
     await pool.query(`UPDATE config SET ${setClauses} WHERE tenant_id = ?`, values);
+    if (
+      updates.reminder_time !== undefined ||
+      updates.reminder_enabled !== undefined ||
+      updates.payment_reminder_enabled !== undefined ||
+      updates.payment_reminder_hours !== undefined
+    ) {
+      refreshConfigSchedulers();
+    }
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: err.message });

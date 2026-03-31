@@ -38,6 +38,19 @@ function minutesToTime(m) {
   return `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
 }
 
+function formatRuntimeDate(value) {
+  if (!value) return 'Sin programar';
+  try {
+    return new Intl.DateTimeFormat('es-BO', {
+      dateStyle: 'short',
+      timeStyle: 'short',
+      timeZone: 'America/La_Paz',
+    }).format(new Date(value)) + ' BOT';
+  } catch {
+    return value;
+  }
+}
+
 // Convert individual hours array → time range blocks
 function hoursToBlocks(hours) {
   if (!hours || hours.length === 0) return [];
@@ -111,6 +124,20 @@ export default function Config() {
       ...prev,
       [dayKey]: { ...prev[dayKey], ...update },
     }));
+  }
+
+  function applyWeekdaysOnly() {
+    setAvailability(prev => {
+      const next = { ...prev };
+      for (const day of DAYS) {
+        if (day.key === 'sabado' || day.key === 'domingo') {
+          next[day.key] = { ...next[day.key], enabled: false };
+        }
+      }
+      return next;
+    });
+    if (expandedDay === 'sabado' || expandedDay === 'domingo') setExpandedDay(null);
+    showToast('Calendario público ajustado a lunes-viernes');
   }
 
   function addBlock(dayKey) {
@@ -197,7 +224,11 @@ export default function Config() {
         capital_cities: config._capitalCities?.join(',') || '',
         reminder_enabled: config.reminder_enabled ? 1 : 0,
         reminder_time: config.reminder_time || '18:40',
+        payment_reminder_enabled: config.payment_reminder_enabled ? 1 : 0,
+        payment_reminder_hours: config.payment_reminder_hours || 2,
       });
+      const updated = await api.get('/config');
+      setConfig(prev => ({ ...prev, ...updated }));
       showToast('Configuración guardada');
     } catch (err) {
       showToast('Error: ' + err.message, 'error');
@@ -231,6 +262,17 @@ export default function Config() {
         <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
           <h3 className="text-lg font-semibold mb-1">Disponibilidad semanal</h3>
           <p className="text-sm text-gray-400 mb-5">Configura tus horarios por día. Usa "Copiar a" para replicar.</p>
+
+          <div className="flex flex-wrap gap-2 mb-4">
+            <button
+              type="button"
+              onClick={applyWeekdaysOnly}
+              className="px-3 py-1.5 rounded-lg bg-sky-50 text-sky-700 text-sm font-medium hover:bg-sky-100 transition-colors"
+            >
+              Solo lunes a viernes
+            </button>
+            <span className="text-xs text-gray-400 self-center">El calendario público mostrará exactamente los días activados aquí.</span>
+          </div>
 
           <div className="space-y-3">
             {DAYS.map(day => {
@@ -477,11 +519,11 @@ export default function Config() {
         {/* SECTION 3: Recordatorios WhatsApp */}
         <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
           <h3 className="text-lg font-semibold mb-1">Recordatorios WhatsApp</h3>
-          <p className="text-sm text-gray-400 mb-5">Envío automático de recordatorios a pacientes.</p>
+          <p className="text-sm text-gray-400 mb-5">Automatizaciones internas de la app. No aparecen en Cron Jobs de Hostinger porque viven dentro del servidor Node.</p>
 
           <div className="flex items-center justify-between">
             <div>
-              <div className="font-medium text-sm">Enviar recordatorios</div>
+              <div className="font-medium text-sm">Recordatorio de cita</div>
               <div className="text-xs text-gray-400">Se envían diariamente a la hora configurada para las citas del día siguiente</div>
             </div>
             <button
@@ -515,6 +557,85 @@ export default function Config() {
               </select>
             </div>
           ) : null}
+
+          <div className="mt-6 pt-6 border-t border-gray-100">
+            <div className="flex items-center justify-between">
+              <div>
+                <div className="font-medium text-sm">Recordatorio de pago pendiente</div>
+                <div className="text-xs text-gray-400">Busca sesiones próximas con pago pendiente y manda WhatsApp antes de la cita.</div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setConfig(c => ({ ...c, payment_reminder_enabled: c.payment_reminder_enabled ? 0 : 1 }))}
+                className={`relative w-12 h-7 rounded-full transition-colors ${config?.payment_reminder_enabled ? 'bg-gray-900' : 'bg-gray-300'}`}
+              >
+                <span className={`absolute top-0.5 left-0.5 w-6 h-6 bg-white rounded-full shadow transition-transform ${config?.payment_reminder_enabled ? 'translate-x-5' : 'translate-x-0'}`} />
+              </button>
+            </div>
+
+            <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-xs text-gray-500 mb-1">Enviar antes de la sesión</label>
+                <select
+                  value={config?.payment_reminder_hours || 2}
+                  onChange={e => setConfig(c => ({ ...c, payment_reminder_hours: parseInt(e.target.value, 10) }))}
+                  disabled={!config?.payment_reminder_enabled}
+                  className="w-full px-3 py-2.5 border border-gray-200 rounded-lg text-sm bg-white disabled:bg-gray-50 disabled:text-gray-400"
+                >
+                  <option value={1}>1 hora antes</option>
+                  <option value={2}>2 horas antes</option>
+                  <option value={3}>3 horas antes</option>
+                  <option value={6}>6 horas antes</option>
+                  <option value={12}>12 horas antes</option>
+                </select>
+              </div>
+              <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+                Requiere template aprobado en Meta. El backend usará la variable <code>WA_PAYMENT_REMINDER_TEMPLATE</code>.
+              </div>
+            </div>
+
+            <div className="mt-5 space-y-3">
+              <div>
+                <div className="text-xs font-medium text-gray-500 mb-2 uppercase tracking-wide">Estado runtime</div>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                  {[
+                    { key: 'appointmentReminder', label: 'Citas' },
+                    { key: 'paymentReminder', label: 'Pagos' },
+                    { key: 'autoComplete', label: 'Auto completar' },
+                  ].map(item => {
+                    const runtime = config?._runtime?.schedulers?.[item.key];
+                    const enabled = runtime?.enabled;
+                    const statusLabel = enabled === false ? 'Pausado' : enabled === null || enabled === undefined ? 'Iniciando' : 'Activo';
+                    const statusClass = enabled === false
+                      ? 'bg-gray-200 text-gray-600'
+                      : enabled === null || enabled === undefined
+                        ? 'bg-sky-100 text-sky-700'
+                        : 'bg-emerald-100 text-emerald-700';
+                    return (
+                      <div key={item.key} className="rounded-xl border border-gray-200 p-4 bg-gray-50">
+                        <div className="flex items-center justify-between gap-2 mb-2">
+                          <div className="font-medium text-sm">{item.label}</div>
+                          <span className={`text-[11px] px-2 py-1 rounded-full ${statusClass}`}>
+                            {statusLabel}
+                          </span>
+                        </div>
+                        <div className="text-xs text-gray-500">Próxima corrida: {formatRuntimeDate(runtime?.nextRunAt)}</div>
+                        <div className="text-xs text-gray-500 mt-1">Última corrida: {formatRuntimeDate(runtime?.lastRunAt)}</div>
+                        {runtime?.lastResult ? (
+                          <div className="text-xs text-gray-500 mt-2">
+                            Último resultado: {runtime.lastResult.sent ?? runtime.lastResult.completed ?? 0} acciones
+                          </div>
+                        ) : null}
+                        {runtime?.lastError ? (
+                          <div className="text-xs text-red-500 mt-2 line-clamp-2">{runtime.lastError}</div>
+                        ) : null}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
 
         {/* SECTION 4: General Parameters */}

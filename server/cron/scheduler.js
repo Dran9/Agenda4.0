@@ -1,8 +1,59 @@
 const { pool } = require('../db');
-const { checkAndSendReminders } = require('../services/reminder');
+const { checkAndSendReminders, checkAndSendPaymentReminders } = require('../services/reminder');
 
 let reminderTimer = null;
 let autoCompleteTimer = null;
+let paymentReminderTimer = null;
+
+const schedulerState = {
+  appointmentReminder: {
+    label: 'Recordatorios de cita',
+    source: 'internal_timer',
+    intervalMinutes: 1440,
+    enabled: null,
+    nextRunAt: null,
+    lastRunAt: null,
+    lastResult: null,
+    lastError: null,
+  },
+  paymentReminder: {
+    label: 'Recordatorios de pago',
+    source: 'internal_timer',
+    intervalMinutes: 15,
+    enabled: null,
+    nextRunAt: null,
+    lastRunAt: null,
+    lastResult: null,
+    lastError: null,
+  },
+  autoComplete: {
+    label: 'Auto completar sesiones',
+    source: 'internal_timer',
+    intervalMinutes: 60,
+    enabled: true,
+    nextRunAt: null,
+    lastRunAt: null,
+    lastResult: null,
+    lastError: null,
+  },
+};
+
+function setNextRun(key, msFromNow) {
+  schedulerState[key].nextRunAt = new Date(Date.now() + msFromNow).toISOString();
+}
+
+function markSuccess(key, result, enabled = schedulerState[key].enabled) {
+  schedulerState[key].enabled = enabled;
+  schedulerState[key].lastRunAt = new Date().toISOString();
+  schedulerState[key].lastResult = result;
+  schedulerState[key].lastError = null;
+}
+
+function markError(key, err, enabled = schedulerState[key].enabled) {
+  schedulerState[key].enabled = enabled;
+  schedulerState[key].lastRunAt = new Date().toISOString();
+  schedulerState[key].lastError = err?.message || String(err);
+}
 
 // Auto-complete appointments ~1h after their scheduled time
 async function autoCompleteAppointments() {
@@ -41,12 +92,21 @@ async function autoCompleteAppointments() {
 
 function startAutoCompleteCron() {
   async function run() {
-    await autoCompleteAppointments();
+    try {
+      const result = await autoCompleteAppointments();
+      markSuccess('autoComplete', result, true);
+    } catch (err) {
+      markError('autoComplete', err, true);
+    }
     // Run every hour
-    autoCompleteTimer = setTimeout(run, 60 * 60 * 1000);
+    const delay = 60 * 60 * 1000;
+    setNextRun('autoComplete', delay);
+    autoCompleteTimer = setTimeout(run, delay);
   }
   // First run after 5 minutes (let server warm up)
-  autoCompleteTimer = setTimeout(run, 5 * 60 * 1000);
+  const initialDelay = 5 * 60 * 1000;
+  setNextRun('autoComplete', initialDelay);
+  autoCompleteTimer = setTimeout(run, initialDelay);
 }
 
 function startReminderCron() {
@@ -58,7 +118,10 @@ function startReminderCron() {
 
       if (!cfg?.reminder_enabled) {
         console.log('[cron] Reminders disabled, checking again in 1 hour');
-        reminderTimer = setTimeout(scheduleNext, 60 * 60 * 1000);
+        const delay = 60 * 60 * 1000;
+        schedulerState.appointmentReminder.enabled = false;
+        setNextRun('appointmentReminder', delay);
+        reminderTimer = setTimeout(scheduleNext, delay);
         return;
       }
 
@@ -77,33 +140,96 @@ function startReminderCron() {
 
       const msUntil = target - nowLP;
       console.log(`[cron] Next reminder check at ${reminderTime} BOT (in ${Math.round(msUntil / 60000)} min)`);
+      schedulerState.appointmentReminder.enabled = true;
+      setNextRun('appointmentReminder', msUntil);
 
       reminderTimer = setTimeout(async () => {
         console.log('[cron] Running reminder check...');
         try {
           const result = await checkAndSendReminders({ date: 'tomorrow', tenantId: 1 });
           console.log(`[cron] Reminders: sent=${result.sent}, skipped=${result.skipped}, total=${result.total}`);
+          markSuccess('appointmentReminder', result, true);
         } catch (err) {
           console.error('[cron] Reminder error:', err.message);
+          markError('appointmentReminder', err, true);
         }
         // Schedule next
         scheduleNext();
       }, msUntil);
     } catch (err) {
       console.error('[cron] Scheduler error:', err.message);
-      reminderTimer = setTimeout(scheduleNext, 5 * 60 * 1000);
+      markError('appointmentReminder', err, schedulerState.appointmentReminder.enabled);
+      const delay = 5 * 60 * 1000;
+      setNextRun('appointmentReminder', delay);
+      reminderTimer = setTimeout(scheduleNext, delay);
     }
   }
 
   scheduleNext();
 }
 
+function startPaymentReminderCron() {
+  async function run() {
+    try {
+      const result = await checkAndSendPaymentReminders({ tenantId: 1 });
+      schedulerState.paymentReminder.enabled = !!result.enabled;
+      markSuccess('paymentReminder', result, !!result.enabled);
+      console.log(`[cron] Payment reminders: sent=${result.sent}, skipped=${result.skipped}, total=${result.total}`);
+    } catch (err) {
+      console.error('[cron] Payment reminder error:', err.message);
+      markError('paymentReminder', err, schedulerState.paymentReminder.enabled);
+    }
+
+    const delay = 15 * 60 * 1000;
+    setNextRun('paymentReminder', delay);
+    paymentReminderTimer = setTimeout(run, delay);
+  }
+
+  const initialDelay = 2 * 60 * 1000;
+  setNextRun('paymentReminder', initialDelay);
+  paymentReminderTimer = setTimeout(run, initialDelay);
+}
+
 function stopReminderCron() {
   if (reminderTimer) clearTimeout(reminderTimer);
+  reminderTimer = null;
+  schedulerState.appointmentReminder.nextRunAt = null;
 }
 
 function stopAutoCompleteCron() {
   if (autoCompleteTimer) clearTimeout(autoCompleteTimer);
+  autoCompleteTimer = null;
+  schedulerState.autoComplete.nextRunAt = null;
 }
 
-module.exports = { startReminderCron, stopReminderCron, startAutoCompleteCron, stopAutoCompleteCron };
+function stopPaymentReminderCron() {
+  if (paymentReminderTimer) clearTimeout(paymentReminderTimer);
+  paymentReminderTimer = null;
+  schedulerState.paymentReminder.nextRunAt = null;
+}
+
+function refreshConfigSchedulers() {
+  stopReminderCron();
+  stopPaymentReminderCron();
+  startReminderCron();
+  startPaymentReminderCron();
+}
+
+function getSchedulerRuntime() {
+  return {
+    serverTime: new Date().toISOString(),
+    timezone: 'America/La_Paz',
+    schedulers: JSON.parse(JSON.stringify(schedulerState)),
+  };
+}
+
+module.exports = {
+  startReminderCron,
+  stopReminderCron,
+  startAutoCompleteCron,
+  stopAutoCompleteCron,
+  startPaymentReminderCron,
+  stopPaymentReminderCron,
+  refreshConfigSchedulers,
+  getSchedulerRuntime,
+};

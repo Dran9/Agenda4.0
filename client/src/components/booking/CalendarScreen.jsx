@@ -3,6 +3,8 @@ import { Globe, ChevronDown, Search } from 'lucide-react';
 import Calendar from '../Calendar';
 import { TIMEZONE_GROUPS, convertLaPazTimeToTz, getCurrentTimeInTz } from '../../utils/timezones';
 
+const DAY_MAP = { 0: 'domingo', 1: 'lunes', 2: 'martes', 3: 'miercoles', 4: 'jueves', 5: 'viernes', 6: 'sabado' };
+
 export default function CalendarScreen({ state, dispatch, config, slots, slotsLoading, fetchSlots, prefetchDays, daysWithSlots, timezone, onTimezoneChange }) {
   const { selectedDate, isReschedule } = state;
   const [showTzDropdown, setShowTzDropdown] = useState(false);
@@ -17,6 +19,7 @@ export default function CalendarScreen({ state, dispatch, config, slots, slotsLo
 
   const handleMonthChange = useCallback((year, month) => {
     if (!config) return;
+    const availableDays = config.available_days || [];
     const dates = [];
     const daysInMonth = new Date(year, month + 1, 0).getDate();
     const today = new Date(); today.setHours(0,0,0,0);
@@ -24,8 +27,8 @@ export default function CalendarScreen({ state, dispatch, config, slots, slotsLo
     maxDate.setDate(maxDate.getDate() + (config.window_days || 10));
     for (let d = 1; d <= daysInMonth; d++) {
       const date = new Date(year, month, d);
-      const dow = date.getDay();
-      if (dow >= 1 && dow <= 5 && date >= today && date <= maxDate) {
+      const dayKey = DAY_MAP[date.getDay()];
+      if (availableDays.includes(dayKey) && date >= today && date <= maxDate) {
         dates.push(`${year}-${String(month + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`);
       }
     }

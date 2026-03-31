@@ -6,7 +6,7 @@ const fs = require('fs');
 const rateLimit = require('express-rate-limit');
 
 const { initializeDatabase } = require('./db');
-const { startReminderCron, startAutoCompleteCron } = require('./cron/scheduler');
+const { startReminderCron, startAutoCompleteCron, startPaymentReminderCron } = require('./cron/scheduler');
 
 // Routes
 const bookingRoutes = require('./routes/booking');
@@ -37,7 +37,7 @@ const clientLimiter = rateLimit({
 });
 
 // ─── Reminder trigger (admin) ────────────────────────────────────
-const { checkAndSendReminders } = require('./services/reminder');
+const { checkAndSendReminders, checkAndSendPaymentReminders } = require('./services/reminder');
 const { authMiddleware } = require('./middleware/auth');
 
 // ─── Mount routes ────────────────────────────────────────────────
@@ -58,6 +58,16 @@ app.get('/api/admin/test-reminder', authMiddleware, async (req, res) => {
   try {
     const { date, force } = req.query;
     const result = await checkAndSendReminders({ date: date || 'tomorrow', tenantId: req.tenantId, force: force === '1' });
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/api/admin/test-payment-reminder', authMiddleware, async (req, res) => {
+  try {
+    const { force } = req.query;
+    const result = await checkAndSendPaymentReminders({ tenantId: req.tenantId, force: force === '1' });
     res.json(result);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -131,6 +141,7 @@ async function start() {
   try {
     await initializeDatabase();
     startReminderCron();
+    startPaymentReminderCron();
     startAutoCompleteCron();
     app.listen(PORT, () => {
       console.log(`Agenda 4.0 running on port ${PORT}`);

@@ -290,7 +290,10 @@ router.post('/', async (req, res) => {
                       );
                       if (!hasPaymentContext) {
                         const [pending] = await pool.query(
-                          `SELECT id FROM payments WHERE client_id = ? AND tenant_id = ? AND status = 'Pendiente' LIMIT 1`,
+                          `SELECT id FROM payments
+                           WHERE client_id = ? AND tenant_id = ?
+                             AND status IN ('Pendiente', 'Mismatch')
+                           LIMIT 1`,
                           [clientId, tenantId]
                         );
                         hasPaymentContext = pending.length > 0;
@@ -310,15 +313,26 @@ router.post('/', async (req, res) => {
                     if (ocrResult && ocrResult.amount) {
                       console.log(`[webhook] OCR: ${ocrResult.name}, Bs ${ocrResult.amount}, ${ocrResult.date}, ref: ${ocrResult.reference}, destVerified: ${ocrResult.destVerified}`);
 
-                      // Find pending payment for this client (match by phone → client_id)
+                      // Find unresolved payment for this client.
+                      // Keep mismatch retryable so a second valid receipt can fix the same appointment.
                       const [pendingPayments] = await pool.query(
-                        `SELECT p.id, p.amount, p.appointment_id, a.date_time, a.gcal_event_id,
+                        `SELECT p.id, p.amount, p.appointment_id, p.status,
+                                a.date_time, a.gcal_event_id,
                                 c.first_name, c.last_name, c.phone as client_phone, c.fee
                          FROM payments p
                          JOIN appointments a ON p.appointment_id = a.id
                          JOIN clients c ON p.client_id = c.id
-                         WHERE p.client_id = ? AND p.tenant_id = ? AND p.status = 'Pendiente'
-                         ORDER BY a.date_time ASC LIMIT 5`,
+                         WHERE p.client_id = ? AND p.tenant_id = ?
+                           AND p.status IN ('Pendiente', 'Mismatch')
+                         ORDER BY
+                           CASE p.status
+                             WHEN 'Mismatch' THEN 0
+                             WHEN 'Pendiente' THEN 1
+                             ELSE 2
+                           END,
+                           p.updated_at DESC,
+                           a.date_time ASC
+                         LIMIT 5`,
                         [clientId, tenantId]
                       );
 
@@ -382,7 +396,8 @@ router.post('/', async (req, res) => {
                           // All validations passed → Confirmado
                           await pool.query(
                             `UPDATE payments SET status = 'Confirmado', confirmed_at = NOW(),
-                             receipt_file_key = ?, ocr_extracted_amount = ?, ocr_extracted_ref = ?
+                             receipt_file_key = ?, ocr_extracted_amount = ?, ocr_extracted_ref = ?,
+                             notes = NULL
                              WHERE id = ? AND tenant_id = ?`,
                             [fileKey, ocrResult.amount, ocrResult.reference, bestMatch.id, tenantId]
                           );
@@ -422,7 +437,7 @@ router.post('/', async (req, res) => {
                           console.log(`[webhook] Payment ${bestMatch.id} MISMATCH: ${problems.join(', ')}`);
                         }
                       } else {
-                        console.log(`[webhook] OCR detected Bs ${ocrResult.amount} but no pending payment for client ${clientId}`);
+                        console.log(`[webhook] OCR detected Bs ${ocrResult.amount} but no unresolved payment for client ${clientId}`);
                       }
                     }
                   } catch (ocrErr) {

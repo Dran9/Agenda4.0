@@ -10,7 +10,16 @@ const PAYMENT_JOIN = `
     SELECT p2.id
     FROM payments p2
     WHERE p2.appointment_id = a.id AND p2.tenant_id = a.tenant_id
-    ORDER BY p2.updated_at DESC, p2.id DESC
+    ORDER BY
+      CASE p2.status
+        WHEN 'Confirmado' THEN 0
+        WHEN 'Pendiente' THEN 1
+        WHEN 'Mismatch' THEN 2
+        WHEN 'Rechazado' THEN 3
+        ELSE 4
+      END,
+      p2.updated_at DESC,
+      p2.id DESC
     LIMIT 1
   )
 `;

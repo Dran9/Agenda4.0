@@ -47,7 +47,7 @@ async function getOperationalContext({ tenantId, phone, clientId }) {
          EXISTS(
            SELECT 1
            FROM payments
-           WHERE client_id = ? AND tenant_id = ? AND status = 'Pendiente'
+           WHERE client_id = ? AND tenant_id = ? AND status IN ('Pendiente', 'Mismatch')
          ) AS has_pending_payment`,
       [clientId, tenantId, clientId, tenantId]
     );

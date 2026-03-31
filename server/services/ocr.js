@@ -181,7 +181,7 @@ function parseBolivianReceipt(text) {
     });
     if (aNombreIdx >= 0 && aNombreIdx + 1 < lines.length) {
       const candidate = lines[aNombreIdx + 1];
-      if (!/daniel\s*mac\s*lean|oscar\s*daniel/i.test(candidate)) {
+      if (!/mac\s*lean/i.test(candidate)) {
         name = candidate;
       }
     }
@@ -192,7 +192,7 @@ function parseBolivianReceipt(text) {
     for (const line of lines) {
       if (/^[A-ZÁÉÍÓÚÑ]{2,}\s+[A-ZÁÉÍÓÚÑ]{2,}(\s+[A-ZÁÉÍÓÚÑ]+)*$/.test(line)) {
         if (/BANCO|CREDITO|BOLIVIA|MERCANTIL|SANTA\s*CRUZ|UNION|TRANSFERENCIA|EXITOSA|SOLIDARIO|GANADERO|PAGO\s*QR/i.test(line)) continue;
-        if (/OSCAR\s*DANIEL|MAC\s*LEAN/i.test(line)) continue;
+        if (/mac\s*lean/i.test(line)) continue;
         name = line;
         break;
       }
@@ -214,8 +214,9 @@ function parseBolivianReceipt(text) {
     }
   }
 
-  // Check if "Daniel Mac" appears in dest context (handles: Daniel MacLean, Daniel Mac Lean, Oscar Daniel Mac Lean Estrada)
-  const destVerified = /daniel\s+mac/i.test(destText);
+  // Check if "Mac Lean" or "MacLean" appears in dest context
+  // This surname is unique in Bolivia — works regardless of name order (Oscar Daniel Mac Lean, Mac Lean Estrada Oscar Daniel)
+  const destVerified = /mac\s*lean/i.test(destText);
 
   // Extract the dest name for display (what the receipt says)
   let destName = null;
@@ -264,7 +265,7 @@ function parseBolivianReceipt(text) {
   // Fallback: very long number (16+ digits) that's not an account
   if (!reference) {
     const longNumMatch = fullText.match(/(\d{16,})/);
-    if (longNumMatch && longNumMatch[1] !== destAccount) {
+    if (longNumMatch) {
       reference = longNumMatch[1];
     }
   }

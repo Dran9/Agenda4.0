@@ -29,15 +29,15 @@ export default function AdminLayout({ children, title }) {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 flex">
+    <div className="min-h-screen bg-sky-100 flex">
       {/* Sidebar */}
       <aside className={`
-        fixed inset-y-0 left-0 z-30 w-60 bg-white border-r border-gray-200 transform transition-transform
+        fixed inset-y-0 left-0 z-30 w-60 bg-sky-50 border-r border-sky-200 transform transition-transform
         lg:translate-x-0 lg:static lg:inset-0
         ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}
       `}>
-        <div className="p-4 border-b border-gray-100">
-          <h1 className="font-bold text-lg">Agenda 3.0</h1>
+        <div className="p-4 border-b border-sky-200">
+          <h1 className="font-bold text-lg text-sky-950">Agenda 4.0</h1>
         </div>
 
         <nav className="p-2 space-y-0.5">
@@ -51,7 +51,7 @@ export default function AdminLayout({ children, title }) {
                 onClick={() => setSidebarOpen(false)}
                 className={`
                   flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors
-                  ${active ? 'bg-gray-100 text-gray-900' : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'}
+                  ${active ? 'bg-sky-200 text-sky-950' : 'text-slate-700 hover:bg-sky-100 hover:text-sky-950'}
                 `}
               >
                 <Icon size={18} />
@@ -61,11 +61,11 @@ export default function AdminLayout({ children, title }) {
           })}
         </nav>
 
-        <div className="absolute bottom-0 left-0 right-0 p-2 border-t border-gray-100">
+        <div className="absolute bottom-0 left-0 right-0 p-2 border-t border-sky-200">
           <button
             type="button"
             onClick={handleLogout}
-            className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-gray-500 hover:bg-gray-50 hover:text-gray-700 w-full"
+            className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-slate-600 hover:bg-sky-100 hover:text-sky-900 w-full"
           >
             <LogOut size={18} />
             Cerrar sesión
@@ -80,7 +80,7 @@ export default function AdminLayout({ children, title }) {
 
       {/* Main content */}
       <div className="flex-1 min-w-0">
-        <header className="bg-white border-b border-gray-200 px-4 py-3 flex items-center gap-3 lg:px-6">
+        <header className="bg-sky-50/95 border-b border-sky-200 px-4 py-3 flex items-center gap-3 lg:px-6">
           <button
             type="button"
             onClick={() => setSidebarOpen(true)}

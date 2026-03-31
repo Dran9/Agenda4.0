@@ -1,5 +1,5 @@
 {
-  "name": "agenda3.0",
+  "name": "agenda4.0",
   "version": "1.0.0",
   "description": "Sistema de agendamiento para terapeutas — booking + admin + WhatsApp + analytics",
   "main": "server/index.js",

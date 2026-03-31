@@ -88,7 +88,7 @@ app.get('/api/admin/test-sheets', authMiddleware, async (req, res) => {
 
 // ─── Health check ────────────────────────────────────────────────
 app.get('/api/health', (req, res) => {
-  res.json({ status: 'ok', version: '3.0.0', timestamp: new Date().toISOString() });
+  res.json({ status: 'ok', version: '4.0.0', timestamp: new Date().toISOString() });
 });
 
 // ─── Serve client build ──────────────────────────────────────────
@@ -120,7 +120,7 @@ app.get('*', (req, res) => {
     res.set('Expires', '0');
     res.send(html);
   } else {
-    res.send('Agenda 3.0 — server running. Client build pending.');
+    res.send('Agenda 4.0 — server running. Client build pending.');
   }
 });
 
@@ -133,7 +133,7 @@ async function start() {
     startReminderCron();
     startAutoCompleteCron();
     app.listen(PORT, () => {
-      console.log(`Agenda 3.0 running on port ${PORT}`);
+      console.log(`Agenda 4.0 running on port ${PORT}`);
     });
   } catch (err) {
     console.error('Failed to start:', err.message);

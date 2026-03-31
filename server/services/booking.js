@@ -114,7 +114,7 @@ async function createClient(phone, onboarding, tenantId, conn, feeOverride) {
   return newClient;
 }
 
-// ─── Create booking (GCal + DB atomic) ───────────────────────────
+// ─── Create booking (GCal + DB with compensation) ───────────────
 async function createBooking(client, dateTime, tenantId) {
   const calendarId = CALENDAR_ID();
 
@@ -155,7 +155,7 @@ async function createBooking(client, dateTime, tenantId) {
   const endM = String(totalMin % 60).padStart(2, '0');
   const endISO = `${dayStr}T${endH}:${endM}:00-04:00`;
 
-  // Create GCal event
+  // Create GCal event first (external system)
   let gcalEvent;
   try {
     gcalEvent = await createEvent(calendarId, {
@@ -170,43 +170,51 @@ async function createBooking(client, dateTime, tenantId) {
     throw new Error('No se pudo crear el evento en Google Calendar');
   }
 
-  // DB insert (atomic)
-  const [prevAppts] = await pool.query(
-    'SELECT COUNT(*) as cnt FROM appointments WHERE client_id = ? AND tenant_id = ?',
-    [client.id, tenantId]
-  );
-  const sessionNumber = (prevAppts[0]?.cnt || 0) + 1;
-  const isFirst = sessionNumber === 1;
+  // DB inserts in transaction — if any fail, compensate by deleting GCal event
+  let newAppt;
+  try {
+    newAppt = await withTransaction(async (conn) => {
+      const [prevAppts] = await conn.query(
+        'SELECT COUNT(*) as cnt FROM appointments WHERE client_id = ? AND tenant_id = ?',
+        [client.id, tenantId]
+      );
+      const sessionNumber = (prevAppts[0]?.cnt || 0) + 1;
+      const isFirst = sessionNumber === 1;
 
-  const [result] = await pool.query(
-    `INSERT INTO appointments (tenant_id, client_id, date_time, gcal_event_id, status, confirmed_at, is_first, session_number, phone)
-     VALUES (?, ?, ?, ?, 'Agendada', NOW(), ?, ?, ?)`,
-    [tenantId, client.id, dateTime, gcalEvent.id, isFirst, sessionNumber, client.phone]
-  );
+      const [result] = await conn.query(
+        `INSERT INTO appointments (tenant_id, client_id, date_time, gcal_event_id, status, confirmed_at, is_first, session_number, phone)
+         VALUES (?, ?, ?, ?, 'Agendada', NOW(), ?, ?, ?)`,
+        [tenantId, client.id, dateTime, gcalEvent.id, isFirst, sessionNumber, client.phone]
+      );
 
-  // Create pending payment
-  const fee = client.fee || 250;
-  await pool.query(
-    `INSERT INTO payments (tenant_id, client_id, appointment_id, amount, status)
-     VALUES (?, ?, ?, ?, 'Pendiente')`,
-    [tenantId, client.id, result.insertId, fee]
-  );
+      const fee = client.fee || 250;
+      await conn.query(
+        `INSERT INTO payments (tenant_id, client_id, appointment_id, amount, status)
+         VALUES (?, ?, ?, ?, 'Pendiente')`,
+        [tenantId, client.id, result.insertId, fee]
+      );
 
-  // Log activity
-  await pool.query(
-    `INSERT INTO webhooks_log (tenant_id, event, type, payload, status, client_phone, client_id, appointment_id)
-     VALUES (?, ?, 'booking', ?, 'procesado', ?, ?, ?)`,
-    [tenantId, `booking_${result.insertId}`, JSON.stringify({ date_time: dateTime }), client.phone, client.id, result.insertId]
-  );
+      await conn.query(
+        `INSERT INTO webhooks_log (tenant_id, event, type, payload, status, client_phone, client_id, appointment_id)
+         VALUES (?, ?, 'booking', ?, 'procesado', ?, ?, ?)`,
+        [tenantId, `booking_${result.insertId}`, JSON.stringify({ date_time: dateTime }), client.phone, client.id, result.insertId]
+      );
 
-  const newAppt = {
-    id: result.insertId,
-    date_time: dateTime,
-    gcal_event_id: gcalEvent.id,
-    session_number: sessionNumber,
-    is_first: isFirst,
-    status: 'Agendada',
-  };
+      return {
+        id: result.insertId,
+        date_time: dateTime,
+        gcal_event_id: gcalEvent.id,
+        session_number: sessionNumber,
+        is_first: isFirst,
+        status: 'Agendada',
+      };
+    });
+  } catch (dbErr) {
+    // DB failed — compensate by removing the GCal event we just created
+    console.error('[booking] DB insert failed, rolling back GCal event:', dbErr.message);
+    try { await deleteEvent(calendarId, gcalEvent.id); } catch (e) { /* best effort */ }
+    throw dbErr;
+  }
 
   // Sync booking to Google Sheets (async, non-blocking)
   try {
@@ -220,10 +228,11 @@ async function createBooking(client, dateTime, tenantId) {
 }
 
 // ─── Reschedule appointment ──────────────────────────────────────
+// Safe order: create new FIRST → only delete old if new succeeds
 async function rescheduleAppointment(clientId, oldAppointmentId, dateTime, tenantId) {
   const calendarId = CALENDAR_ID();
 
-  // Get old appointment
+  // 1. Validate old appointment exists
   const [oldAppts] = await pool.query(
     'SELECT * FROM appointments WHERE id = ? AND client_id = ? AND tenant_id = ?',
     [oldAppointmentId, clientId, tenantId]
@@ -233,51 +242,31 @@ async function rescheduleAppointment(clientId, oldAppointmentId, dateTime, tenan
   }
   const oldAppt = oldAppts[0];
 
-  // Cancel old GCal event
-  if (oldAppt.gcal_event_id) {
-    try {
-      await deleteEvent(calendarId, oldAppt.gcal_event_id);
-    } catch (delErr) {
-      console.error('[reschedule] Failed to delete GCal event:', delErr.message);
-    }
-  }
-
-  // Save old appointment payments before deleting
-  // Move any confirmed payment to the new appointment later
-  const [oldPayments] = await pool.query(
-    `SELECT id, status FROM payments WHERE appointment_id = ? AND tenant_id = ?`,
-    [oldAppointmentId, tenantId]
-  );
-
-  // Delete old appointment (and its pending payments)
-  // Confirmed payments will be moved to the new appointment below
-  await pool.query(`DELETE FROM payments WHERE appointment_id = ? AND tenant_id = ? AND status = 'Pendiente'`, [oldAppointmentId, tenantId]);
-  await pool.query(`DELETE FROM appointments WHERE id = ?`, [oldAppointmentId]);
-  console.log(`[reschedule] Deleted old appointment ${oldAppointmentId}`);
-
-  // Get client and book new
+  // 2. Get client
   const [clients] = await pool.query('SELECT * FROM clients WHERE id = ? AND tenant_id = ?', [clientId, tenantId]);
   if (clients.length === 0) return { error: 'Cliente no encontrado', status: 404 };
 
+  // 3. Create NEW booking first (GCal + DB) — old appointment still exists as safety net
   const result = await createBooking(clients[0], dateTime, tenantId);
-  if (result.error) return result;
+  if (result.error) return result; // Failed — old appointment untouched, no data loss
+
+  // 4. New booking succeeded — now safe to clean up old appointment
+  const newApptId = result.appointment?.id;
 
   // Mark new appointment as Reagendada
-  if (result.appointment?.id) {
-    await pool.query(`UPDATE appointments SET status = 'Reagendada' WHERE id = ?`, [result.appointment.id]);
+  if (newApptId) {
+    await pool.query(`UPDATE appointments SET status = 'Reagendada' WHERE id = ?`, [newApptId]);
   }
 
-  // Move confirmed payment from old appointment to new one
+  // Move confirmed payment from old → new
   try {
-    const newApptId = result.appointment?.id;
+    const [oldPayments] = await pool.query(
+      `SELECT id, status FROM payments WHERE appointment_id = ? AND tenant_id = ?`,
+      [oldAppointmentId, tenantId]
+    );
     const confirmedPayment = oldPayments.find(p => p.status === 'Confirmado');
     if (newApptId && confirmedPayment) {
-      // Move the confirmed payment to the new appointment
-      await pool.query(
-        `UPDATE payments SET appointment_id = ? WHERE id = ?`,
-        [newApptId, confirmedPayment.id]
-      );
-      // Delete the new "Pendiente" payment that createBooking just made (redundant)
+      await pool.query(`UPDATE payments SET appointment_id = ? WHERE id = ?`, [newApptId, confirmedPayment.id]);
       await pool.query(
         `DELETE FROM payments WHERE appointment_id = ? AND tenant_id = ? AND status = 'Pendiente' AND id != ?`,
         [newApptId, tenantId, confirmedPayment.id]
@@ -288,11 +277,24 @@ async function rescheduleAppointment(clientId, oldAppointmentId, dateTime, tenan
     console.error('[reschedule] Payment transfer failed (non-fatal):', payErr.message);
   }
 
+  // Delete old pending payments + old appointment
+  await pool.query(`DELETE FROM payments WHERE appointment_id = ? AND tenant_id = ? AND status = 'Pendiente'`, [oldAppointmentId, tenantId]);
+  await pool.query(`DELETE FROM appointments WHERE id = ? AND tenant_id = ?`, [oldAppointmentId, tenantId]);
+
+  // Delete old GCal event (non-fatal)
+  if (oldAppt.gcal_event_id) {
+    try { await deleteEvent(calendarId, oldAppt.gcal_event_id); } catch (e) {
+      console.error('[reschedule] Failed to delete old GCal event (non-fatal):', e.message);
+    }
+  }
+
+  console.log(`[reschedule] Old appointment ${oldAppointmentId} deleted, new ${newApptId} created`);
+
   // Log activity
   await pool.query(
     `INSERT INTO webhooks_log (tenant_id, event, type, payload, status, client_phone, client_id, appointment_id)
      VALUES (?, ?, 'reschedule', ?, 'procesado', ?, ?, ?)`,
-    [tenantId, `reschedule_${result.appointment.id}`, JSON.stringify({ old_id: oldAppointmentId, new_date_time: dateTime }), clients[0].phone, clientId, result.appointment.id]
+    [tenantId, `reschedule_${newApptId}`, JSON.stringify({ old_id: oldAppointmentId, new_date_time: dateTime }), clients[0].phone, clientId, newApptId]
   );
 
   return { success: true, status: 'rescheduled', ...result };

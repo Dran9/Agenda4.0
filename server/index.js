@@ -38,6 +38,7 @@ const clientLimiter = rateLimit({
 
 // ─── Reminder trigger (admin) ────────────────────────────────────
 const { checkAndSendReminders } = require('./services/reminder');
+const { authMiddleware } = require('./middleware/auth');
 
 // ─── Mount routes ────────────────────────────────────────────────
 app.use('/api', bookingRoutes);  // booking routes handle their own limiting
@@ -52,19 +53,19 @@ app.use('/api/webhook', webhookRoutes);
 app.use('/api/analytics', analyticsRoutes);
 app.use('/api/payments', paymentsRoutes);
 
-// ─── Admin reminder trigger ─────────────────────────────────────
-app.get('/api/admin/test-reminder', async (req, res) => {
+// ─── Admin reminder trigger (protected) ─────────────────────────
+app.get('/api/admin/test-reminder', authMiddleware, async (req, res) => {
   try {
-    const { date, force } = req.query; // 'today' or 'tomorrow', force=1 to skip dedup
-    const result = await checkAndSendReminders({ date: date || 'tomorrow', tenantId: 1, force: force === '1' });
+    const { date, force } = req.query;
+    const result = await checkAndSendReminders({ date: date || 'tomorrow', tenantId: req.tenantId, force: force === '1' });
     res.json(result);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-// ─── Debug: test Sheets connection ───────────────────────────────
-app.get('/api/admin/test-sheets', async (req, res) => {
+// ─── Admin: test Sheets connection (protected) ──────────────────
+app.get('/api/admin/test-sheets', authMiddleware, async (req, res) => {
   try {
     const sheetsId = process.env.GOOGLE_SHEETS_ID;
     if (!sheetsId) return res.json({ error: 'GOOGLE_SHEETS_ID not set' });
@@ -78,7 +79,6 @@ app.get('/api/admin/test-sheets', async (req, res) => {
       ok: true,
       title: info.data.properties.title,
       sheets: info.data.sheets.map(s => s.properties.title),
-      sheetsId,
     });
   } catch (err) {
     res.json({ error: err.message, code: err.code });
@@ -103,41 +103,6 @@ if (fs.existsSync(distPath)) {
   app.use(express.static(distPath, { maxAge: 0, etag: false }));
 }
 
-// ─── Debug env (TEMPORARY — remove after fixing OAuth) ──────────
-app.get('/api/debug-env', (req, res) => {
-  res.json({
-    GOOGLE_CLIENT_ID_len: (process.env.GOOGLE_CLIENT_ID || '').length,
-    GOOGLE_CLIENT_SECRET_len: (process.env.GOOGLE_CLIENT_SECRET || '').length,
-    GOOGLE_REFRESH_TOKEN_len: (process.env.GOOGLE_REFRESH_TOKEN || '').length,
-    CALENDAR_ID: process.env.CALENDAR_ID || '(not set)',
-    GOOGLE_CLIENT_ID_start: (process.env.GOOGLE_CLIENT_ID || '').substring(0, 15),
-    GOOGLE_CLIENT_ID_end: (process.env.GOOGLE_CLIENT_ID || '').slice(-10),
-  });
-});
-
-// ─── Debug: test OCR (TEMPORARY) ─────────────────────────────────
-app.get('/api/admin/test-ocr', async (req, res) => {
-  try {
-    const apiKey = process.env.GOOGLE_VISION_API_KEY;
-    if (!apiKey) return res.json({ error: 'GOOGLE_VISION_API_KEY not set', hint: 'Add it in hPanel → Environment Variables' });
-    res.json({ ok: true, key_length: apiKey.length, key_start: apiKey.substring(0, 8) });
-  } catch (err) {
-    res.json({ error: err.message });
-  }
-});
-
-// ─── Debug: what files does Hostinger actually have on disk ──────
-app.get('/api/debug-dist', (req, res) => {
-  try {
-    const indexPath = path.join(distPath, 'index.html');
-    const indexContent = fs.existsSync(indexPath) ? fs.readFileSync(indexPath, 'utf-8') : 'NOT FOUND';
-    const assetsDir = path.join(distPath, 'assets');
-    const assets = fs.existsSync(assetsDir) ? fs.readdirSync(assetsDir) : [];
-    res.json({ distPath, indexContent, assets, cwd: process.cwd(), dirname: __dirname });
-  } catch (err) {
-    res.json({ error: err.message });
-  }
-});
 
 // ─── SPA fallback ────────────────────────────────────────────────
 app.get('*', (req, res) => {

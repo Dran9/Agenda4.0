@@ -56,20 +56,24 @@ router.put('/:id/status', authMiddleware, async (req, res) => {
     const valid = ['Agendada', 'Confirmada', 'Reagendada', 'Cancelada', 'Completada', 'No-show'];
     if (!valid.includes(status)) return res.status(400).json({ error: 'Status inválido' });
 
-    await pool.query(
+    const [updateResult] = await pool.query(
       'UPDATE appointments SET status = ? WHERE id = ? AND tenant_id = ?',
       [status, req.params.id, req.tenantId]
     );
 
+    if (updateResult.affectedRows === 0) {
+      return res.status(404).json({ error: 'Cita no encontrada' });
+    }
+
     // If completed, create pending payment
     if (status === 'Completada') {
       const [appt] = await pool.query(
-        'SELECT a.*, c.fee FROM appointments a JOIN clients c ON a.client_id = c.id WHERE a.id = ?',
-        [req.params.id]
+        'SELECT a.*, c.fee FROM appointments a JOIN clients c ON a.client_id = c.id WHERE a.id = ? AND a.tenant_id = ?',
+        [req.params.id, req.tenantId]
       );
       if (appt.length > 0) {
         const [existing] = await pool.query(
-          'SELECT id FROM payments WHERE appointment_id = ?', [req.params.id]
+          'SELECT id FROM payments WHERE appointment_id = ? AND tenant_id = ?', [req.params.id, req.tenantId]
         );
         if (existing.length === 0) {
           await pool.query(

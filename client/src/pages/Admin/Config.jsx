@@ -195,8 +195,6 @@ export default function Config() {
         foreign_fee: config.foreign_fee,
         foreign_currency: config.foreign_currency,
         capital_cities: config._capitalCities?.join(',') || '',
-        rate_limit_booking: config.rate_limit_booking,
-        rate_limit_window: config.rate_limit_window,
         reminder_enabled: config.reminder_enabled ? 1 : 0,
         reminder_time: config.reminder_time || '18:40',
       });
@@ -615,32 +613,6 @@ export default function Config() {
                 />
               </div>
             ))}
-          </div>
-        </div>
-
-        {/* SECTION 5: Rate Limiting */}
-        <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
-          <h3 className="text-lg font-semibold mb-1">Rate limiting</h3>
-          <p className="text-sm text-gray-400 mb-5">Límite de intentos de agendamiento por IP.</p>
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-xs text-gray-500 mb-1">Máx intentos</label>
-              <input
-                type="number"
-                value={config?.rate_limit_booking || 3}
-                onChange={e => setConfig(c => ({ ...c, rate_limit_booking: parseInt(e.target.value) }))}
-                className="w-full px-3 py-2.5 border border-gray-200 rounded-lg text-sm"
-              />
-            </div>
-            <div>
-              <label className="block text-xs text-gray-500 mb-1">Ventana (minutos)</label>
-              <input
-                type="number"
-                value={config?.rate_limit_window || 15}
-                onChange={e => setConfig(c => ({ ...c, rate_limit_window: parseInt(e.target.value) }))}
-                className="w-full px-3 py-2.5 border border-gray-200 rounded-lg text-sm"
-              />
-            </div>
           </div>
         </div>
 

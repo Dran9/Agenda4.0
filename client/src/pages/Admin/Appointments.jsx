@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Trash2, Search, Eye } from 'lucide-react';
+import { Trash2, Search, Eye, BellRing, RotateCcw } from 'lucide-react';
 import AdminLayout from '../../components/AdminLayout';
 import { api } from '../../utils/api';
 import { useToast, Toast } from '../../hooks/useToast';
@@ -82,6 +82,21 @@ function formatRegistro(dateStr) {
   });
 }
 
+function getBoliviaDateKey(dateStr) {
+  if (!dateStr) return '';
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/La_Paz',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(new Date(dateStr));
+  const year = parts.find((part) => part.type === 'year')?.value;
+  const month = parts.find((part) => part.type === 'month')?.value;
+  const day = parts.find((part) => part.type === 'day')?.value;
+  if (!year || !month || !day) return '';
+  return `${year}-${month}-${day}`;
+}
+
 export default function Appointments() {
   const [appointments, setAppointments] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -141,6 +156,37 @@ export default function Appointments() {
       setAppointments(prev => prev.filter(a => a.id !== id));
       setSelected(prev => { const n = new Set(prev); n.delete(id); return n; });
       setTotal(t => t - 1);
+    } catch (err) {
+      showToast('Error: ' + err.message, 'error');
+    }
+  }
+
+  async function handleReminderSend(appt, force = false) {
+    try {
+      const appointmentDate = getBoliviaDateKey(appt.date_time);
+      if (!appointmentDate) {
+        showToast('No se pudo determinar la fecha de esta cita', 'error');
+        return;
+      }
+      const params = new URLSearchParams({
+        date: appointmentDate,
+        appointment_id: String(appt.id),
+      });
+      if (force) params.set('force', '1');
+      const result = await api.get(`/admin/test-reminder?${params.toString()}`);
+      if (result.targetFound === false) {
+        showToast('No se encontró la cita en los eventos elegibles para recordatorio', 'error');
+        return;
+      }
+      if (result.sent > 0) {
+        showToast(force ? 'Recordatorio reenviado a esta cita' : 'Recordatorio enviado a esta cita');
+        return;
+      }
+      if (result.skipped > 0) {
+        showToast('Esta cita ya tenía recordatorio enviado. Usa reenviar si quieres repetirlo.');
+        return;
+      }
+      showToast('No correspondía enviar recordatorio para esta cita');
     } catch (err) {
       showToast('Error: ' + err.message, 'error');
     }
@@ -240,6 +286,7 @@ export default function Appointments() {
                   <th className="text-left p-3 font-medium">Registro</th>
                   <th className="text-left p-3 font-medium">Status</th>
                   <th className="text-left p-3 font-medium">Pago</th>
+                  <th className="text-left p-3 font-medium">Reminder</th>
                   <th className="text-left p-3 font-medium w-10"></th>
                 </tr>
               </thead>
@@ -289,6 +336,32 @@ export default function Appointments() {
                       )}
                     </td>
                     <td className="p-3">
+                      {['Agendada', 'Confirmada', 'Reagendada'].includes(appt.status) ? (
+                        <div className="flex items-center gap-1">
+                          <button
+                            type="button"
+                            onClick={() => handleReminderSend(appt, false)}
+                            className="inline-flex items-center gap-1 rounded-lg border border-gray-200 px-2 py-1 text-xs text-gray-600 hover:bg-gray-50"
+                            title="Enviar solo a esta cita si aún no salió"
+                          >
+                            <BellRing size={12} />
+                            Enviar
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleReminderSend(appt, true)}
+                            className="inline-flex items-center gap-1 rounded-lg border border-amber-200 px-2 py-1 text-xs text-amber-700 hover:bg-amber-50"
+                            title="Reenviar solo a esta cita"
+                          >
+                            <RotateCcw size={12} />
+                            Reenviar
+                          </button>
+                        </div>
+                      ) : (
+                        <span className="text-xs text-gray-300">—</span>
+                      )}
+                    </td>
+                    <td className="p-3">
                       <button
                         type="button"
                         onClick={() => handleDelete(appt.id)}
@@ -301,7 +374,7 @@ export default function Appointments() {
                   </tr>
                 ))}
                 {appointments.length === 0 && (
-                  <tr><td colSpan={9} className="p-8 text-center text-gray-400">Sin citas</td></tr>
+                  <tr><td colSpan={10} className="p-8 text-center text-gray-400">Sin citas</td></tr>
                 )}
               </tbody>
             </table>

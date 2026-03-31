@@ -56,8 +56,19 @@ app.use('/api/payments', paymentsRoutes);
 // ─── Admin reminder trigger (protected) ─────────────────────────
 app.get('/api/admin/test-reminder', authMiddleware, async (req, res) => {
   try {
-    const { date, force } = req.query;
-    const result = await checkAndSendReminders({ date: date || 'tomorrow', tenantId: req.tenantId, force: force === '1' });
+    const { date, force, appointment_id, client_id, phone } = req.query;
+    const hasTarget = !!(appointment_id || client_id || phone);
+    if (force === '1' && !hasTarget) {
+      return res.status(400).json({ error: 'force=1 solo está permitido para envíos dirigidos' });
+    }
+    const result = await checkAndSendReminders({
+      date: date || 'tomorrow',
+      tenantId: req.tenantId,
+      force: force === '1',
+      appointmentId: appointment_id || null,
+      clientId: client_id || null,
+      phone: phone || null,
+    });
     res.json(result);
   } catch (err) {
     res.status(500).json({ error: err.message });

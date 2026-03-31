@@ -6,13 +6,38 @@ function pad(d) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
-async function checkAndSendReminders({ date, tenantId, force } = {}) {
+async function wasReminderAlreadySent({ tenantId, appointmentId, eventId, hours = 48 }) {
+  const [alreadySent] = await pool.query(
+    `SELECT id FROM webhooks_log
+     WHERE type = 'reminder_sent' AND tenant_id = ?
+       AND (appointment_id = ? OR event = ?)
+       AND created_at > DATE_SUB(NOW(), INTERVAL ? HOUR)
+     LIMIT 1`,
+    [tenantId, appointmentId || null, eventId || null, hours]
+  );
+  return alreadySent.length > 0;
+}
+
+async function sendAppointmentReminder(appt, eventId) {
+  await sendConfirmationTemplate(appt.phone, appt.first_name, appt.date_time);
+  await pool.query(
+    `INSERT INTO webhooks_log (tenant_id, event, type, payload, status, client_phone, client_id, appointment_id)
+     VALUES (?, ?, 'reminder_sent', ?, 'enviado', ?, ?, ?)`,
+    [appt.tenant_id, eventId, JSON.stringify({ appointment_id: appt.id || null }), appt.phone, appt.client_id, appt.id || null]
+  );
+}
+
+async function checkAndSendReminders({ date, tenantId, force = false, appointmentId = null, clientId = null, phone = null } = {}) {
   try {
     const calendarId = process.env.CALENDAR_ID || 'danielmacleann@gmail.com';
+    const targeted = !!(appointmentId || clientId || phone);
 
     // Determine target day in La Paz
     let targetDay;
-    if (date === 'today') {
+    if (date && /^\d{4}-\d{2}-\d{2}$/.test(date)) {
+      targetDay = new Date(`${date}T00:00:00-04:00`);
+      targetDay.setHours(0, 0, 0, 0);
+    } else if (date === 'today') {
       targetDay = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/La_Paz' }));
       targetDay.setHours(0, 0, 0, 0);
     } else {
@@ -27,12 +52,14 @@ async function checkAndSendReminders({ date, tenantId, force } = {}) {
     const timeMin = new Date(`${pad(targetDay)}T00:00:00-04:00`).toISOString();
     const timeMax = new Date(`${pad(dayAfter)}T00:00:00-04:00`).toISOString();
 
-    const label = date === 'today' ? 'today' : 'tomorrow';
+    const label = date === 'today' || date === 'tomorrow' ? date : pad(targetDay);
     const events = await listEvents(calendarId, timeMin, timeMax);
     console.log(`[reminder] Found ${events.length} events for ${label}`);
 
     let sent = 0;
     let skipped = 0;
+    let matched = 0;
+    let targetFound = false;
 
     for (const event of events) {
       const summary = event.summary || '';
@@ -84,42 +111,55 @@ async function checkAndSendReminders({ date, tenantId, force } = {}) {
         continue;
       }
       const appt = appts[0];
+      matched++;
+
+      if (appointmentId && String(appt.id) !== String(appointmentId)) continue;
+      if (clientId && String(appt.client_id) !== String(clientId)) continue;
+      if (phone && String(appt.phone) !== String(phone)) continue;
+      if (targeted) {
+        targetFound = true;
+      }
 
       // Dedup: check if reminder already sent for this specific appointment (by appointment_id or gcal event_id)
-      // In force mode (devmode), skip this check
       if (!force) {
-        const dedupKey = appt.id ? `appointment_id = ${appt.id}` : null;
-        const [alreadySent] = await pool.query(
-          `SELECT id FROM webhooks_log
-           WHERE type = 'reminder_sent' AND tenant_id = ?
-             AND (appointment_id = ? OR event = ?)
-             AND created_at > DATE_SUB(NOW(), INTERVAL 48 HOUR)
-           LIMIT 1`,
-          [appt.tenant_id || 1, appt.id, event.id]
-        );
-        if (alreadySent.length > 0) {
+        const alreadySent = await wasReminderAlreadySent({
+          tenantId: appt.tenant_id || 1,
+          appointmentId: appt.id,
+          eventId: event.id,
+        });
+        if (alreadySent) {
           console.log(`[reminder] Already sent for appointment ${appt.id || event.id}, skipping (use force=1 to override)`);
           skipped++;
+          if (targeted) break;
           continue;
         }
       }
 
       // Send WhatsApp reminder
       try {
-        await sendConfirmationTemplate(appt.phone, appt.first_name, appt.date_time);
-        await pool.query(
-          `INSERT INTO webhooks_log (tenant_id, event, type, payload, status, client_phone, client_id, appointment_id)
-           VALUES (?, ?, 'reminder_sent', ?, 'enviado', ?, ?, ?)`,
-          [appt.tenant_id, event.id, JSON.stringify({ appointment_id: appt.id }), appt.phone, appt.client_id, appt.id]
-        );
+        await sendAppointmentReminder(appt, event.id);
         console.log(`[reminder] Sent to ${appt.phone}`);
         sent++;
+        if (targeted) break;
       } catch (waErr) {
         console.error(`[reminder] Failed to send to ${appt.phone}:`, waErr.message);
+        if (targeted) break;
       }
     }
 
-    return { sent, skipped, total: events.length, force: !!force };
+    if (targeted && !targetFound) {
+      return {
+        sent,
+        skipped,
+        total: events.length,
+        matched,
+        force: !!force,
+        targeted: true,
+        targetFound: false,
+      };
+    }
+
+    return { sent, skipped, total: events.length, matched, force: !!force, targeted };
   } catch (err) {
     console.error('[reminder] Error:', err.message);
     throw err;

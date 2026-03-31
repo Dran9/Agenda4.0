@@ -136,9 +136,9 @@ export default function Dashboard() {
 
   async function handleTriggerReminder(date) {
     try {
-      const result = await api.get(`/admin/test-reminder?date=${date}&force=1`);
-      if (result.sent > 0) showToast(`${result.sent} recordatorio(s) enviado(s)`);
-      else showToast('No hubo mensajes para enviar');
+      const result = await api.get(`/admin/test-reminder?date=${date}`);
+      if (result.sent > 0) showToast(`${result.sent} recordatorio(s) enviado(s); ${result.skipped || 0} omitido(s) por dedupe`);
+      else showToast(result.skipped > 0 ? 'No hubo pendientes nuevos; lo demás ya estaba enviado' : 'No hubo mensajes para enviar');
     } catch (err) {
       showToast(`Error: ${err.message}`, 'error');
     }
@@ -216,14 +216,14 @@ export default function Dashboard() {
                 onClick={() => handleTriggerReminder('today')}
                 className="rounded-2xl border border-white/70 bg-white/80 px-4 py-3 text-sm font-medium text-slate-700 transition hover:bg-white"
               >
-                Recordatorio hoy
+                Pendientes hoy
               </button>
               <button
                 type="button"
                 onClick={() => handleTriggerReminder('tomorrow')}
                 className="rounded-2xl bg-[#1f2937] px-4 py-3 text-sm font-medium text-white shadow-[0_16px_34px_rgba(15,23,42,0.18)] transition hover:bg-slate-800"
               >
-                Recordatorio mañana
+                Pendientes mañana
               </button>
             </div>
           </div>

@@ -114,7 +114,7 @@ export default function WhatsApp() {
   async function triggerReminder(date) {
     setTriggerResult(null);
     try {
-      const data = await api.get(`/admin/test-reminder?date=${date}&force=1`);
+      const data = await api.get(`/admin/test-reminder?date=${date}`);
       setTriggerResult({ date, ...data });
     } catch (err) {
       setTriggerResult({ date, error: err.message });
@@ -130,7 +130,7 @@ export default function WhatsApp() {
         <div className="flex items-center justify-between flex-wrap gap-3">
           <div className="flex items-center gap-2">
             <Send size={16} className="text-gray-500" />
-            <span className="text-sm font-medium text-gray-700">Enviar recordatorios</span>
+            <span className="text-sm font-medium text-gray-700">Enviar pendientes</span>
           </div>
           <div className="flex gap-2">
             <button type="button" onClick={() => triggerReminder('today')} className="btn-sm bg-gray-100 hover:bg-gray-200 text-gray-700 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors">
@@ -145,7 +145,7 @@ export default function WhatsApp() {
           <div className={`mt-3 text-sm px-3 py-2 rounded-lg ${triggerResult.error ? 'bg-red-50 text-red-700' : 'bg-green-50 text-green-700'}`}>
             {triggerResult.error
               ? `Error: ${triggerResult.error}`
-              : `${triggerResult.date === 'today' ? 'Hoy' : 'Mañana'}: ${triggerResult.sent} enviados, ${triggerResult.skipped} ya enviados, ${triggerResult.total} eventos en GCal`
+              : `${triggerResult.date === 'today' ? 'Hoy' : 'Mañana'}: ${triggerResult.sent} enviados, ${triggerResult.skipped} omitidos por dedupe, ${triggerResult.total} eventos en GCal`
             }
           </div>
         )}

@@ -28,7 +28,9 @@ export default function Calendar({ onSelectDate, selectedDate, availableDays = [
   const [viewYear, setViewYear] = useState(today.getFullYear());
 
   const visibleColumns = useMemo(() => {
-    const filtered = DAY_COLUMNS.filter(day => availableDays.includes(day.key));
+    const filtered = DAY_COLUMNS.filter(day => (
+      !['sabado', 'domingo'].includes(day.key) || availableDays.includes(day.key)
+    ));
     return filtered.length > 0 ? filtered : DAY_COLUMNS;
   }, [availableDays]);
 

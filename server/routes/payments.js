@@ -248,12 +248,23 @@ router.get('/summary', authMiddleware, async (req, res) => {
     const [[current]] = await pool.query(`
       SELECT
         COUNT(*) as total_sessions,
-        SUM(CASE WHEN p.status = 'Confirmado' THEN 1 ELSE 0 END) as paid_sessions,
-        SUM(CASE WHEN p.status = 'Pendiente' THEN 1 ELSE 0 END) as pending_sessions,
-        COALESCE(SUM(CASE WHEN p.status = 'Confirmado' THEN p.amount ELSE 0 END), 0) as income_confirmed,
-        COALESCE(SUM(CASE WHEN p.status = 'Pendiente' THEN p.amount ELSE 0 END), 0) as income_pending
+        COALESCE(SUM(p.has_confirmed), 0) as paid_sessions,
+        COALESCE(SUM(p.has_pending), 0) as pending_sessions,
+        COALESCE(SUM(p.income_confirmed), 0) as income_confirmed,
+        COALESCE(SUM(p.income_pending), 0) as income_pending
       FROM appointments a
-      LEFT JOIN payments p ON p.appointment_id = a.id AND p.tenant_id = ?
+      LEFT JOIN (
+        SELECT
+          tenant_id,
+          appointment_id,
+          MAX(CASE WHEN status = 'Confirmado' THEN 1 ELSE 0 END) as has_confirmed,
+          MAX(CASE WHEN status = 'Pendiente' THEN 1 ELSE 0 END) as has_pending,
+          SUM(CASE WHEN status = 'Confirmado' THEN amount ELSE 0 END) as income_confirmed,
+          SUM(CASE WHEN status = 'Pendiente' THEN amount ELSE 0 END) as income_pending
+        FROM payments
+        WHERE tenant_id = ?
+        GROUP BY tenant_id, appointment_id
+      ) p ON p.appointment_id = a.id AND p.tenant_id = a.tenant_id
       WHERE a.tenant_id = ? AND YEAR(a.date_time) = ? AND MONTH(a.date_time) = ?
         AND a.status IN ('Completada', 'Confirmada', 'Agendada')
     `, [t, t, y, m]);
@@ -264,9 +275,17 @@ router.get('/summary', authMiddleware, async (req, res) => {
         YEAR(a.date_time) as year,
         MONTH(a.date_time) as month,
         COUNT(*) as sessions,
-        COALESCE(SUM(CASE WHEN p.status = 'Confirmado' THEN p.amount ELSE 0 END), 0) as income
+        COALESCE(SUM(p.income_confirmed), 0) as income
       FROM appointments a
-      LEFT JOIN payments p ON p.appointment_id = a.id AND p.tenant_id = ?
+      LEFT JOIN (
+        SELECT
+          tenant_id,
+          appointment_id,
+          SUM(CASE WHEN status = 'Confirmado' THEN amount ELSE 0 END) as income_confirmed
+        FROM payments
+        WHERE tenant_id = ?
+        GROUP BY tenant_id, appointment_id
+      ) p ON p.appointment_id = a.id AND p.tenant_id = a.tenant_id
       WHERE a.tenant_id = ? AND a.date_time >= DATE_SUB(NOW(), INTERVAL 6 MONTH)
         AND a.status IN ('Completada', 'Confirmada', 'Agendada')
       GROUP BY YEAR(a.date_time), MONTH(a.date_time)

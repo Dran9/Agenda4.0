@@ -326,7 +326,7 @@ export default function Config() {
             </div>
           </div>
 
-          <div className="space-y-3">
+          <div className="space-y-2.5">
             {DAYS.map(day => {
               const dayAvail = availability[day.key] || { enabled: false, blocks: [] };
               const blockCount = dayAvail.blocks?.length || 0;
@@ -341,24 +341,24 @@ export default function Config() {
                       : 'border-slate-200 bg-slate-50/60'
                   }`}
                 >
-                  <div className="flex flex-col gap-3 p-4 lg:flex-row lg:items-start lg:justify-between">
-                    <div className="flex items-center gap-4 min-w-[180px]">
+                  <div className="flex flex-col gap-2.5 p-3 lg:flex-row lg:items-start lg:justify-between">
+                    <div className="flex items-center gap-3 min-w-[156px]">
                       <button
                         type="button"
                         onClick={() => toggleDay(day.key, !dayAvail.enabled)}
-                        className={`relative inline-flex h-9 w-16 items-center rounded-full transition-colors ${
+                        className={`relative inline-flex h-8 w-14 items-center rounded-full transition-colors ${
                           dayAvail.enabled ? 'bg-[#618BBF]' : 'bg-slate-200'
                         }`}
                         aria-pressed={dayAvail.enabled}
                       >
                         <span
-                          className={`inline-block h-7 w-7 transform rounded-full bg-white shadow-[0_6px_18px_rgba(15,23,42,0.18)] transition-transform ${
-                            dayAvail.enabled ? 'translate-x-8' : 'translate-x-1'
+                          className={`inline-block h-6 w-6 transform rounded-full bg-white shadow-[0_6px_18px_rgba(15,23,42,0.18)] transition-transform ${
+                            dayAvail.enabled ? 'translate-x-7' : 'translate-x-1'
                           }`}
                         />
                       </button>
                       <div>
-                        <div className="text-[24px] leading-none font-medium tracking-tight text-slate-800">{day.label}</div>
+                        <div className="text-[19px] leading-none font-medium tracking-tight text-slate-800">{day.label}</div>
                         <div className="mt-1 text-xs text-slate-400">
                           {dayAvail.enabled ? `${blockCount} bloque${blockCount !== 1 ? 's' : ''}` : 'No disponible'}
                         </div>
@@ -367,31 +367,31 @@ export default function Config() {
 
                     <div className="flex-1">
                       {dayAvail.enabled ? (
-                        <div className="space-y-2.5">
+                        <div className="space-y-2">
                           {dayAvail.blocks.map((block, idx) => (
-                            <div key={idx} className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                            <div key={idx} className="flex flex-col gap-1.5 sm:flex-row sm:items-center">
                               <select
                                 value={block.start}
                                 onChange={e => updateBlock(day.key, idx, 'start', e.target.value)}
-                                className="min-w-[124px] rounded-[20px] border border-slate-200 bg-white px-4 py-2.5 text-[18px] font-semibold tracking-tight text-slate-800 shadow-[0_8px_18px_rgba(15,23,42,0.05)] outline-none transition focus:border-[#618BBF] focus:ring-2 focus:ring-[#CFE8E9]"
+                                className="min-w-[96px] rounded-[16px] border border-slate-200 bg-white px-3 py-1.5 text-[15px] font-semibold tracking-tight text-slate-800 shadow-[0_6px_14px_rgba(15,23,42,0.05)] outline-none transition focus:border-[#618BBF] focus:ring-2 focus:ring-[#CFE8E9]"
                               >
                                 {TIME_OPTIONS.map(t => <option key={t} value={t}>{t}</option>)}
                               </select>
-                              <span className="hidden sm:inline text-lg text-slate-400 px-1">-</span>
+                              <span className="hidden sm:inline text-base text-slate-400 px-1">-</span>
                               <select
                                 value={block.end}
                                 onChange={e => updateBlock(day.key, idx, 'end', e.target.value)}
-                                className="min-w-[124px] rounded-[20px] border border-slate-200 bg-white px-4 py-2.5 text-[18px] font-semibold tracking-tight text-slate-800 shadow-[0_8px_18px_rgba(15,23,42,0.05)] outline-none transition focus:border-[#618BBF] focus:ring-2 focus:ring-[#CFE8E9]"
+                                className="min-w-[96px] rounded-[16px] border border-slate-200 bg-white px-3 py-1.5 text-[15px] font-semibold tracking-tight text-slate-800 shadow-[0_6px_14px_rgba(15,23,42,0.05)] outline-none transition focus:border-[#618BBF] focus:ring-2 focus:ring-[#CFE8E9]"
                               >
                                 {TIME_OPTIONS.map(t => <option key={t} value={t}>{t}</option>)}
                               </select>
                               <button
                                 type="button"
                                 onClick={() => removeBlock(day.key, idx)}
-                                className="inline-flex h-10 w-10 items-center justify-center rounded-[18px] border border-slate-200 bg-white text-slate-400 transition hover:border-red-200 hover:text-red-500"
+                                className="inline-flex h-8 w-8 items-center justify-center rounded-[14px] border border-slate-200 bg-white text-slate-400 transition hover:border-red-200 hover:text-red-500"
                                 title="Eliminar bloque"
                               >
-                                <X size={16} />
+                                <X size={14} />
                               </button>
                             </div>
                           ))}
@@ -403,15 +403,15 @@ export default function Config() {
                       )}
                     </div>
 
-                    <div className="flex items-start gap-2" data-copy-popover-root>
+                    <div className="flex items-start gap-1.5" data-copy-popover-root>
                       <button
                         type="button"
                         onClick={() => dayAvail.enabled && addBlock(day.key)}
                         disabled={!dayAvail.enabled}
-                        className="inline-flex h-10 w-10 items-center justify-center rounded-[18px] border border-slate-200 bg-white text-slate-500 transition hover:border-slate-300 hover:text-slate-900 disabled:opacity-40 disabled:cursor-not-allowed"
+                        className="inline-flex h-8 w-8 items-center justify-center rounded-[14px] border border-slate-200 bg-white text-slate-500 transition hover:border-slate-300 hover:text-slate-900 disabled:opacity-40 disabled:cursor-not-allowed"
                         title="Agregar bloque"
                       >
-                        <Plus size={18} />
+                        <Plus size={15} />
                       </button>
                       <div className="relative">
                         <button
@@ -419,14 +419,14 @@ export default function Config() {
                           data-copy-trigger
                           onClick={() => dayAvail.enabled && openCopyPopover(day.key)}
                           disabled={!dayAvail.enabled}
-                          className={`inline-flex h-10 w-10 items-center justify-center rounded-[18px] border transition ${
+                          className={`inline-flex h-8 w-8 items-center justify-center rounded-[14px] border transition ${
                             copyPopoverDay === day.key
                               ? 'border-[#618BBF] bg-[#CFE8E9] text-slate-900 shadow-[0_10px_24px_rgba(97,139,191,0.24)]'
                               : 'border-slate-200 bg-white text-slate-500 hover:border-slate-300 hover:text-slate-900'
                           } disabled:opacity-40 disabled:cursor-not-allowed`}
                           title="Copiar horarios"
                         >
-                          <Copy size={16} />
+                          <Copy size={14} />
                         </button>
 
                         {copyPopoverDay === day.key && dayAvail.enabled && (
@@ -485,10 +485,10 @@ export default function Config() {
                         type="button"
                         onClick={() => clearDay(day.key)}
                         disabled={!dayAvail.enabled && blockCount === 0}
-                        className="inline-flex h-10 w-10 items-center justify-center rounded-[18px] border border-slate-200 bg-white text-slate-500 transition hover:border-red-200 hover:text-red-500 disabled:opacity-40 disabled:cursor-not-allowed"
+                        className="inline-flex h-8 w-8 items-center justify-center rounded-[14px] border border-slate-200 bg-white text-slate-500 transition hover:border-red-200 hover:text-red-500 disabled:opacity-40 disabled:cursor-not-allowed"
                         title="Borrar configuración del día"
                       >
-                        <Trash2 size={16} />
+                        <Trash2 size={14} />
                       </button>
                     </div>
                   </div>

@@ -54,30 +54,54 @@ export default function Calendar({ onSelectDate, selectedDate, availableDays = [
     const nextCells = [];
     for (let i = 0; i < startOffset; i++) nextCells.push(null);
     for (let d = 1; d <= daysInMonth; d++) {
-      const dayKey = DAY_MAP[new Date(viewYear, viewMonth, d).getDay()];
-      if (visibleColumns.some(column => column.key === dayKey)) nextCells.push(d);
+      const date = new Date(viewYear, viewMonth, d);
+      const dayKey = DAY_MAP[date.getDay()];
+      if (visibleColumns.some(column => column.key === dayKey)) {
+        nextCells.push({ date, monthOffset: 0 });
+      }
     }
-    while (nextCells.length % visibleColumns.length !== 0) nextCells.push(null);
+    let nextMonthDay = 1;
+    while (nextCells.length % visibleColumns.length !== 0) {
+      const date = new Date(viewYear, viewMonth + 1, nextMonthDay++);
+      const dayKey = DAY_MAP[date.getDay()];
+      if (visibleColumns.some(column => column.key === dayKey)) {
+        nextCells.push({ date, monthOffset: 1 });
+      }
+    }
     return nextCells;
   }, [startOffset, daysInMonth, viewYear, viewMonth, visibleColumns]);
 
   useEffect(() => { if (onMonthChange) onMonthChange(viewYear, viewMonth); }, [viewYear, viewMonth]);
 
-  function getDateStr(day) {
-    return `${viewYear}-${String(viewMonth + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+  function getDateStr(date) {
+    return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
   }
-  function isToday(day) {
-    return day && viewYear === today.getFullYear() && viewMonth === today.getMonth() && day === today.getDate();
+  function isToday(cell) {
+    if (!cell) return false;
+    const date = cell.date;
+    return (
+      date.getFullYear() === today.getFullYear() &&
+      date.getMonth() === today.getMonth() &&
+      date.getDate() === today.getDate()
+    );
   }
-  function isEnabled(day) {
-    if (!day) return false;
-    const date = new Date(viewYear, viewMonth, day); date.setHours(0,0,0,0);
+  function isEnabled(cell) {
+    if (!cell) return false;
+    const date = new Date(cell.date);
+    date.setHours(0,0,0,0);
     if (date < today || date > maxDate) return false;
     return availableDays.includes(DAY_MAP[date.getDay()]);
   }
-  function hasSlots(day) { return day && daysWithSlots?.has(getDateStr(day)); }
-  function isSelected(day) { return day && selectedDate === getDateStr(day); }
-  function handleClick(day) { if (isEnabled(day)) onSelectDate(getDateStr(day)); }
+  function hasSlots(cell) { return cell && daysWithSlots?.has(getDateStr(cell.date)); }
+  function isSelected(cell) { return cell && selectedDate === getDateStr(cell.date); }
+  function handleClick(cell) {
+    if (!isEnabled(cell)) return;
+    if (cell.monthOffset !== 0) {
+      setViewMonth(cell.date.getMonth());
+      setViewYear(cell.date.getFullYear());
+    }
+    onSelectDate(getDateStr(cell.date));
+  }
 
   function prevMonth() {
     if (viewMonth === 0) { setViewMonth(11); setViewYear(y => y - 1); }
@@ -112,25 +136,27 @@ export default function Calendar({ onSelectDate, selectedDate, availableDays = [
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: `repeat(${visibleColumns.length}, 1fr)`, gap: 2 }}>
-        {cells.map((day, i) => {
-          if (!day) return <div key={i} />;
-          const enabled = isEnabled(day);
-          const selected = isSelected(day);
-          const todayCell = isToday(day);
-          const withSlots = hasSlots(day);
+        {cells.map((cell, i) => {
+          if (!cell) return <div key={i} />;
+          const enabled = isEnabled(cell);
+          const selected = isSelected(cell);
+          const todayCell = isToday(cell);
+          const withSlots = hasSlots(cell);
+          const isPreviewNextMonth = cell.monthOffset === 1;
 
           let bg = 'transparent';
           let color = '#A4A4A6';
           let fw = 400;
 
           if (selected) { bg = 'var(--azul-acero)'; color = 'white'; fw = 700; }
-          else if (enabled && withSlots) { color = '#000000'; fw = 900; }
+          else if (enabled && withSlots) { color = isPreviewNextMonth ? '#38B1B1' : '#000000'; fw = 900; }
+          else if (isPreviewNextMonth) { color = '#38B1B1'; fw = enabled ? 700 : 600; }
           else if (enabled) { color = '#A4A4A6'; fw = 600; }
           else { color = '#A4A4A6'; fw = 600; }
 
           return (
             <button
-              type="button" key={i} onClick={() => handleClick(day)} disabled={!enabled}
+              type="button" key={i} onClick={() => handleClick(cell)} disabled={!enabled}
               style={{
                 height: 44, borderRadius: 10, fontSize: 20, display: 'flex',
                 alignItems: 'center', justifyContent: 'center', border: 'none',
@@ -141,7 +167,7 @@ export default function Calendar({ onSelectDate, selectedDate, availableDays = [
               onMouseEnter={e => { if (enabled && !selected) e.target.style.background = 'var(--blanco-gris)'; }}
               onMouseLeave={e => { if (!selected) e.target.style.background = 'transparent'; }}
             >
-              {day}
+              {cell.date.getDate()}
             </button>
           );
         })}

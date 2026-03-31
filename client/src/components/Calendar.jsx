@@ -5,7 +5,15 @@ const MONTH_NAMES = [
   'Enero','Febrero','Marzo','Abril','Mayo','Junio',
   'Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'
 ];
-const DAY_LABELS = ['Lun','Mar','Mié','Jue','Vie','Sáb','Dom'];
+const DAY_COLUMNS = [
+  { key: 'lunes', label: 'Lun', jsDay: 1 },
+  { key: 'martes', label: 'Mar', jsDay: 2 },
+  { key: 'miercoles', label: 'Mié', jsDay: 3 },
+  { key: 'jueves', label: 'Jue', jsDay: 4 },
+  { key: 'viernes', label: 'Vie', jsDay: 5 },
+  { key: 'sabado', label: 'Sáb', jsDay: 6 },
+  { key: 'domingo', label: 'Dom', jsDay: 0 },
+];
 const DAY_MAP = { 0: 'domingo', 1: 'lunes', 2: 'martes', 3: 'miercoles', 4: 'jueves', 5: 'viernes', 6: 'sabado' };
 
 export default function Calendar({ onSelectDate, selectedDate, availableDays = [], windowDays = 10, daysWithSlots, onMonthChange }) {
@@ -19,13 +27,37 @@ export default function Calendar({ onSelectDate, selectedDate, availableDays = [
   const [viewMonth, setViewMonth] = useState(today.getMonth());
   const [viewYear, setViewYear] = useState(today.getFullYear());
 
-  const daysInMonth = new Date(viewYear, viewMonth + 1, 0).getDate();
-  const firstDayOfWeek = new Date(viewYear, viewMonth, 1).getDay();
-  const startOffset = firstDayOfWeek === 0 ? 6 : firstDayOfWeek - 1;
+  const visibleColumns = useMemo(() => {
+    const filtered = DAY_COLUMNS.filter(day => availableDays.includes(day.key));
+    return filtered.length > 0 ? filtered : DAY_COLUMNS;
+  }, [availableDays]);
 
-  const cells = [];
-  for (let i = 0; i < startOffset; i++) cells.push(null);
-  for (let d = 1; d <= daysInMonth; d++) cells.push(d);
+  const daysInMonth = new Date(viewYear, viewMonth + 1, 0).getDate();
+  const firstVisibleDate = useMemo(() => {
+    for (let d = 1; d <= daysInMonth; d++) {
+      const dayKey = DAY_MAP[new Date(viewYear, viewMonth, d).getDay()];
+      if (visibleColumns.some(column => column.key === dayKey)) return d;
+    }
+    return null;
+  }, [daysInMonth, viewYear, viewMonth, visibleColumns]);
+
+  const startOffset = useMemo(() => {
+    if (!firstVisibleDate) return 0;
+    const firstVisibleJsDay = new Date(viewYear, viewMonth, firstVisibleDate).getDay();
+    const visibleIndex = visibleColumns.findIndex(column => column.jsDay === firstVisibleJsDay);
+    return visibleIndex >= 0 ? visibleIndex : 0;
+  }, [firstVisibleDate, viewYear, viewMonth, visibleColumns]);
+
+  const cells = useMemo(() => {
+    const nextCells = [];
+    for (let i = 0; i < startOffset; i++) nextCells.push(null);
+    for (let d = 1; d <= daysInMonth; d++) {
+      const dayKey = DAY_MAP[new Date(viewYear, viewMonth, d).getDay()];
+      if (visibleColumns.some(column => column.key === dayKey)) nextCells.push(d);
+    }
+    while (nextCells.length % visibleColumns.length !== 0) nextCells.push(null);
+    return nextCells;
+  }, [startOffset, daysInMonth, viewYear, viewMonth, visibleColumns]);
 
   useEffect(() => { if (onMonthChange) onMonthChange(viewYear, viewMonth); }, [viewYear, viewMonth]);
 
@@ -69,15 +101,15 @@ export default function Calendar({ onSelectDate, selectedDate, availableDays = [
         </button>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 2, marginBottom: 4 }}>
-        {DAY_LABELS.map(d => (
-          <div key={d} style={{ textAlign: 'center', fontSize: 14, fontWeight: 800, textTransform: 'uppercase', color: '#A4A4A6', padding: '4px 0' }}>
-            {d}
+      <div style={{ display: 'grid', gridTemplateColumns: `repeat(${visibleColumns.length}, 1fr)`, gap: 2, marginBottom: 4 }}>
+        {visibleColumns.map(d => (
+          <div key={d.key} style={{ textAlign: 'center', fontSize: 14, fontWeight: 800, textTransform: 'uppercase', color: '#A4A4A6', padding: '4px 0' }}>
+            {d.label}
           </div>
         ))}
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 2 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: `repeat(${visibleColumns.length}, 1fr)`, gap: 2 }}>
         {cells.map((day, i) => {
           if (!day) return <div key={i} />;
           const enabled = isEnabled(day);

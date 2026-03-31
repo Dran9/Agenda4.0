@@ -1,5 +1,6 @@
 const { Router } = require('express');
 const { pool } = require('../db');
+const { getOperationalContext, classifyIncomingMessage, buildClassificationMetadata } = require('../services/messageContext');
 
 const router = Router();
 const CALENDAR_ID = () => process.env.CALENDAR_ID || process.env.GOOGLE_CALENDAR_ID || 'danielmacleann@gmail.com';
@@ -197,11 +198,30 @@ router.post('/', async (req, res) => {
             }
           } else if (msg.type === 'text') {
             // Regular text message
-            console.log(`[webhook] Text from ${phone}: ${msg.text?.body?.substring(0, 50)}`);
+            const operationalContext = await getOperationalContext({ tenantId, phone, clientId });
+            const classification = classifyIncomingMessage({
+              messageType: 'text',
+              text: msg.text?.body,
+              context: operationalContext,
+            });
+
+            if (!classification.shouldStore) {
+              console.log(`[webhook] Ignored non-operational text from ${phone}: ${classification.reason}`);
+              continue;
+            }
+
+            console.log(`[webhook] Text from ${phone}: ${msg.text?.body?.substring(0, 50)} [${classification.contextType}]`);
             await pool.query(
-              `INSERT INTO wa_conversations (tenant_id, client_id, client_phone, direction, message_type, content, wa_message_id)
-               VALUES (?, ?, ?, 'inbound', 'text', ?, ?)`,
-              [tenantId, clientId, phone, msg.text?.body, msg.id]
+              `INSERT INTO wa_conversations (tenant_id, client_id, client_phone, direction, message_type, content, wa_message_id, metadata)
+               VALUES (?, ?, ?, 'inbound', 'text', ?, ?, ?)`,
+              [
+                tenantId,
+                clientId,
+                phone,
+                msg.text?.body,
+                msg.id,
+                buildClassificationMetadata(classification, operationalContext),
+              ]
             );
           } else if (msg.type === 'image' || msg.type === 'document') {
             // Image or document (comprobante de pago)
@@ -209,6 +229,20 @@ router.post('/', async (req, res) => {
             const caption = msg.image?.caption || msg.document?.caption || '';
             const filename = msg.document?.filename || '';
             const mimeType = msg.image?.mime_type || msg.document?.mime_type || '';
+
+            const operationalContext = await getOperationalContext({ tenantId, phone, clientId });
+            const classification = classifyIncomingMessage({
+              messageType: msg.type,
+              caption,
+              filename,
+              context: operationalContext,
+            });
+
+            if (!classification.shouldStore) {
+              console.log(`[webhook] Ignored non-operational ${msg.type} from ${phone}: ${classification.reason}`);
+              continue;
+            }
+
             console.log(`[webhook] ${msg.type} from ${phone}: ${mediaId} (${filename || caption || 'sin caption'})`);
 
             // Download media from WhatsApp
@@ -240,27 +274,27 @@ router.post('/', async (req, res) => {
                 // Only process OCR if there's payment context in recent conversation
                 // (avoids wasting Vision API on random photos like wedding pics)
                 if (clientId && (mimeType.startsWith('image/') || msg.type === 'image' || mimeType === 'application/pdf')) {
-                  let hasPaymentContext = false;
+                  let hasPaymentContext = classification.contextType === 'payment';
                   try {
-                    // Check last 60 min of conversation for payment-related context
-                    const [recentCtx] = await pool.query(
-                      `SELECT content, direction, message_type FROM wa_conversations
-                       WHERE client_phone = ? AND tenant_id = ?
-                         AND created_at >= DATE_SUB(NOW(), INTERVAL 60 MINUTE)
-                       ORDER BY created_at DESC LIMIT 10`,
-                      [phone, tenantId]
-                    );
-                    // Context clues: QR sent, CONFIRM button pressed, or payment keywords
-                    hasPaymentContext = recentCtx.some(r =>
-                      /QR de pago|CONFIRM_NOW|comprobante|pago|transferencia/i.test(r.content)
-                    );
-                    // Also check: does this client have any pending payment?
                     if (!hasPaymentContext) {
-                      const [pending] = await pool.query(
-                        `SELECT id FROM payments WHERE client_id = ? AND tenant_id = ? AND status = 'Pendiente' LIMIT 1`,
-                        [clientId, tenantId]
+                      // Legacy fallback: if the classifier didn't mark this as payment, do one last check
+                      const [recentCtx] = await pool.query(
+                        `SELECT content, direction, message_type FROM wa_conversations
+                         WHERE client_phone = ? AND tenant_id = ?
+                           AND created_at >= DATE_SUB(NOW(), INTERVAL 60 MINUTE)
+                         ORDER BY created_at DESC LIMIT 10`,
+                        [phone, tenantId]
                       );
-                      hasPaymentContext = pending.length > 0;
+                      hasPaymentContext = recentCtx.some(r =>
+                        /QR de pago|CONFIRM_NOW|comprobante|pago|transferencia/i.test(r.content)
+                      );
+                      if (!hasPaymentContext) {
+                        const [pending] = await pool.query(
+                          `SELECT id FROM payments WHERE client_id = ? AND tenant_id = ? AND status = 'Pendiente' LIMIT 1`,
+                          [clientId, tenantId]
+                        );
+                        hasPaymentContext = pending.length > 0;
+                      }
                     }
                   } catch (ctxErr) {
                     console.error('[webhook] Context check failed:', ctxErr.message);
@@ -405,7 +439,7 @@ router.post('/', async (req, res) => {
               : `[${msg.type === 'image' ? 'Imagen' : 'Documento'}] ${caption || filename || ''} (no descargado)`;
 
             // Build metadata with OCR data if available
-            const metadata = ocrResult ? JSON.stringify({
+            const metadata = buildClassificationMetadata(classification, operationalContext, ocrResult ? {
               ocr_name: ocrResult.name || null,
               ocr_amount: ocrResult.amount || null,
               ocr_date: ocrResult.date || null,
@@ -413,7 +447,7 @@ router.post('/', async (req, res) => {
               ocr_dest_name: ocrResult.destName || null,
               ocr_dest_verified: ocrResult.destVerified || false,
               ocr_bank: ocrResult.bank || null,
-            }) : null;
+            } : {});
 
             await pool.query(
               `INSERT INTO wa_conversations (tenant_id, client_id, client_phone, direction, message_type, content, wa_message_id, metadata)

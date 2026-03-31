@@ -14,7 +14,7 @@ const DEFAULT_STATUSES = [
 ];
 
 const DEFAULT_SOURCES = [
-  'Instagram', 'Referido', 'Google', 'Sitio web', 'WhatsApp', 'Otro',
+  'Referencia de amigos', 'Redes sociales', 'Otro',
 ];
 
 const TIMEZONES = [

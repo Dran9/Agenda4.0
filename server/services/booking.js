@@ -62,7 +62,7 @@ async function createClient(phone, onboarding, tenantId, conn, feeOverride) {
   const cfg = cfgRows[0];
   const capitalCities = (cfg?.capital_cities || '').split(',').map(c => c.trim());
   const autoFee = capitalCities.includes(city) ? (cfg?.capital_fee || 300) : (cfg?.default_fee || 250);
-  const fee = (feeOverride && parseFloat(feeOverride) > 0) ? parseFloat(feeOverride) : autoFee;
+  const fee = (feeOverride && parseInt(feeOverride) > 0) ? parseInt(feeOverride) : autoFee;
 
   let newClient;
   try {

@@ -6,7 +6,7 @@ const fs = require('fs');
 const rateLimit = require('express-rate-limit');
 
 const { initializeDatabase } = require('./db');
-const { startReminderCron } = require('./cron/scheduler');
+const { startReminderCron, startAutoCompleteCron } = require('./cron/scheduler');
 
 // Routes
 const bookingRoutes = require('./routes/booking');
@@ -166,6 +166,7 @@ async function start() {
   try {
     await initializeDatabase();
     startReminderCron();
+    startAutoCompleteCron();
     app.listen(PORT, () => {
       console.log(`Agenda 3.0 running on port ${PORT}`);
     });

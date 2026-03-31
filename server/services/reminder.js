@@ -85,6 +85,25 @@ async function checkAndSendReminders({ date, tenantId, force } = {}) {
       }
       const appt = appts[0];
 
+      // Dedup: check if reminder already sent for this specific appointment (by appointment_id or gcal event_id)
+      // In force mode (devmode), skip this check
+      if (!force) {
+        const dedupKey = appt.id ? `appointment_id = ${appt.id}` : null;
+        const [alreadySent] = await pool.query(
+          `SELECT id FROM webhooks_log
+           WHERE type = 'reminder_sent' AND tenant_id = ?
+             AND (appointment_id = ? OR event = ?)
+             AND created_at > DATE_SUB(NOW(), INTERVAL 48 HOUR)
+           LIMIT 1`,
+          [appt.tenant_id || 1, appt.id, event.id]
+        );
+        if (alreadySent.length > 0) {
+          console.log(`[reminder] Already sent for appointment ${appt.id || event.id}, skipping (use force=1 to override)`);
+          skipped++;
+          continue;
+        }
+      }
+
       // Send WhatsApp reminder
       try {
         await sendConfirmationTemplate(appt.phone, appt.first_name, appt.date_time);

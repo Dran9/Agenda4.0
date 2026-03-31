@@ -15,6 +15,11 @@ const pool = mysql.createPool({
   timezone: '-04:00', // Bolivia time — DATETIME values in DB are stored in La Paz time
 });
 
+// Set MySQL session timezone to Bolivia — ensures NOW(), CURDATE(), etc. return Bolivia time
+pool.on('connection', (conn) => {
+  conn.query("SET time_zone = '-04:00'");
+});
+
 // Transaction helper — wraps callback in BEGIN/COMMIT/ROLLBACK
 async function withTransaction(callback) {
   const conn = await pool.getConnection();
@@ -67,7 +72,7 @@ async function initializeDatabase() {
         frequency ENUM('Semanal','Quincenal','Mensual','Irregular') DEFAULT 'Semanal',
         source VARCHAR(100) DEFAULT 'Otro',
         referred_by VARCHAR(200),
-        fee DECIMAL(10,2) DEFAULT 250.00,
+        fee INT DEFAULT 250,
         payment_method ENUM('QR','Efectivo','Transferencia') DEFAULT 'QR',
         rating TINYINT DEFAULT 0,
         diagnosis TEXT,
@@ -124,11 +129,11 @@ async function initializeDatabase() {
         break_end VARCHAR(5) DEFAULT '14:00',
         min_age INT DEFAULT 12,
         max_age INT DEFAULT 80,
-        default_fee DECIMAL(10,2) DEFAULT 250.00,
-        capital_fee DECIMAL(10,2) DEFAULT 300.00,
+        default_fee INT DEFAULT 250,
+        capital_fee INT DEFAULT 300,
         capital_cities VARCHAR(255) DEFAULT 'La Paz,Santa Cruz,Cochabamba,Beni',
-        special_fee DECIMAL(10,2) DEFAULT 150.00,
-        foreign_fee DECIMAL(10,2) DEFAULT 40.00,
+        special_fee INT DEFAULT 150,
+        foreign_fee INT DEFAULT 40,
         foreign_currency VARCHAR(10) DEFAULT 'USD',
         qr_url_capital VARCHAR(500),
         qr_url_provincia VARCHAR(500),
@@ -155,11 +160,11 @@ async function initializeDatabase() {
         tenant_id INT NOT NULL,
         client_id INT NOT NULL,
         appointment_id INT,
-        amount DECIMAL(10,2) NOT NULL,
+        amount INT NOT NULL,
         method ENUM('QR','Efectivo','Transferencia') DEFAULT 'QR',
         status ENUM('Pendiente','Confirmado','Rechazado') DEFAULT 'Pendiente',
         receipt_file_key VARCHAR(50),
-        ocr_extracted_amount DECIMAL(10,2),
+        ocr_extracted_amount INT,
         ocr_extracted_ref VARCHAR(100),
         notes TEXT,
         confirmed_at DATETIME,
@@ -284,7 +289,7 @@ async function initializeDatabase() {
     }
 
     // Schema migrations (safe to re-run)
-    await conn.query(`ALTER TABLE config ADD COLUMN IF NOT EXISTS monthly_goal DECIMAL(10,2) DEFAULT NULL`).catch(() => {});
+    await conn.query(`ALTER TABLE config ADD COLUMN IF NOT EXISTS monthly_goal INT DEFAULT NULL`).catch(() => {});
     await conn.query(`ALTER TABLE appointments MODIFY COLUMN status ENUM('Agendada','Confirmada','Reagendada','Cancelada','Completada','No-show') DEFAULT 'Agendada'`).catch(() => {});
     await conn.query(`UPDATE appointments SET status = 'Agendada' WHERE status = 'Confirmada'`).catch(() => {});
     // wa_conversations: add image/document types + metadata column for OCR data
@@ -292,6 +297,18 @@ async function initializeDatabase() {
     await conn.query(`ALTER TABLE wa_conversations ADD COLUMN IF NOT EXISTS metadata JSON DEFAULT NULL`).catch(() => {});
     // payments: add Mismatch status for OCR validation failures
     await conn.query(`ALTER TABLE payments MODIFY COLUMN status ENUM('Pendiente','Confirmado','Rechazado','Mismatch') DEFAULT 'Pendiente'`).catch(() => {});
+    // Migrate old source values to new 3 options
+    await conn.query(`UPDATE clients SET source = 'Redes sociales' WHERE source IN ('Instagram','Google','Sitio web','WhatsApp')`).catch(() => {});
+    await conn.query(`UPDATE clients SET source = 'Referencia de amigos' WHERE source = 'Referido'`).catch(() => {});
+    // Fee/amount columns → INT (no decimals, Bolivianos are whole numbers)
+    await conn.query(`ALTER TABLE clients MODIFY COLUMN fee INT DEFAULT 250`).catch(() => {});
+    await conn.query(`ALTER TABLE config MODIFY COLUMN default_fee INT DEFAULT 250`).catch(() => {});
+    await conn.query(`ALTER TABLE config MODIFY COLUMN capital_fee INT DEFAULT 300`).catch(() => {});
+    await conn.query(`ALTER TABLE config MODIFY COLUMN special_fee INT DEFAULT 150`).catch(() => {});
+    await conn.query(`ALTER TABLE config MODIFY COLUMN foreign_fee INT DEFAULT 40`).catch(() => {});
+    await conn.query(`ALTER TABLE config MODIFY COLUMN monthly_goal INT DEFAULT NULL`).catch(() => {});
+    await conn.query(`ALTER TABLE payments MODIFY COLUMN amount INT NOT NULL`).catch(() => {});
+    await conn.query(`ALTER TABLE payments MODIFY COLUMN ocr_extracted_amount INT`).catch(() => {});
 
     console.log('[DB] All 10 tables initialized');
   } finally {

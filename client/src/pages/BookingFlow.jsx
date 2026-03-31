@@ -137,8 +137,10 @@ const pageParams = new URLSearchParams(window.location.search);
 
 export default function BookingFlow() {
   const devMode = pageParams.get('devmode') === '1';
-  const urlPhone = pageParams.get('t') || pageParams.get('r') || '';
-  const urlReschedule = !!pageParams.get('r');
+  const urlRParam = pageParams.get('r') || '';
+  const urlReschedule = !!urlRParam;
+  const urlReschedulePhone = urlRParam.replace(/\D/g, '').length >= 8 ? urlRParam : '';
+  const urlPhone = pageParams.get('t') || urlReschedulePhone;
   const urlFee = pageParams.get('fee') || '';
   const urlCode = pageParams.get('code') || '';
 
@@ -161,6 +163,9 @@ export default function BookingFlow() {
   const [city, setCity] = useState('Cochabamba');
   const [country, setCountry] = useState('Bolivia');
   const [source, setSource] = useState('');
+
+  // Reschedule client name (fetched from DB when ?r=phone)
+  const [rescheduleClientName, setRescheduleClientName] = useState('');
 
   // Calendar/slots
   const [selectedDate, setSelectedDate] = useState(null);
@@ -187,6 +192,15 @@ export default function BookingFlow() {
       // Take last 8 digits (no country code)
       const digits = urlPhone.replace(/\D/g, '').slice(-8);
       if (digits.length > 0) setPhoneNumber(digits);
+    }
+  }, []);
+
+  // Fetch client name for reschedule banner
+  useEffect(() => {
+    if (urlReschedulePhone) {
+      api.post('/client/check', { phone: urlReschedulePhone })
+        .then(data => { if (data.client_name) setRescheduleClientName(data.client_name.split(' ')[0]); })
+        .catch(() => {});
     }
   }, []);
 
@@ -434,8 +448,10 @@ export default function BookingFlow() {
           {flow.rescheduleMode ? 'Elige tu nueva hora' : 'Encuentra el mejor momento para tu sesión'}
         </h1>
         {(flow.rescheduleMode || urlReschedule) && (
-          <div style={{ background: 'var(--dorado)', textAlign: 'center', padding: '8px 16px', borderRadius: 12, marginBottom: 12, fontSize: 15, fontWeight: 600, color: 'var(--negro)' }}>
-            Vamos a reprogramar tu cita
+          <div style={{ background: 'var(--dorado)', textAlign: 'center', padding: '10px 16px', borderRadius: 12, marginBottom: 12, fontSize: 18, fontWeight: 600, color: 'var(--negro)' }}>
+            {rescheduleClientName || flow.clientName
+              ? `${rescheduleClientName || flow.clientName}, vamos a reprogramar tu cita`
+              : 'Vamos a reprogramar tu cita'}
           </div>
         )}
 

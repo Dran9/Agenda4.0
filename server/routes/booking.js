@@ -57,8 +57,8 @@ router.post('/book', bookingLimiter, validate(bookingSchema), async (req, res) =
     const [clients] = await pool.query('SELECT * FROM clients WHERE id = ? AND tenant_id = ?', [check.client_id, tenantId]);
     const client = clients[0];
     // Apply fee override if provided (from ?fee= URL param)
-    if (fee_override && parseFloat(fee_override) > 0) {
-      const newFee = parseFloat(fee_override);
+    if (fee_override && parseInt(fee_override) > 0) {
+      const newFee = parseInt(fee_override);
       await pool.query('UPDATE clients SET fee = ? WHERE id = ?', [newFee, client.id]);
       client.fee = newFee;
       console.log(`[booking] Fee override: client ${client.id} → Bs ${newFee}`);

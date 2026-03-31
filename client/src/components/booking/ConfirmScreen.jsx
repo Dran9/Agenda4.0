@@ -67,10 +67,8 @@ export default function ConfirmScreen({ state, dispatch, onSubmitOnboarding }) {
         <div style={{ marginBottom: 16 }}>
           <div className="field-label" style={{ fontSize: 12 }}>¿Cómo nos encontraste?</div>
           <select name="source" value={form.source} onChange={handleChange} className="input-field" style={{ appearance: 'auto' }}>
-            <option value="Instagram">Instagram</option>
-            <option value="Referido">Referido</option>
-            <option value="Google">Google</option>
-            <option value="Sitio web">Sitio web</option>
+            <option value="Referencia de amigos">Referencia de amigos</option>
+            <option value="Redes sociales">Redes sociales</option>
             <option value="Otro">Otro</option>
           </select>
         </div>

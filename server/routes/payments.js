@@ -218,8 +218,8 @@ router.post('/match-receipt', authMiddleware, async (req, res) => {
         payment_id: m.id,
         client_name: `${m.first_name} ${m.last_name || ''}`.trim(),
         client_phone: m.phone,
-        amount: parseFloat(m.amount),
-        fee: parseFloat(m.fee || 0),
+        amount: parseInt(m.amount),
+        fee: parseInt(m.fee || 0),
         date_time: m.date_time,
       })),
     });

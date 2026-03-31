@@ -133,9 +133,10 @@ router.post('/', async (req, res) => {
               if (payload === 'CONFIRM_NOW') {
                 const nombre = clients[0]?.first_name || '';
                 replyText = `\ud83d\udc4f Perfecto ${nombre}, te esperamos para darle un giro a tu vida.\n\nEn un momento te mandamos el *QR* o _enlace_ para pago adelantado por favor.`;
-              } else if (payload === 'REAGEN_NOW' && cfg?.auto_reply_reschedule) {
+              } else if (payload === 'REAGEN_NOW') {
+                const nombre = clients[0]?.first_name || '';
                 const domain = (await pool.query('SELECT domain FROM tenants WHERE id = ?', [tenantId]))[0]?.[0]?.domain || '';
-                replyText = cfg.auto_reply_reschedule.replace('{{link}}', `https://${domain}`);
+                replyText = `${nombre}, vamos a reprogramar tu cita.\n\nhttps://${domain}/?r=${phone}`;
               } else if (payload === 'DANIEL_NOW' && cfg?.auto_reply_contact) {
                 replyText = cfg.auto_reply_contact;
               }
@@ -158,10 +159,10 @@ router.post('/', async (req, res) => {
                       if (client) {
                         const capitalCities = (cfg.capital_cities || '').split(',').map(c => c.trim());
                         let qrKey;
-                        const fee = parseFloat(client.fee);
-                        if (fee === parseFloat(cfg.capital_fee)) qrKey = 'qr_300';
-                        else if (fee === parseFloat(cfg.special_fee)) qrKey = 'qr_150';
-                        else if (fee === parseFloat(cfg.default_fee)) qrKey = 'qr_250';
+                        const fee = parseInt(client.fee);
+                        if (fee === parseInt(cfg.capital_fee)) qrKey = 'qr_300';
+                        else if (fee === parseInt(cfg.special_fee)) qrKey = 'qr_150';
+                        else if (fee === parseInt(cfg.default_fee)) qrKey = 'qr_250';
                         else qrKey = 'qr_generico';
 
                         const { getFile } = require('../services/storage');
@@ -285,7 +286,7 @@ router.post('/', async (req, res) => {
                         // Find best match: amount matches fee, or closest upcoming appointment
                         let bestMatch = pendingPayments[0];
                         for (const pp of pendingPayments) {
-                          if (parseFloat(pp.fee) === ocrResult.amount || parseFloat(pp.amount) === ocrResult.amount) {
+                          if (parseInt(pp.fee) === ocrResult.amount || parseInt(pp.amount) === ocrResult.amount) {
                             bestMatch = pp;
                             break;
                           }
@@ -300,7 +301,7 @@ router.post('/', async (req, res) => {
                         }
 
                         // 2. Monto: OCR amount must match client fee or payment amount
-                        const expectedAmount = parseFloat(bestMatch.fee) || parseFloat(bestMatch.amount);
+                        const expectedAmount = parseInt(bestMatch.fee) || parseInt(bestMatch.amount);
                         if (expectedAmount && ocrResult.amount !== expectedAmount) {
                           problems.push(`monto (esperado Bs ${expectedAmount}, recibido Bs ${ocrResult.amount})`);
                         }

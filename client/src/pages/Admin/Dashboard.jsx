@@ -147,8 +147,13 @@ export default function Dashboard() {
   const mismatches = payments.filter((payment) => payment.status === 'Mismatch');
   const pendingPayments = payments.filter((payment) => payment.status === 'Pendiente');
   const atRiskClients = clients
-    .filter((client) => ['En pausa', 'Inactivo'].includes(client.calculated_status))
+    .filter((client) => ['En riesgo', 'Perdido'].includes(client.retention_status))
+    .sort((a, b) => (b.days_since_last_session || 0) - (a.days_since_last_session || 0))
     .slice(0, 4);
+  const clientsWithNext = clients.filter((client) => client.retention_status === 'Con cita').length;
+  const healthyClients = clients.filter((client) => client.retention_status === 'Al día').length;
+  const lostClients = clients.filter((client) => client.retention_status === 'Perdido').length;
+  const riskClients = clients.filter((client) => client.retention_status === 'En riesgo').length;
   const inboxThreads = conversations.slice(0, 3);
   const projectedIncome = (Number(stats?.income_this_month) || 0) + pendingPayments.reduce((sum, payment) => sum + Number(payment.amount || 0), 0);
   const todayConfirmedRevenue = todayAppts
@@ -170,7 +175,7 @@ export default function Dashboard() {
     },
     atRiskClients[0] && {
       title: 'Paciente en riesgo',
-      detail: `${atRiskClients[0].first_name} ${atRiskClients[0].last_name} • ${formatClientStatus(atRiskClients[0].calculated_status)}`,
+      detail: `${atRiskClients[0].first_name} ${atRiskClients[0].last_name} • ${atRiskClients[0].retention_status} • ${atRiskClients[0].days_since_last_session || 0} días`,
       tone: 'sky',
     },
   ].filter(Boolean);
@@ -178,7 +183,7 @@ export default function Dashboard() {
   const priorityStrip = [
     { label: 'Sin confirmar', value: String(needsConfirmation), tone: 'amber' },
     { label: 'Mismatch', value: String(mismatches.length), tone: 'rose' },
-    { label: 'Seguimiento', value: String(atRiskClients.length), tone: 'sky' },
+    { label: 'En riesgo', value: String(riskClients), tone: 'sky' },
   ];
 
   return (
@@ -340,10 +345,10 @@ export default function Dashboard() {
               >
                 <div className="divide-y divide-slate-200/70 px-6">
                   {[
-                    { label: 'Nuevos', value: stats?.new_clients_30d ?? 0, sub: 'captados últimos 30 días' },
-                    { label: 'Activos', value: clients.filter((client) => client.calculated_status === 'Activo').length, sub: 'con continuidad saludable' },
-                    { label: 'En riesgo', value: clients.filter((client) => ['En pausa', 'Inactivo'].includes(client.calculated_status)).length, sub: 'requieren seguimiento' },
-                    { label: 'Recurrentes', value: clients.filter((client) => client.calculated_status === 'Recurrente').length, sub: 'base premium del consultorio' },
+                    { label: 'Con cita', value: clientsWithNext, sub: 'ya tienen próxima sesión reservada' },
+                    { label: 'Al día', value: healthyClients, sub: 'aún están dentro de su ventana normal' },
+                    { label: 'En riesgo', value: riskClients, sub: 'se están saliendo de su cadencia' },
+                    { label: 'Perdidos', value: lostClients, sub: 'sin retorno dentro del umbral' },
                   ].map((item) => (
                     <div key={item.label} className="flex items-center justify-between py-4">
                       <div>

@@ -19,6 +19,13 @@ const ALL_CITIES = [
   'Sucre', 'Oruro', 'Potosí', 'Tarija', 'Cobija', 'El Alto',
 ];
 
+const DEFAULT_RETENTION_RULES = {
+  Semanal: { risk_days: 10, lost_days: 21 },
+  Quincenal: { risk_days: 21, lost_days: 35 },
+  Mensual: { risk_days: 45, lost_days: 75 },
+  Irregular: { risk_days: 30, lost_days: 60 },
+};
+
 function generateTimeOptions() {
   const opts = [];
   for (let h = 6; h <= 22; h++) {
@@ -49,6 +56,41 @@ function formatRuntimeDate(value) {
   } catch {
     return value;
   }
+}
+
+function normalizeRetentionRules(rawRules) {
+  let parsed = rawRules;
+  if (typeof parsed === 'string') {
+    try {
+      parsed = JSON.parse(parsed);
+    } catch {
+      parsed = null;
+    }
+  }
+
+  const normalized = {};
+  for (const [frequency, defaults] of Object.entries(DEFAULT_RETENTION_RULES)) {
+    const source = parsed?.[frequency] || {};
+    const riskDays = Math.max(1, parseInt(source.risk_days, 10) || defaults.risk_days);
+    const lostDays = Math.max(riskDays + 1, parseInt(source.lost_days, 10) || defaults.lost_days);
+    normalized[frequency] = { risk_days: riskDays, lost_days: lostDays };
+  }
+  return normalized;
+}
+
+function normalizeConfigPayload(data) {
+  const hours = typeof data.available_hours === 'string'
+    ? JSON.parse(data.available_hours) : (data.available_hours || {});
+  const days = typeof data.available_days === 'string'
+    ? JSON.parse(data.available_days) : (data.available_days || []);
+  const capitalCities = (data.capital_cities || '').split(',').map(c => c.trim()).filter(Boolean);
+  return {
+    ...data,
+    _availableHours: hours,
+    _availableDays: days,
+    _capitalCities: capitalCities,
+    _retentionRules: normalizeRetentionRules(data.retention_rules),
+  };
 }
 
 // Convert individual hours array → time range blocks
@@ -97,10 +139,9 @@ export default function Config() {
   useEffect(() => {
     api.get('/config')
       .then(data => {
-        const hours = typeof data.available_hours === 'string'
-          ? JSON.parse(data.available_hours) : (data.available_hours || {});
-        const days = typeof data.available_days === 'string'
-          ? JSON.parse(data.available_days) : (data.available_days || []);
+        const normalized = normalizeConfigPayload(data);
+        const hours = normalized._availableHours;
+        const days = normalized._availableDays;
 
         const avail = {};
         for (const day of DAYS) {
@@ -111,9 +152,7 @@ export default function Config() {
           };
         }
         setAvailability(avail);
-
-        const capitalCities = (data.capital_cities || '').split(',').map(c => c.trim()).filter(Boolean);
-        setConfig({ ...data, _capitalCities: capitalCities });
+        setConfig(normalized);
       })
       .catch(err => console.error(err))
       .finally(() => setLoading(false));
@@ -242,6 +281,19 @@ export default function Config() {
     });
   }
 
+  function updateRetentionRule(frequency, field, value) {
+    setConfig(prev => ({
+      ...prev,
+      _retentionRules: {
+        ...prev._retentionRules,
+        [frequency]: {
+          ...prev._retentionRules[frequency],
+          [field]: Math.max(1, parseInt(value, 10) || 1),
+        },
+      },
+    }));
+  }
+
   async function handleSave() {
     setSaving(true);
     try {
@@ -275,9 +327,10 @@ export default function Config() {
         reminder_time: config.reminder_time || '18:40',
         payment_reminder_enabled: config.payment_reminder_enabled ? 1 : 0,
         payment_reminder_hours: config.payment_reminder_hours || 2,
+        retention_rules: normalizeRetentionRules(config._retentionRules),
       });
       const updated = await api.get('/config');
-      setConfig(prev => ({ ...prev, ...updated }));
+      setConfig(normalizeConfigPayload(updated));
       showToast('Configuración guardada');
     } catch (err) {
       showToast('Error: ' + err.message, 'error');
@@ -806,7 +859,55 @@ export default function Config() {
           </div>
         </div>
 
-        {/* SECTION 4: QR de pago */}
+        <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
+          <h3 className="text-lg font-semibold mb-1">Retención y churn</h3>
+          <p className="text-sm text-gray-400 mb-5">Estos rangos se usan cuando el cliente no tiene próxima cita agendada. Sirven para marcar quién está al día, en riesgo o perdido según su frecuencia.</p>
+
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-gray-100 text-xs uppercase tracking-wide text-gray-500">
+                  <th className="py-2 text-left font-medium">Frecuencia</th>
+                  <th className="py-2 text-left font-medium">En riesgo desde</th>
+                  <th className="py-2 text-left font-medium">Perdido desde</th>
+                </tr>
+              </thead>
+              <tbody>
+                {Object.entries(config?._retentionRules || DEFAULT_RETENTION_RULES).map(([frequency, rules]) => (
+                  <tr key={frequency} className="border-b border-gray-50 last:border-b-0">
+                    <td className="py-3 font-medium text-slate-700">{frequency}</td>
+                    <td className="py-3">
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="number"
+                          min={1}
+                          value={rules.risk_days}
+                          onChange={e => updateRetentionRule(frequency, 'risk_days', e.target.value)}
+                          className="w-20 px-3 py-2 border border-gray-200 rounded-lg text-sm"
+                        />
+                        <span className="text-gray-400">días</span>
+                      </div>
+                    </td>
+                    <td className="py-3">
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="number"
+                          min={2}
+                          value={rules.lost_days}
+                          onChange={e => updateRetentionRule(frequency, 'lost_days', e.target.value)}
+                          className="w-20 px-3 py-2 border border-gray-200 rounded-lg text-sm"
+                        />
+                        <span className="text-gray-400">días</span>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        {/* SECTION 5: QR de pago */}
         <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
           <h3 className="text-lg font-semibold mb-1">QR de pago</h3>
           <p className="text-sm text-gray-400 mb-5">Sube QR para cada categoría de arancel.</p>

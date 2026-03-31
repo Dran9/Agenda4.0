@@ -1,6 +1,7 @@
 const { Router } = require('express');
 const { pool } = require('../db');
 const { authMiddleware } = require('../middleware/auth');
+const { calculateRetentionStatus } = require('../services/retention');
 
 const router = Router();
 
@@ -19,6 +20,8 @@ router.get('/', authMiddleware, async (req, res) => {
       [popularHours],
       [clientsByStatus],
       [recentActivity],
+      [configRows],
+      [retentionClients],
     ] = await Promise.all([
       // Totals
       pool.query(`
@@ -110,7 +113,34 @@ router.get('/', authMiddleware, async (req, res) => {
         WHERE a.tenant_id = ?
         ORDER BY a.created_at DESC LIMIT 10
       `, [t]),
+
+      pool.query(`SELECT retention_rules FROM config WHERE tenant_id = ? LIMIT 1`, [t]),
+
+      pool.query(`
+        SELECT c.id, c.frequency,
+          (SELECT COUNT(*) FROM appointments WHERE client_id = c.id AND tenant_id = ? AND status = 'Completada') as completed_sessions,
+          (SELECT MAX(date_time) FROM appointments WHERE client_id = c.id AND tenant_id = ? AND status = 'Completada') as last_session,
+          (SELECT MIN(date_time) FROM appointments WHERE client_id = c.id AND tenant_id = ? AND status IN ('Agendada','Confirmada') AND date_time > NOW()) as next_session
+        FROM clients c
+        WHERE c.tenant_id = ? AND c.deleted_at IS NULL
+      `, [t, t, t, t]),
     ]);
+
+    const retentionDistribution = { nuevo: 0, con_cita: 0, al_dia: 0, en_riesgo: 0, perdido: 0 };
+    for (const client of retentionClients) {
+      const retention = calculateRetentionStatus({
+        frequency: client.frequency,
+        completedSessions: client.completed_sessions,
+        lastSession: client.last_session,
+        nextAppointment: client.next_session,
+        rules: configRows[0]?.retention_rules || null,
+      });
+      if (retention.status === 'Nuevo') retentionDistribution.nuevo++;
+      else if (retention.status === 'Con cita') retentionDistribution.con_cita++;
+      else if (retention.status === 'Al día') retentionDistribution.al_dia++;
+      else if (retention.status === 'En riesgo') retentionDistribution.en_riesgo++;
+      else if (retention.status === 'Perdido') retentionDistribution.perdido++;
+    }
 
     res.json({
       totals: totals[0],
@@ -120,6 +150,7 @@ router.get('/', authMiddleware, async (req, res) => {
       clients_by_source: clientsBySource,
       popular_hours: popularHours,
       client_status_distribution: clientsByStatus[0] || {},
+      retention_distribution: retentionDistribution,
       recent_activity: recentActivity,
     });
   } catch (err) {

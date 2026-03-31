@@ -31,6 +31,14 @@ function statusStyle(color) {
   };
 }
 
+function retentionStyle(status) {
+  if (status === 'Con cita') return { backgroundColor: '#DBEAFE', color: '#1D4ED8' };
+  if (status === 'Al día') return { backgroundColor: '#D1FAE5', color: '#047857' };
+  if (status === 'En riesgo') return { backgroundColor: '#FEF3C7', color: '#B45309' };
+  if (status === 'Perdido') return { backgroundColor: '#FEE2E2', color: '#B91C1C' };
+  return { backgroundColor: '#E5E7EB', color: '#4B5563' };
+}
+
 export default function Clients() {
   const [clients, setClients] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -230,6 +238,7 @@ export default function Clients() {
                 <th className="text-left p-3 font-medium">País</th>
                 <th className="text-left p-3 font-medium">Zona horaria</th>
                 <th className="text-left p-3 font-medium">Status</th>
+                <th className="text-left p-3 font-medium">Retención</th>
                 <th className="text-left p-3 font-medium">Sesiones</th>
                 <th className="text-left p-3 font-medium">Arancel</th>
                 <th className="text-left p-3 font-medium">Fuente</th>
@@ -274,6 +283,21 @@ export default function Clients() {
                       ))}
                     </select>
                   </td>
+                  <td className="p-3">
+                    <div className="flex flex-col gap-1">
+                      <span
+                        className="inline-flex w-fit rounded-full px-2.5 py-1 text-xs font-semibold"
+                        style={retentionStyle(client.retention_status)}
+                      >
+                        {client.retention_status || 'Sin dato'}
+                      </span>
+                      <span className="text-[11px] text-gray-400">
+                        {client.days_since_last_session != null
+                          ? `${client.days_since_last_session} día${client.days_since_last_session === 1 ? '' : 's'} desde última sesión`
+                          : 'Sin sesiones completadas'}
+                      </span>
+                    </div>
+                  </td>
                   <td className="p-3 text-center">{client.completed_sessions || 0}</td>
                   <td className="p-3">
                     <input
@@ -307,7 +331,7 @@ export default function Clients() {
                 </tr>
               ))}
               {filtered.length === 0 && (
-                <tr><td colSpan={12} className="p-8 text-center text-gray-400">Sin resultados</td></tr>
+                <tr><td colSpan={13} className="p-8 text-center text-gray-400">Sin resultados</td></tr>
               )}
             </tbody>
           </table>

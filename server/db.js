@@ -143,6 +143,7 @@ async function initializeDatabase() {
         rate_limit_window INT DEFAULT 15,
         custom_statuses JSON,
         custom_sources JSON,
+        retention_rules JSON,
         reminder_time VARCHAR(5) DEFAULT '18:40',
         reminder_enabled BOOLEAN DEFAULT TRUE,
         payment_reminder_enabled BOOLEAN DEFAULT FALSE,
@@ -292,6 +293,7 @@ async function initializeDatabase() {
 
     // Schema migrations (safe to re-run)
     await conn.query(`ALTER TABLE config ADD COLUMN IF NOT EXISTS monthly_goal INT DEFAULT NULL`).catch(() => {});
+    await conn.query(`ALTER TABLE config ADD COLUMN IF NOT EXISTS retention_rules JSON`).catch(() => {});
     await conn.query(`ALTER TABLE config ADD COLUMN IF NOT EXISTS payment_reminder_enabled BOOLEAN DEFAULT FALSE`).catch(() => {});
     await conn.query(`ALTER TABLE config ADD COLUMN IF NOT EXISTS payment_reminder_hours INT DEFAULT 2`).catch(() => {});
     await conn.query(`ALTER TABLE appointments MODIFY COLUMN status ENUM('Agendada','Confirmada','Reagendada','Cancelada','Completada','No-show') DEFAULT 'Agendada'`).catch(() => {});

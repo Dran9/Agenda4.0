@@ -2,6 +2,7 @@ const { Router } = require('express');
 const { pool } = require('../db');
 const { authMiddleware } = require('../middleware/auth');
 const { validate, clientSchema } = require('../middleware/validate');
+const { calculateRetentionStatus } = require('../services/retention');
 
 const router = Router();
 
@@ -26,25 +27,37 @@ router.get('/', authMiddleware, async (req, res) => {
   try {
     const [clients] = await pool.query(
       `SELECT c.*,
-        (SELECT COUNT(*) FROM appointments WHERE client_id = c.id AND status = 'Completada') as completed_sessions,
-        (SELECT MAX(date_time) FROM appointments WHERE client_id = c.id AND status = 'Completada') as last_session,
-        (SELECT MIN(date_time) FROM appointments WHERE client_id = c.id AND status = 'Completada') as first_session,
-        (SELECT COUNT(*) FROM appointments WHERE client_id = c.id) as total_appointments,
-        (SELECT COUNT(*) FROM appointments WHERE client_id = c.id AND status = 'Reagendada') as reschedule_count
+        (SELECT COUNT(*) FROM appointments WHERE client_id = c.id AND tenant_id = ? AND status = 'Completada') as completed_sessions,
+        (SELECT MAX(date_time) FROM appointments WHERE client_id = c.id AND tenant_id = ? AND status = 'Completada') as last_session,
+        (SELECT MIN(date_time) FROM appointments WHERE client_id = c.id AND tenant_id = ? AND status = 'Completada') as first_session,
+        (SELECT MIN(date_time) FROM appointments WHERE client_id = c.id AND tenant_id = ? AND status IN ('Agendada','Confirmada') AND date_time > NOW()) as next_session,
+        (SELECT COUNT(*) FROM appointments WHERE client_id = c.id AND tenant_id = ?) as total_appointments,
+        (SELECT COUNT(*) FROM appointments WHERE client_id = c.id AND tenant_id = ? AND status = 'Reagendada') as reschedule_count
        FROM clients c WHERE c.tenant_id = ? AND c.deleted_at IS NULL
        ORDER BY c.created_at DESC`,
-      [req.tenantId]
+      [req.tenantId, req.tenantId, req.tenantId, req.tenantId, req.tenantId, req.tenantId, req.tenantId]
     );
 
-    // Calculate status and future appointment for each
+    const [cfgRows] = await pool.query('SELECT retention_rules FROM config WHERE tenant_id = ? LIMIT 1', [req.tenantId]);
+    const retentionRules = cfgRows[0]?.retention_rules || null;
+
+    // Calculate status and retention for each
     for (const client of clients) {
-      const [futureAppts] = await pool.query(
-        `SELECT id, date_time FROM appointments WHERE client_id = ? AND status IN ('Agendada','Confirmada') AND date_time > NOW() LIMIT 1`,
-        [client.id]
-      );
+      const futureAppt = client.next_session ? { date_time: client.next_session } : null;
       const lastAppt = client.last_session ? { date_time: client.last_session } : null;
-      client.calculated_status = calculateStatus(client, lastAppt, futureAppts[0], client.completed_sessions);
-      client.next_appointment = futureAppts[0] || null;
+      client.calculated_status = calculateStatus(client, lastAppt, futureAppt, client.completed_sessions);
+      client.next_appointment = futureAppt || null;
+
+      const retention = calculateRetentionStatus({
+        frequency: client.frequency,
+        completedSessions: client.completed_sessions,
+        lastSession: client.last_session,
+        nextAppointment: client.next_session,
+        rules: retentionRules,
+      });
+      client.retention_status = retention.status;
+      client.days_since_last_session = retention.days_since_last_session;
+      client.retention_thresholds = retention.thresholds;
     }
 
     res.json(clients);

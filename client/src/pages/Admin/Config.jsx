@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { ChevronDown, ChevronRight, Plus, X } from 'lucide-react';
+import { Copy, Plus, Trash2, X } from 'lucide-react';
 import AdminLayout from '../../components/AdminLayout';
 import { api } from '../../utils/api';
 import { useToast, Toast } from '../../hooks/useToast.jsx';
@@ -91,7 +91,7 @@ export default function Config() {
   const [saving, setSaving] = useState(false);
   const { toast, show: showToast } = useToast();
   const [availability, setAvailability] = useState({});
-  const [expandedDay, setExpandedDay] = useState(null);
+  const [copyPopoverDay, setCopyPopoverDay] = useState(null);
   const [copyTo, setCopyTo] = useState({});
 
   useEffect(() => {
@@ -119,6 +119,18 @@ export default function Config() {
       .finally(() => setLoading(false));
   }, []);
 
+  useEffect(() => {
+    if (!copyPopoverDay) return;
+    function handleClickOutside(event) {
+      if (!event.target.closest('[data-copy-popover-root]')) {
+        setCopyPopoverDay(null);
+        setCopyTo({});
+      }
+    }
+    document.addEventListener('click', handleClickOutside);
+    return () => document.removeEventListener('click', handleClickOutside);
+  }, [copyPopoverDay]);
+
   function updateAvailability(dayKey, update) {
     setAvailability(prev => ({
       ...prev,
@@ -136,8 +148,19 @@ export default function Config() {
       }
       return next;
     });
-    if (expandedDay === 'sabado' || expandedDay === 'domingo') setExpandedDay(null);
     showToast('Calendario público ajustado a lunes-viernes');
+  }
+
+  function toggleDay(dayKey, enabled) {
+    const currentBlocks = availability[dayKey]?.blocks || [];
+    if (enabled && currentBlocks.length === 0) {
+      updateAvailability(dayKey, {
+        enabled: true,
+        blocks: [{ start: '08:00', end: '13:00' }, { start: '15:00', end: '20:00' }],
+      });
+      return;
+    }
+    updateAvailability(dayKey, { enabled });
   }
 
   function addBlock(dayKey) {
@@ -163,6 +186,31 @@ export default function Config() {
     updateAvailability(dayKey, { blocks });
   }
 
+  function clearDay(dayKey) {
+    updateAvailability(dayKey, { enabled: false, blocks: [] });
+    if (copyPopoverDay === dayKey) {
+      setCopyPopoverDay(null);
+      setCopyTo({});
+    }
+  }
+
+  function openCopyPopover(dayKey) {
+    setCopyPopoverDay(curr => curr === dayKey ? null : dayKey);
+    setCopyTo({});
+  }
+
+  function toggleCopyTarget(dayKey, checked) {
+    setCopyTo(prev => ({ ...prev, [dayKey]: checked }));
+  }
+
+  function toggleCopyAll(fromDayKey, checked) {
+    const next = {};
+    for (const day of DAYS) {
+      if (day.key !== fromDayKey) next[day.key] = checked;
+    }
+    setCopyTo(next);
+  }
+
   function handleCopy(fromDayKey) {
     const fromBlocks = availability[fromDayKey]?.blocks || [];
     const targets = Object.entries(copyTo).filter(([k, v]) => v && k !== fromDayKey).map(([k]) => k);
@@ -178,6 +226,7 @@ export default function Config() {
     }
     setAvailability(updated);
     setCopyTo({});
+    setCopyPopoverDay(null);
 
     const names = targets.map(k => DAYS.find(d => d.key === k)?.short).join(', ');
     showToast(`Horario copiado a ${names}`);
@@ -255,144 +304,194 @@ export default function Config() {
   return (
     <AdminLayout title="Configuración">
       <Toast toast={toast} />
-      <div className="max-w-2xl space-y-6">
+      <div className="max-w-6xl space-y-6">
         <p className="text-sm text-gray-500 -mt-2">Disponibilidad, aranceles y preferencias</p>
 
         {/* SECTION 1: Weekly Availability */}
-        <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
-          <h3 className="text-lg font-semibold mb-1">Disponibilidad semanal</h3>
-          <p className="text-sm text-gray-400 mb-5">Configura tus horarios por día. Usa "Copiar a" para replicar.</p>
-
-          <div className="flex flex-wrap gap-2 mb-4">
-            <button
-              type="button"
-              onClick={applyWeekdaysOnly}
-              className="px-3 py-1.5 rounded-lg bg-sky-50 text-sky-700 text-sm font-medium hover:bg-sky-100 transition-colors"
-            >
-              Solo lunes a viernes
-            </button>
-            <span className="text-xs text-gray-400 self-center">El calendario público mostrará exactamente los días activados aquí.</span>
+        <div className="bg-white rounded-[28px] p-6 lg:p-8 shadow-[0_18px_40px_rgba(15,23,42,0.06)] border border-slate-200">
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between mb-6">
+            <div>
+              <h3 className="text-xl font-semibold text-slate-950 mb-1">Disponibilidad semanal</h3>
+              <p className="text-sm text-slate-500">Configura tus bloques por día y copia horarios sin abrir paneles extra.</p>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={applyWeekdaysOnly}
+                className="px-3.5 py-2 rounded-xl bg-[#D9E48B] text-slate-900 text-sm font-medium hover:bg-[#cdd97d] transition-colors"
+              >
+                Solo lunes a viernes
+              </button>
+              <span className="text-xs text-slate-400">El calendario público seguirá exactamente estos días.</span>
+            </div>
           </div>
 
-          <div className="space-y-3">
+          <div className="space-y-4">
             {DAYS.map(day => {
               const dayAvail = availability[day.key] || { enabled: false, blocks: [] };
-              const isExpanded = expandedDay === day.key;
               const blockCount = dayAvail.blocks?.length || 0;
+              const allTargetsSelected = DAYS.filter(d => d.key !== day.key).every(d => copyTo[d.key]);
 
               return (
                 <div
                   key={day.key}
-                  className={`border rounded-xl overflow-hidden ${dayAvail.enabled ? 'border-gray-200' : 'border-gray-100 opacity-50'}`}
+                  className={`rounded-[24px] border transition-all ${
+                    dayAvail.enabled
+                      ? 'border-[#CFE8E9] bg-white shadow-[0_10px_24px_rgba(15,23,42,0.04)]'
+                      : 'border-slate-200 bg-slate-50/60'
+                  }`}
                 >
-                  <div
-                    className="flex items-center justify-between px-4 py-3 bg-gray-50 cursor-pointer"
-                    onClick={() => {
-                      if (!dayAvail.enabled) return;
-                      const next = isExpanded ? null : day.key;
-                      setExpandedDay(next);
-                      setCopyTo({});
-                    }}
-                  >
-                    <div className="flex items-center gap-3">
-                      <input
-                        type="checkbox"
-                        checked={dayAvail.enabled}
-                        onChange={e => {
-                          e.stopPropagation();
-                          const nowEnabled = e.target.checked;
-                          if (nowEnabled && blockCount === 0) {
-                            updateAvailability(day.key, {
-                              enabled: true,
-                              blocks: [{ start: '08:00', end: '13:00' }, { start: '15:00', end: '20:00' }],
-                            });
-                            setExpandedDay(day.key);
-                          } else {
-                            updateAvailability(day.key, { enabled: nowEnabled });
-                          }
-                        }}
-                        className="w-4 h-4 accent-black rounded"
-                        onClick={e => e.stopPropagation()}
-                      />
-                      <span className="font-medium text-sm">{day.label}</span>
-                      {dayAvail.enabled && blockCount > 0 && (
-                        <span className="text-xs text-gray-400">
-                          {blockCount} bloque{blockCount !== 1 ? 's' : ''}
-                        </span>
-                      )}
-                    </div>
-                    {dayAvail.enabled && (
-                      isExpanded
-                        ? <ChevronDown size={16} className="text-gray-400" />
-                        : <ChevronRight size={16} className="text-gray-400" />
-                    )}
-                  </div>
-
-                  {isExpanded && dayAvail.enabled && (
-                    <div className="px-4 py-4 space-y-3 border-t border-gray-100">
-                      {dayAvail.blocks.map((block, idx) => (
-                        <div key={idx} className="flex items-center gap-2">
-                          <select
-                            value={block.start}
-                            onChange={e => updateBlock(day.key, idx, 'start', e.target.value)}
-                            className="px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white"
-                          >
-                            {TIME_OPTIONS.map(t => <option key={t} value={t}>{t}</option>)}
-                          </select>
-                          <span className="text-gray-400 text-sm">a</span>
-                          <select
-                            value={block.end}
-                            onChange={e => updateBlock(day.key, idx, 'end', e.target.value)}
-                            className="px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white"
-                          >
-                            {TIME_OPTIONS.map(t => <option key={t} value={t}>{t}</option>)}
-                          </select>
-                          <button
-                            type="button"
-                            onClick={() => removeBlock(day.key, idx)}
-                            className="text-gray-300 hover:text-red-400 ml-1"
-                            title="Eliminar bloque"
-                          >
-                            <X size={16} />
-                          </button>
-                        </div>
-                      ))}
-
+                  <div className="flex flex-col gap-4 p-4 lg:flex-row lg:items-start lg:justify-between lg:p-5">
+                    <div className="flex items-center gap-4 min-w-[180px]">
                       <button
                         type="button"
-                        onClick={() => addBlock(day.key)}
-                        className="text-sm text-gray-500 hover:text-black flex items-center gap-1"
+                        onClick={() => toggleDay(day.key, !dayAvail.enabled)}
+                        className={`relative inline-flex h-11 w-20 items-center rounded-full transition-colors ${
+                          dayAvail.enabled ? 'bg-[#618BBF]' : 'bg-slate-200'
+                        }`}
+                        aria-pressed={dayAvail.enabled}
                       >
-                        <Plus size={14} />
-                        Agregar bloque
+                        <span
+                          className={`inline-block h-9 w-9 transform rounded-full bg-white shadow-[0_6px_18px_rgba(15,23,42,0.18)] transition-transform ${
+                            dayAvail.enabled ? 'translate-x-10' : 'translate-x-1'
+                          }`}
+                        />
                       </button>
-
-                      <div className="mt-3 pt-3 border-t border-gray-100">
-                        <div className="text-xs text-gray-400 mb-2">Copiar esta configuración a:</div>
-                        <div className="flex flex-wrap gap-2">
-                          {DAYS.filter(d => d.key !== day.key).map(d => (
-                            <label key={d.key} className="flex items-center gap-1.5 text-sm text-gray-600 cursor-pointer">
-                              <input
-                                type="checkbox"
-                                checked={copyTo[d.key] || false}
-                                onChange={e => setCopyTo(prev => ({ ...prev, [d.key]: e.target.checked }))}
-                                className="w-3.5 h-3.5 accent-black rounded"
-                              />
-                              {d.short}
-                            </label>
-                          ))}
+                      <div>
+                        <div className="text-[28px] leading-none font-medium tracking-tight text-slate-800">{day.label}</div>
+                        <div className="mt-1 text-xs text-slate-400">
+                          {dayAvail.enabled ? `${blockCount} bloque${blockCount !== 1 ? 's' : ''}` : 'No disponible'}
                         </div>
-                        <button
-                          type="button"
-                          onClick={() => handleCopy(day.key)}
-                          disabled={!Object.values(copyTo).some(Boolean)}
-                          className="mt-2 text-xs bg-gray-900 text-white px-3 py-1.5 rounded-lg hover:bg-gray-800 disabled:opacity-30"
-                        >
-                          Copiar
-                        </button>
                       </div>
                     </div>
-                  )}
+
+                    <div className="flex-1">
+                      {dayAvail.enabled ? (
+                        <div className="space-y-3">
+                          {dayAvail.blocks.map((block, idx) => (
+                            <div key={idx} className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                              <select
+                                value={block.start}
+                                onChange={e => updateBlock(day.key, idx, 'start', e.target.value)}
+                                className="min-w-[132px] rounded-2xl border border-slate-200 bg-white px-4 py-3 text-2xl font-medium tracking-tight text-slate-800 shadow-[0_8px_18px_rgba(15,23,42,0.05)] outline-none transition focus:border-[#618BBF] focus:ring-2 focus:ring-[#CFE8E9]"
+                              >
+                                {TIME_OPTIONS.map(t => <option key={t} value={t}>{t}</option>)}
+                              </select>
+                              <span className="hidden sm:inline text-xl text-slate-400 px-1">-</span>
+                              <select
+                                value={block.end}
+                                onChange={e => updateBlock(day.key, idx, 'end', e.target.value)}
+                                className="min-w-[132px] rounded-2xl border border-slate-200 bg-white px-4 py-3 text-2xl font-medium tracking-tight text-slate-800 shadow-[0_8px_18px_rgba(15,23,42,0.05)] outline-none transition focus:border-[#618BBF] focus:ring-2 focus:ring-[#CFE8E9]"
+                              >
+                                {TIME_OPTIONS.map(t => <option key={t} value={t}>{t}</option>)}
+                              </select>
+                              <button
+                                type="button"
+                                onClick={() => removeBlock(day.key, idx)}
+                                className="inline-flex h-12 w-12 items-center justify-center rounded-2xl border border-slate-200 bg-white text-slate-400 transition hover:border-red-200 hover:text-red-500"
+                                title="Eliminar bloque"
+                              >
+                                <X size={18} />
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <div className="flex h-full min-h-[72px] items-center rounded-2xl border border-dashed border-slate-200 bg-white/70 px-4 text-sm text-slate-400">
+                          Activa este día para definir tus horas disponibles.
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="flex items-start gap-2" data-copy-popover-root>
+                      <button
+                        type="button"
+                        onClick={() => dayAvail.enabled && addBlock(day.key)}
+                        disabled={!dayAvail.enabled}
+                        className="inline-flex h-12 w-12 items-center justify-center rounded-2xl border border-slate-200 bg-white text-slate-500 transition hover:border-slate-300 hover:text-slate-900 disabled:opacity-40 disabled:cursor-not-allowed"
+                        title="Agregar bloque"
+                      >
+                        <Plus size={20} />
+                      </button>
+                      <div className="relative">
+                        <button
+                          type="button"
+                          data-copy-trigger
+                          onClick={() => dayAvail.enabled && openCopyPopover(day.key)}
+                          disabled={!dayAvail.enabled}
+                          className={`inline-flex h-12 w-12 items-center justify-center rounded-2xl border transition ${
+                            copyPopoverDay === day.key
+                              ? 'border-[#618BBF] bg-[#CFE8E9] text-slate-900 shadow-[0_10px_24px_rgba(97,139,191,0.24)]'
+                              : 'border-slate-200 bg-white text-slate-500 hover:border-slate-300 hover:text-slate-900'
+                          } disabled:opacity-40 disabled:cursor-not-allowed`}
+                          title="Copiar horarios"
+                        >
+                          <Copy size={18} />
+                        </button>
+
+                        {copyPopoverDay === day.key && dayAvail.enabled && (
+                          <div
+                            data-copy-popover
+                            className="absolute right-0 top-[calc(100%+12px)] z-20 w-[320px] rounded-[28px] border border-slate-200 bg-white p-5 shadow-[0_30px_80px_rgba(15,23,42,0.16)]"
+                          >
+                            <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-400 mb-2">Copiar horarios a</div>
+                            <label className="flex items-center gap-3 py-2 text-base text-slate-700">
+                              <input
+                                type="checkbox"
+                                checked={allTargetsSelected}
+                                onChange={e => toggleCopyAll(day.key, e.target.checked)}
+                                className="h-5 w-5 rounded border-slate-300 accent-[#4E769B]"
+                              />
+                              Seleccionar todo
+                            </label>
+                            <div className="mt-2 space-y-2 border-t border-slate-100 pt-3">
+                              <label className="flex items-center gap-3 py-2 text-base text-slate-400">
+                                <input type="checkbox" checked readOnly className="h-5 w-5 rounded border-slate-300 accent-[#4E769B]" />
+                                {day.label}
+                              </label>
+                              {DAYS.filter(d => d.key !== day.key).map(targetDay => (
+                                <label key={targetDay.key} className="flex items-center gap-3 py-2 text-base text-slate-700">
+                                  <input
+                                    type="checkbox"
+                                    checked={copyTo[targetDay.key] || false}
+                                    onChange={e => toggleCopyTarget(targetDay.key, e.target.checked)}
+                                    className="h-5 w-5 rounded border-slate-300 accent-[#4E769B]"
+                                  />
+                                  {targetDay.label}
+                                </label>
+                              ))}
+                            </div>
+                            <div className="mt-4 flex items-center justify-between border-t border-slate-100 pt-4">
+                              <button
+                                type="button"
+                                onClick={() => { setCopyPopoverDay(null); setCopyTo({}); }}
+                                className="px-3 py-2 text-sm font-medium text-slate-500 hover:text-slate-900"
+                              >
+                                Cancelar
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleCopy(day.key)}
+                                disabled={!Object.values(copyTo).some(Boolean)}
+                                className="rounded-2xl bg-[#4E769B] px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-[#618BBF] disabled:cursor-not-allowed disabled:opacity-40"
+                              >
+                                Aplicar
+                              </button>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => clearDay(day.key)}
+                        disabled={!dayAvail.enabled && blockCount === 0}
+                        className="inline-flex h-12 w-12 items-center justify-center rounded-2xl border border-slate-200 bg-white text-slate-500 transition hover:border-red-200 hover:text-red-500 disabled:opacity-40 disabled:cursor-not-allowed"
+                        title="Borrar configuración del día"
+                      >
+                        <Trash2 size={18} />
+                      </button>
+                    </div>
+                  </div>
                 </div>
               );
             })}
@@ -433,8 +532,8 @@ export default function Config() {
                       onClick={() => toggleCity(city)}
                       className={`inline-flex items-center gap-1 px-3 py-1 rounded-full text-[13px] transition-all ${
                         selected
-                          ? 'bg-gray-900 text-white'
-                          : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
+                          ? 'bg-[#D9E48B] text-slate-900'
+                          : 'bg-slate-100 text-slate-500 hover:bg-slate-200'
                       }`}
                     >
                       {city}
@@ -529,7 +628,7 @@ export default function Config() {
             <button
               type="button"
               onClick={() => setConfig(c => ({ ...c, reminder_enabled: c.reminder_enabled ? 0 : 1 }))}
-              className={`relative w-12 h-7 rounded-full transition-colors ${config?.reminder_enabled ? 'bg-gray-900' : 'bg-gray-300'}`}
+              className={`relative w-12 h-7 rounded-full transition-colors ${config?.reminder_enabled ? 'bg-[#4E769B]' : 'bg-slate-300'}`}
             >
               <span className={`absolute top-0.5 left-0.5 w-6 h-6 bg-white rounded-full shadow transition-transform ${config?.reminder_enabled ? 'translate-x-5' : 'translate-x-0'}`} />
             </button>
@@ -567,7 +666,7 @@ export default function Config() {
               <button
                 type="button"
                 onClick={() => setConfig(c => ({ ...c, payment_reminder_enabled: c.payment_reminder_enabled ? 0 : 1 }))}
-                className={`relative w-12 h-7 rounded-full transition-colors ${config?.payment_reminder_enabled ? 'bg-gray-900' : 'bg-gray-300'}`}
+                className={`relative w-12 h-7 rounded-full transition-colors ${config?.payment_reminder_enabled ? 'bg-[#4E769B]' : 'bg-slate-300'}`}
               >
                 <span className={`absolute top-0.5 left-0.5 w-6 h-6 bg-white rounded-full shadow transition-transform ${config?.payment_reminder_enabled ? 'translate-x-5' : 'translate-x-0'}`} />
               </button>
@@ -589,7 +688,7 @@ export default function Config() {
                   <option value={12}>12 horas antes</option>
                 </select>
               </div>
-              <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+              <div className="rounded-xl border border-[#CFE8E9] bg-[#eef7f7] px-4 py-3 text-sm text-[#365673]">
                 Requiere template aprobado en Meta. El backend usará la variable <code>WA_PAYMENT_REMINDER_TEMPLATE</code>.
               </div>
             </div>
@@ -609,10 +708,10 @@ export default function Config() {
                     const statusClass = enabled === false
                       ? 'bg-gray-200 text-gray-600'
                       : enabled === null || enabled === undefined
-                        ? 'bg-sky-100 text-sky-700'
-                        : 'bg-emerald-100 text-emerald-700';
+                        ? 'bg-[#CFE8E9] text-[#4E769B]'
+                        : 'bg-[#D9E48B] text-slate-900';
                     return (
-                      <div key={item.key} className="rounded-xl border border-gray-200 p-4 bg-gray-50">
+                      <div key={item.key} className="rounded-xl border border-gray-200 p-4 bg-white">
                         <div className="flex items-center justify-between gap-2 mb-2">
                           <div className="font-medium text-sm">{item.label}</div>
                           <span className={`text-[11px] px-2 py-1 rounded-full ${statusClass}`}>
@@ -743,7 +842,7 @@ export default function Config() {
             type="button"
             onClick={handleSave}
             disabled={saving}
-            className="px-6 py-3 bg-gray-900 text-white rounded-xl font-medium disabled:opacity-40 hover:bg-gray-800 transition-colors"
+            className="px-6 py-3 bg-[#4E769B] text-white rounded-xl font-semibold disabled:opacity-40 hover:bg-[#618BBF] transition-colors"
           >
             {saving ? 'Guardando...' : 'Guardar configuración'}
           </button>

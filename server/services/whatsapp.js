@@ -79,10 +79,11 @@ async function sendConfirmationTemplate(phone, nombre, fechaISO) {
   return data;
 }
 
-async function sendPaymentReminderTemplate(phone, nombre, fechaISO, amount) {
+async function sendPaymentReminderTemplate(phone, nombre, fechaISO, amount, options = {}) {
   const token = process.env.WA_TOKEN;
   const phoneNumberId = process.env.WA_PHONE_ID;
-  const templateName = process.env.WA_PAYMENT_REMINDER_TEMPLATE || 'recordatorio_pago_pendiente';
+  const templateName = options.templateName || process.env.WA_PAYMENT_REMINDER_TEMPLATE || 'recordatorio_pago_pendiente';
+  const languageCode = options.languageCode || 'es';
 
   const date = parseLaPazDate(fechaISO);
   const firstName = (nombre || '').split(' ')[0] || 'hola';
@@ -95,7 +96,7 @@ async function sendPaymentReminderTemplate(phone, nombre, fechaISO, amount) {
     type: 'template',
     template: {
       name: templateName,
-      language: { code: 'es' },
+      language: { code: languageCode },
       components: [
         {
           type: 'body',

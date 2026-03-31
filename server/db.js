@@ -148,6 +148,10 @@ async function initializeDatabase() {
         reminder_enabled BOOLEAN DEFAULT TRUE,
         payment_reminder_enabled BOOLEAN DEFAULT FALSE,
         payment_reminder_hours INT DEFAULT 2,
+        payment_reminder_template VARCHAR(120),
+        retention_risk_template VARCHAR(120),
+        retention_lost_template VARCHAR(120),
+        whatsapp_template_language VARCHAR(10) DEFAULT 'es',
         auto_reply_confirm TEXT DEFAULT 'Perfecto {{nombre}}, te esperamos el {{dia}} a las {{hora}}',
         auto_reply_reschedule TEXT DEFAULT 'Puedes reagendar tu cita aquí: {{link}}',
         auto_reply_contact TEXT DEFAULT 'Daniel te contactará pronto',
@@ -296,6 +300,10 @@ async function initializeDatabase() {
     await conn.query(`ALTER TABLE config ADD COLUMN IF NOT EXISTS retention_rules JSON`).catch(() => {});
     await conn.query(`ALTER TABLE config ADD COLUMN IF NOT EXISTS payment_reminder_enabled BOOLEAN DEFAULT FALSE`).catch(() => {});
     await conn.query(`ALTER TABLE config ADD COLUMN IF NOT EXISTS payment_reminder_hours INT DEFAULT 2`).catch(() => {});
+    await conn.query(`ALTER TABLE config ADD COLUMN IF NOT EXISTS payment_reminder_template VARCHAR(120)`).catch(() => {});
+    await conn.query(`ALTER TABLE config ADD COLUMN IF NOT EXISTS retention_risk_template VARCHAR(120)`).catch(() => {});
+    await conn.query(`ALTER TABLE config ADD COLUMN IF NOT EXISTS retention_lost_template VARCHAR(120)`).catch(() => {});
+    await conn.query(`ALTER TABLE config ADD COLUMN IF NOT EXISTS whatsapp_template_language VARCHAR(10) DEFAULT 'es'`).catch(() => {});
     await conn.query(`ALTER TABLE appointments MODIFY COLUMN status ENUM('Agendada','Confirmada','Reagendada','Cancelada','Completada','No-show') DEFAULT 'Agendada'`).catch(() => {});
     // wa_conversations: add image/document types + metadata column for OCR data
     await conn.query(`ALTER TABLE wa_conversations MODIFY COLUMN message_type ENUM('text','button_reply','template','auto_reply','image','document') NOT NULL`).catch(() => {});

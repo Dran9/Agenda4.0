@@ -28,6 +28,7 @@ router.put('/', authMiddleware, async (req, res) => {
       'default_fee', 'capital_fee', 'special_fee', 'foreign_fee', 'foreign_currency',
       'capital_cities', 'reminder_time', 'reminder_enabled',
       'payment_reminder_enabled', 'payment_reminder_hours',
+      'payment_reminder_template', 'retention_risk_template', 'retention_lost_template', 'whatsapp_template_language',
       'auto_reply_confirm', 'auto_reply_reschedule', 'auto_reply_contact',
       'qr_url_capital', 'qr_url_provincia', 'qr_url_especial', 'qr_url_generico',
       'rate_limit_booking', 'rate_limit_window',

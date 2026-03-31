@@ -129,7 +129,14 @@ async function checkAndSendReminders({ date, tenantId, force } = {}) {
 async function checkAndSendPaymentReminders({ tenantId = 1, force = false } = {}) {
   try {
     const [cfgRows] = await pool.query(
-      'SELECT payment_reminder_enabled, payment_reminder_hours FROM config WHERE tenant_id = ? LIMIT 1',
+      `SELECT
+         payment_reminder_enabled,
+         payment_reminder_hours,
+         payment_reminder_template,
+         whatsapp_template_language
+       FROM config
+       WHERE tenant_id = ?
+       LIMIT 1`,
       [tenantId]
     );
     const cfg = cfgRows[0];
@@ -189,7 +196,11 @@ async function checkAndSendPaymentReminders({ tenantId = 1, force = false } = {}
           row.phone,
           row.first_name,
           row.date_time,
-          row.amount
+          row.amount,
+          {
+            templateName: cfg.payment_reminder_template || process.env.WA_PAYMENT_REMINDER_TEMPLATE || 'recordatorio_pago_pendiente',
+            languageCode: cfg.whatsapp_template_language || 'es',
+          }
         );
 
         await pool.query(

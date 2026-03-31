@@ -86,6 +86,10 @@ function normalizeConfigPayload(data) {
   const capitalCities = (data.capital_cities || '').split(',').map(c => c.trim()).filter(Boolean);
   return {
     ...data,
+    payment_reminder_template: data.payment_reminder_template || '',
+    retention_risk_template: data.retention_risk_template || '',
+    retention_lost_template: data.retention_lost_template || '',
+    whatsapp_template_language: data.whatsapp_template_language || 'es',
     _availableHours: hours,
     _availableDays: days,
     _capitalCities: capitalCities,
@@ -327,6 +331,10 @@ export default function Config() {
         reminder_time: config.reminder_time || '18:40',
         payment_reminder_enabled: config.payment_reminder_enabled ? 1 : 0,
         payment_reminder_hours: config.payment_reminder_hours || 2,
+        payment_reminder_template: config.payment_reminder_template || '',
+        retention_risk_template: config.retention_risk_template || '',
+        retention_lost_template: config.retention_lost_template || '',
+        whatsapp_template_language: config.whatsapp_template_language || 'es',
         retention_rules: normalizeRetentionRules(config._retentionRules),
       });
       const updated = await api.get('/config');
@@ -742,8 +750,61 @@ export default function Config() {
                 </select>
               </div>
               <div className="rounded-xl border border-[#CFE8E9] bg-[#eef7f7] px-4 py-3 text-sm text-[#365673]">
-                Requiere template aprobado en Meta. El backend usará la variable <code>WA_PAYMENT_REMINDER_TEMPLATE</code>.
+                Requiere template aprobado en Meta. Lo eliges aquí en el panel; si lo dejas vacío, el servidor usa el fallback <code>WA_PAYMENT_REMINDER_TEMPLATE</code>.
               </div>
+            </div>
+
+            <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-xs text-gray-500 mb-1">Template de pago pendiente</label>
+                <input
+                  type="text"
+                  value={config?.payment_reminder_template || ''}
+                  onChange={e => setConfig(c => ({ ...c, payment_reminder_template: e.target.value }))}
+                  disabled={!config?.payment_reminder_enabled}
+                  placeholder="recordatorio_pago_pendiente"
+                  className="w-full px-3 py-2.5 border border-gray-200 rounded-lg text-sm bg-white disabled:bg-gray-50 disabled:text-gray-400"
+                />
+              </div>
+              <div>
+                <label className="block text-xs text-gray-500 mb-1">Código de idioma Meta</label>
+                <input
+                  type="text"
+                  value={config?.whatsapp_template_language || 'es'}
+                  onChange={e => setConfig(c => ({ ...c, whatsapp_template_language: e.target.value }))}
+                  placeholder="es"
+                  className="w-full px-3 py-2.5 border border-gray-200 rounded-lg text-sm bg-white"
+                />
+              </div>
+            </div>
+
+            <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 px-4 py-4">
+              <div className="text-xs font-medium text-gray-500 mb-3 uppercase tracking-wide">Reservado para futuras automatizaciones</div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs text-gray-500 mb-1">Template para clientes en riesgo</label>
+                  <input
+                    type="text"
+                    value={config?.retention_risk_template || ''}
+                    onChange={e => setConfig(c => ({ ...c, retention_risk_template: e.target.value }))}
+                    placeholder="seguimiento_en_riesgo"
+                    className="w-full px-3 py-2.5 border border-gray-200 rounded-lg text-sm bg-white"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs text-gray-500 mb-1">Template para clientes perdidos</label>
+                  <input
+                    type="text"
+                    value={config?.retention_lost_template || ''}
+                    onChange={e => setConfig(c => ({ ...c, retention_lost_template: e.target.value }))}
+                    placeholder="seguimiento_perdido"
+                    className="w-full px-3 py-2.5 border border-gray-200 rounded-lg text-sm bg-white"
+                  />
+                </div>
+              </div>
+              <p className="mt-3 text-xs text-gray-400">
+                Estos nombres se guardan ya en configuración para que, cuando actives automatizaciones de retención, no queden hardcodeados.
+              </p>
             </div>
 
             <div className="mt-5 space-y-3">

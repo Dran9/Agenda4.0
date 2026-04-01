@@ -514,7 +514,7 @@ router.post('/', async (req, res) => {
                         // ─── 3 validations: destinatario, monto, fecha ───
                         const problems = [];
 
-                        // 1. Destinatario: accept only receipts that mention "MacLean" / "Mac Lean"
+                        // 1. Destinatario: destination account must match one of Daniel's valid accounts
                         if (!ocrResult.destVerified) {
                           problems.push({ type: 'destinatario' });
                         }

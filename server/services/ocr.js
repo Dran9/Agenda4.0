@@ -100,13 +100,18 @@ async function extractPdfWithGoogleVision(pdfBuffer, apiKey) {
  * Parse Bolivian bank transfer receipt text
  * Tested with: Mercantil Santa Cruz, BCP, BISA, BancoSol, Banco Ganadero, BNB, Banco Union
  *
- * Daniel's account: 30151182874355 at BCP (Oscar Daniel Mac Lean Estrada)
- * The "destAccount" field shows the recipient account so Daniel can verify
- * the payment was actually sent to HIS account and not someone else's.
+ * Valid destination accounts:
+ * - 6896894011
+ * - 3501136408
  */
 function parseBolivianReceipt(text) {
   const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
   const fullText = text;
+  const VALID_DESTINATION_ACCOUNTS = new Set(['6896894011', '3501136408']);
+
+  function normalizeAccount(value) {
+    return String(value || '').replace(/\D/g, '');
+  }
 
   // ─── Amount (Bs, BOB) ───
   let amount = null;
@@ -199,27 +204,9 @@ function parseBolivianReceipt(text) {
     }
   }
 
-  // ─── Destination verification ───
-  // "Mac Lean" / "MacLean" identifies Daniel as recipient.
-  // We only look near true destination keywords, not free-text "Motivo".
-  // This works across ALL Bolivian banks regardless of format.
-
-  // Collect all text near destination-related keywords
-  let destText = '';
-  const destKeywords = /cuenta\s*(de\s+)?destino|a\s+la\s+cuenta|a\s+nombre\s+de|beneficiario|destinatario|para\b/i;
-  for (let i = 0; i < lines.length; i++) {
-    if (destKeywords.test(lines[i])) {
-      // Grab this line + next 3 lines as context
-      destText += ' ' + lines.slice(i, Math.min(i + 4, lines.length)).join(' ');
-    }
-  }
-
-  // Check if "Mac Lean" or "MacLean" appears in dest context
-  // This surname is unique in Bolivia — works regardless of name order (Oscar Daniel Mac Lean, Mac Lean Estrada Oscar Daniel)
-  const destVerified = /mac\s*lean/i.test(destText);
-
   // Extract the dest name for display (what the receipt says)
   let destName = null;
+  let destAccount = null;
 
   // Pattern 0: BCP-style destination block
   // A la cuenta
@@ -229,6 +216,9 @@ function parseBolivianReceipt(text) {
   const aLaCuentaIdx = lines.findIndex(l => /a\s+la\s+cuenta/i.test(l));
   if (aLaCuentaIdx >= 0) {
     for (let i = aLaCuentaIdx + 1; i < Math.min(aLaCuentaIdx + 6, lines.length); i++) {
+      if (!destAccount && /^\d[\d\s.-]{5,}$/.test(lines[i])) {
+        destAccount = normalizeAccount(lines[i]);
+      }
       if (/a nombre de/i.test(lines[i]) && i + 1 < lines.length) {
         const candidate = lines[i + 1];
         if (
@@ -249,6 +239,10 @@ function parseBolivianReceipt(text) {
     for (let i = destIdx + 1; i < Math.min(destIdx + 5, lines.length); i++) {
       const line = lines[i];
       if (/cuenta\s*(de\s+)?origen|fecha|monto|n[uú]mero|nro|concepto/i.test(line)) break;
+      if (!destAccount && /^\d[\d\s.-]{5,}$/.test(line)) {
+        destAccount = normalizeAccount(line);
+        continue;
+      }
       if (/^[A-ZÁÉÍÓÚÑa-záéíóúñ\s.]{4,}$/.test(line) && !/cuenta|destino|nit|ci\s*\/|banco|credito|solidario|ganadero|mercantil|bisa|bnb/i.test(line) && !/^\d/.test(line)) {
         destName = line;
         break;
@@ -270,6 +264,10 @@ function parseBolivianReceipt(text) {
       destName = lines[aNombreDestIdx + 1];
     }
   }
+
+  // ─── Destination verification ───
+  // Validate against explicit destination account, not recipient name.
+  const destVerified = VALID_DESTINATION_ACCOUNTS.has(destAccount || '');
 
   // ─── Reference / transaction code ───
   let reference = null;
@@ -323,7 +321,7 @@ function parseBolivianReceipt(text) {
     else if (/sol/i.test(fullText)) bank = 'BancoSol';
   }
 
-  console.log(`[ocr] Extracted — name: ${name}, amount: ${amount}, date: ${date}, ref: ${reference}, bank: ${bank}, dest: ${destName}, destVerified: ${destVerified}`);
+  console.log(`[ocr] Extracted — name: ${name}, amount: ${amount}, date: ${date}, ref: ${reference}, bank: ${bank}, dest: ${destName}, destAccount: ${destAccount}, destVerified: ${destVerified}`);
 
   return {
     name: name ? toTitleCase(name) : null,
@@ -332,6 +330,7 @@ function parseBolivianReceipt(text) {
     reference,
     bank,
     destName: destName || null,
+    destAccount: destAccount || null,
     destVerified,
     raw_text: fullText,
   };

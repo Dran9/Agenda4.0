@@ -8,6 +8,14 @@ const { google } = require('googleapis');
 
 const router = Router();
 
+function sanitizeReceiptDate(value) {
+  return value ? String(value).trim().slice(0, 50) : null;
+}
+
+function sanitizeReceiptDestName(value) {
+  return value ? String(value).trim().slice(0, 255) : null;
+}
+
 // GET /api/payments — list payments with filters
 router.get('/', authMiddleware, async (req, res) => {
   try {
@@ -107,8 +115,17 @@ router.post('/:id/receipt', authMiddleware, async (req, res) => {
       ocrResult = await extractReceiptData(imageBuffer, mimeType);
       if (ocrResult) {
         await pool.query(
-          'UPDATE payments SET ocr_extracted_amount = ?, ocr_extracted_ref = ? WHERE id = ? AND tenant_id = ?',
-          [ocrResult.amount, ocrResult.reference, req.params.id, req.tenantId]
+          `UPDATE payments
+           SET ocr_extracted_amount = ?, ocr_extracted_ref = ?, ocr_extracted_date = ?, ocr_extracted_dest_name = ?
+           WHERE id = ? AND tenant_id = ?`,
+          [
+            ocrResult.amount,
+            ocrResult.reference,
+            sanitizeReceiptDate(ocrResult.date),
+            sanitizeReceiptDestName(ocrResult.destName),
+            req.params.id,
+            req.tenantId,
+          ]
         );
       }
     } catch (ocrErr) {
@@ -118,7 +135,14 @@ router.post('/:id/receipt', authMiddleware, async (req, res) => {
     res.json({
       success: true,
       file_key: fileKey,
-      ocr: ocrResult ? { name: ocrResult.name, amount: ocrResult.amount, date: ocrResult.date, reference: ocrResult.reference, bank: ocrResult.bank } : null,
+      ocr: ocrResult ? {
+        name: ocrResult.name,
+        amount: ocrResult.amount,
+        date: ocrResult.date,
+        reference: ocrResult.reference,
+        bank: ocrResult.bank,
+        destName: ocrResult.destName,
+      } : null,
     });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -220,7 +244,14 @@ router.post('/match-receipt', authMiddleware, async (req, res) => {
     }
 
     res.json({
-      ocr: { name: ocrResult.name, amount: ocrResult.amount, date: ocrResult.date, reference: ocrResult.reference, bank: ocrResult.bank },
+      ocr: {
+        name: ocrResult.name,
+        amount: ocrResult.amount,
+        date: ocrResult.date,
+        reference: ocrResult.reference,
+        bank: ocrResult.bank,
+        destName: ocrResult.destName,
+      },
       matched_by: matches.length > 0 ? matchedBy : null,
       matches: matches.map(m => ({
         payment_id: m.id,

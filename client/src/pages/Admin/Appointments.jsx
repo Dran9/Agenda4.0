@@ -1,48 +1,24 @@
 import { useState, useEffect } from 'react';
-import { Trash2, Search, Eye, BellRing, RotateCcw } from 'lucide-react';
+import { Trash2, Search, BellRing, RotateCcw } from 'lucide-react';
 import AdminLayout from '../../components/AdminLayout';
 import { api } from '../../utils/api';
 import { useToast, Toast } from '../../hooks/useToast';
 import { formatDateBolivia, formatTimeBolivia } from '../../utils/dates';
 
-function OcrPopover({ appt }) {
-  const [open, setOpen] = useState(false);
-  const hasOcr = appt.ocr_extracted_amount || appt.ocr_extracted_ref;
-  if (!hasOcr) return null;
+function formatReceiptAmount(amount) {
+  if (amount == null) return '—';
+  return `Bs ${Number(amount).toLocaleString('es-BO')}`;
+}
+
+function ReceiptSummary({ appt }) {
+  const hasOcrSummary = appt.ocr_extracted_amount != null || appt.ocr_extracted_dest_name || appt.ocr_extracted_date;
+  if (!hasOcrSummary) return null;
 
   return (
-    <div className="relative inline-block ml-1">
-      <button
-        type="button"
-        onClick={() => setOpen(!open)}
-        className="text-gray-400 hover:text-gray-600 transition-colors align-middle"
-        title="Ver datos OCR"
-      >
-        <Eye size={13} />
-      </button>
-      {open && (
-        <div className="absolute z-20 top-6 left-0 bg-white border border-gray-200 rounded-lg shadow-lg p-3 text-xs min-w-[200px]">
-          <div className="font-semibold text-gray-700 mb-2">Datos del comprobante</div>
-          {appt.ocr_extracted_amount && (
-            <div className="flex justify-between mb-1">
-              <span className="text-gray-500">Monto:</span>
-              <span className="font-medium">Bs {appt.ocr_extracted_amount}</span>
-            </div>
-          )}
-          {appt.ocr_extracted_ref && (
-            <div className="flex justify-between mb-1">
-              <span className="text-gray-500">Ref:</span>
-              <span className="font-mono text-[11px]">{appt.ocr_extracted_ref}</span>
-            </div>
-          )}
-          {appt.payment_notes && (
-            <div className="mt-1 pt-1 border-t border-gray-100 text-orange-600 font-medium">
-              {appt.payment_notes}
-            </div>
-          )}
-          <button type="button" onClick={() => setOpen(false)} className="mt-2 text-gray-400 hover:text-gray-600 text-[10px]">Cerrar</button>
-        </div>
-      )}
+    <div className="mt-2 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-xs leading-5 text-gray-700">
+      <div><span className="font-medium text-gray-500">Monto:</span> {formatReceiptAmount(appt.ocr_extracted_amount)}</div>
+      <div><span className="font-medium text-gray-500">Destinatario:</span> {appt.ocr_extracted_dest_name || '—'}</div>
+      <div><span className="font-medium text-gray-500">Fecha de abono:</span> {appt.ocr_extracted_date || '—'}</div>
     </div>
   );
 }
@@ -268,7 +244,7 @@ export default function Appointments() {
           <div className="p-8 text-center text-gray-400">Cargando...</div>
         ) : (
           <>
-            <table className="w-full text-sm">
+            <table className="w-full min-w-[1640px] text-sm">
               <thead>
                 <tr className="text-xs text-gray-500 border-b border-gray-100 bg-gray-50">
                   <th className="p-3 w-10">
@@ -279,14 +255,14 @@ export default function Appointments() {
                       className="w-4 h-4 accent-black rounded"
                     />
                   </th>
-                  <th className="text-left p-3 font-medium">Fecha agendada</th>
-                  <th className="text-left p-3 font-medium">Hora</th>
-                  <th className="text-left p-3 font-medium">Cliente</th>
-                  <th className="text-left p-3 font-medium">Teléfono</th>
-                  <th className="text-left p-3 font-medium">Registro</th>
-                  <th className="text-left p-3 font-medium">Status</th>
-                  <th className="text-left p-3 font-medium">Pago</th>
-                  <th className="text-left p-3 font-medium">Reminder</th>
+                  <th className="text-left p-3 font-medium min-w-[150px]">Fecha agendada</th>
+                  <th className="text-left p-3 font-medium min-w-[90px]">Hora</th>
+                  <th className="text-left p-3 font-medium min-w-[220px]">Cliente</th>
+                  <th className="text-left p-3 font-medium min-w-[170px]">Teléfono</th>
+                  <th className="text-left p-3 font-medium min-w-[110px]">Registro</th>
+                  <th className="text-left p-3 font-medium min-w-[150px]">Status</th>
+                  <th className="text-left p-3 font-medium min-w-[340px]">Pago</th>
+                  <th className="text-left p-3 font-medium min-w-[220px]">Reminder</th>
                   <th className="text-left p-3 font-medium w-10"></th>
                 </tr>
               </thead>
@@ -301,16 +277,16 @@ export default function Appointments() {
                         className="w-4 h-4 accent-black rounded"
                       />
                     </td>
-                    <td className="p-3 capitalize">{formatDateBolivia(appt.date_time)}</td>
-                    <td className="p-3 font-medium">{formatTimeBolivia(appt.date_time)}</td>
-                    <td className="p-3">{appt.first_name} {appt.last_name}</td>
-                    <td className="p-3">
+                    <td className="p-3 capitalize whitespace-nowrap">{formatDateBolivia(appt.date_time)}</td>
+                    <td className="p-3 font-medium whitespace-nowrap">{formatTimeBolivia(appt.date_time)}</td>
+                    <td className="p-3 whitespace-nowrap">{appt.first_name} {appt.last_name}</td>
+                    <td className="p-3 whitespace-nowrap">
                       <a href={`https://wa.me/${appt.client_phone}`} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">
                         {appt.client_phone}
                       </a>
                     </td>
-                    <td className="p-3 text-xs text-gray-400">{formatRegistro(appt.created_at)}</td>
-                    <td className="p-3">
+                    <td className="p-3 text-xs text-gray-400 whitespace-nowrap">{formatRegistro(appt.created_at)}</td>
+                    <td className="p-3 align-top">
                       <select
                         value={appt.status}
                         onChange={e => handleStatusChange(appt.id, e.target.value)}
@@ -319,9 +295,9 @@ export default function Appointments() {
                         {STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
                       </select>
                     </td>
-                    <td className="p-3">
+                    <td className="p-3 align-top">
                       {appt.payment_id ? (
-                        <div className="flex items-center">
+                        <div className="max-w-[320px]">
                           <select
                             value={appt.payment_status || 'Pendiente'}
                             onChange={e => handlePaymentChange(appt, e.target.value)}
@@ -329,13 +305,13 @@ export default function Appointments() {
                           >
                             {PAYMENT_STATUSES.map(s => <option key={s} value={s}>{PAYMENT_LABELS[s]}</option>)}
                           </select>
-                          <OcrPopover appt={appt} />
+                          <ReceiptSummary appt={appt} />
                         </div>
                       ) : (
                         <span className="text-xs text-gray-300">—</span>
                       )}
                     </td>
-                    <td className="p-3">
+                    <td className="p-3 align-top">
                       {['Agendada', 'Confirmada', 'Reagendada'].includes(appt.status) ? (
                         <div className="flex items-center gap-1">
                           <button
@@ -361,7 +337,7 @@ export default function Appointments() {
                         <span className="text-xs text-gray-300">—</span>
                       )}
                     </td>
-                    <td className="p-3">
+                    <td className="p-3 align-top">
                       <button
                         type="button"
                         onClick={() => handleDelete(appt.id)}

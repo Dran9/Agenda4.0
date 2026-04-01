@@ -55,7 +55,8 @@ router.get('/', authMiddleware, async (req, res) => {
     const [rows] = await pool.query(
       `SELECT a.*, c.first_name, c.last_name, c.phone as client_phone,
               p.status as payment_status, p.id as payment_id, p.amount as payment_amount,
-              p.ocr_extracted_amount, p.ocr_extracted_ref, p.receipt_file_key, p.notes as payment_notes
+              p.ocr_extracted_amount, p.ocr_extracted_ref, p.ocr_extracted_date, p.ocr_extracted_dest_name,
+              p.receipt_file_key, p.notes as payment_notes
        FROM appointments a
        JOIN clients c ON a.client_id = c.id
        ${PAYMENT_JOIN}
@@ -150,7 +151,8 @@ router.get('/today', authMiddleware, async (req, res) => {
     const [rows] = await pool.query(
       `SELECT a.*, c.first_name, c.last_name, c.phone as client_phone,
               p.status as payment_status, p.id as payment_id, p.amount as payment_amount,
-              p.ocr_extracted_amount, p.ocr_extracted_ref, p.receipt_file_key, p.notes as payment_notes
+              p.ocr_extracted_amount, p.ocr_extracted_ref, p.ocr_extracted_date, p.ocr_extracted_dest_name,
+              p.receipt_file_key, p.notes as payment_notes
        FROM appointments a
        JOIN clients c ON a.client_id = c.id
        ${PAYMENT_JOIN}

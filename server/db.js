@@ -193,6 +193,8 @@ async function initializeDatabase() {
         receipt_file_key VARCHAR(50),
         ocr_extracted_amount INT,
         ocr_extracted_ref VARCHAR(100),
+        ocr_extracted_date VARCHAR(50),
+        ocr_extracted_dest_name VARCHAR(255),
         notes TEXT,
         confirmed_at DATETIME,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -342,6 +344,8 @@ async function initializeDatabase() {
     await conn.query(`ALTER TABLE config MODIFY COLUMN monthly_goal INT DEFAULT NULL`).catch(() => {});
     await conn.query(`ALTER TABLE payments MODIFY COLUMN amount INT NOT NULL`).catch(() => {});
     await conn.query(`ALTER TABLE payments MODIFY COLUMN ocr_extracted_amount INT`).catch(() => {});
+    await conn.query(`ALTER TABLE payments ADD COLUMN IF NOT EXISTS ocr_extracted_date VARCHAR(50)`).catch(() => {});
+    await conn.query(`ALTER TABLE payments ADD COLUMN IF NOT EXISTS ocr_extracted_dest_name VARCHAR(255)`).catch(() => {});
 
     console.log('[DB] All 10 tables initialized');
   } finally {

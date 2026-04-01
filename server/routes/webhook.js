@@ -5,6 +5,64 @@ const { getOperationalContext, classifyIncomingMessage, buildClassificationMetad
 const router = Router();
 const CALENDAR_ID = () => process.env.CALENDAR_ID || process.env.GOOGLE_CALENDAR_ID || 'danielmacleann@gmail.com';
 
+function sanitizeReceiptDate(value) {
+  return value ? String(value).trim().slice(0, 50) : null;
+}
+
+function sanitizeReceiptDestName(value) {
+  return value ? String(value).trim().slice(0, 255) : null;
+}
+
+function parseReceiptDateKey(value) {
+  if (!value) return null;
+  const trimmed = String(value).trim();
+
+  const ddmmyyyy = trimmed.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+  if (ddmmyyyy) return `${ddmmyyyy[3]}-${ddmmyyyy[2]}-${ddmmyyyy[1]}`;
+
+  const yyyymmdd = trimmed.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (yyyymmdd) return `${yyyymmdd[1]}-${yyyymmdd[2]}-${yyyymmdd[3]}`;
+
+  const ddmmyyyyDash = trimmed.match(/^(\d{2})-(\d{2})-(\d{4})$/);
+  if (ddmmyyyyDash) return `${ddmmyyyyDash[3]}-${ddmmyyyyDash[2]}-${ddmmyyyyDash[1]}`;
+
+  const spanishMatch = trimmed.match(/^(\d{1,2})\s+de\s+(\w+),?\s*(\d{4})$/i);
+  if (spanishMatch) {
+    const months = {
+      enero: '01',
+      febrero: '02',
+      marzo: '03',
+      abril: '04',
+      mayo: '05',
+      junio: '06',
+      julio: '07',
+      agosto: '08',
+      septiembre: '09',
+      octubre: '10',
+      noviembre: '11',
+      diciembre: '12',
+    };
+    const month = months[spanishMatch[2].toLowerCase()];
+    if (month) return `${spanishMatch[3]}-${month}-${String(spanishMatch[1]).padStart(2, '0')}`;
+  }
+
+  return null;
+}
+
+function getBoliviaDateKey(dateStr) {
+  if (!dateStr) return null;
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/La_Paz',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(new Date(dateStr));
+  const year = parts.find((part) => part.type === 'year')?.value;
+  const month = parts.find((part) => part.type === 'month')?.value;
+  const day = parts.find((part) => part.type === 'day')?.value;
+  return year && month && day ? `${year}-${month}-${day}` : null;
+}
+
 // GET /api/webhook — Meta verification
 router.get('/', (req, res) => {
   const mode = req.query['hub.mode'];
@@ -346,10 +404,10 @@ router.post('/', async (req, res) => {
                           }
                         }
 
-                        // ─── 3 validations: dest, amount, date ───
+                        // ─── 3 validations: destinatario, monto, fecha ───
                         const problems = [];
 
-                        // 1. Destinatario: "Daniel Mac" must appear near dest keywords
+                        // 1. Destinatario: accept only receipts that mention "MacLean" / "Mac Lean"
                         if (!ocrResult.destVerified) {
                           problems.push('destinatario');
                         }
@@ -360,35 +418,13 @@ router.post('/', async (req, res) => {
                           problems.push(`monto (esperado Bs ${expectedAmount}, recibido Bs ${ocrResult.amount})`);
                         }
 
-                        // 3. Fecha: receipt date must not be before appointment booking date
+                        // 3. Fecha: receipt date must be strictly after the session date
                         if (ocrResult.date && bestMatch.date_time) {
-                          let receiptDate = null;
-                          // Parse DD/MM/YYYY
-                          const ddmmyyyy = ocrResult.date.match(/(\d{2})\/(\d{2})\/(\d{4})/);
-                          if (ddmmyyyy) receiptDate = new Date(ddmmyyyy[3], ddmmyyyy[2] - 1, ddmmyyyy[1]);
-                          // Parse YYYY-MM-DD
-                          const yyyymmdd = ocrResult.date.match(/(\d{4})-(\d{2})-(\d{2})/);
-                          if (!receiptDate && yyyymmdd) receiptDate = new Date(yyyymmdd[1], yyyymmdd[2] - 1, yyyymmdd[3]);
-                          // Parse "23 de marzo, 2026"
-                          if (!receiptDate) {
-                            const spanishMatch = ocrResult.date.match(/(\d{1,2})\s+de\s+(\w+),?\s*(\d{4})/i);
-                            if (spanishMatch) {
-                              const months = { enero:0, febrero:1, marzo:2, abril:3, mayo:4, junio:5, julio:6, agosto:7, septiembre:8, octubre:9, noviembre:10, diciembre:11 };
-                              const mo = months[spanishMatch[2].toLowerCase()];
-                              if (mo !== undefined) receiptDate = new Date(spanishMatch[3], mo, spanishMatch[1]);
-                            }
-                          }
+                          const receiptDateKey = parseReceiptDateKey(ocrResult.date);
+                          const sessionDateKey = getBoliviaDateKey(bestMatch.date_time);
 
-                          if (receiptDate) {
-                            // Appointment date (Bolivia time)
-                            const apptDate = new Date(bestMatch.date_time);
-                            apptDate.setHours(0, 0, 0, 0);
-                            receiptDate.setHours(0, 0, 0, 0);
-                            // Receipt date must not be more than 30 days before appointment
-                            const daysDiff = (apptDate - receiptDate) / (1000 * 60 * 60 * 24);
-                            if (daysDiff > 30) {
-                              problems.push(`fecha (comprobante ${ocrResult.date} muy antiguo)`);
-                            }
+                          if (receiptDateKey && sessionDateKey && receiptDateKey <= sessionDateKey) {
+                            problems.push(`fecha (comprobante ${ocrResult.date} no es posterior a la sesión ${sessionDateKey})`);
                           }
                         }
 
@@ -397,9 +433,18 @@ router.post('/', async (req, res) => {
                           await pool.query(
                             `UPDATE payments SET status = 'Confirmado', confirmed_at = NOW(),
                              receipt_file_key = ?, ocr_extracted_amount = ?, ocr_extracted_ref = ?,
+                             ocr_extracted_date = ?, ocr_extracted_dest_name = ?,
                              notes = NULL
                              WHERE id = ? AND tenant_id = ?`,
-                            [fileKey, ocrResult.amount, ocrResult.reference, bestMatch.id, tenantId]
+                            [
+                              fileKey,
+                              ocrResult.amount,
+                              ocrResult.reference,
+                              sanitizeReceiptDate(ocrResult.date),
+                              sanitizeReceiptDestName(ocrResult.destName),
+                              bestMatch.id,
+                              tenantId,
+                            ]
                           );
 
                           // Update GCal with $ prefix
@@ -429,10 +474,19 @@ router.post('/', async (req, res) => {
                           // Validation failed → Mismatch
                           await pool.query(
                             `UPDATE payments SET status = 'Mismatch', receipt_file_key = ?,
-                             ocr_extracted_amount = ?, ocr_extracted_ref = ?,
+                             ocr_extracted_amount = ?, ocr_extracted_ref = ?, ocr_extracted_date = ?, ocr_extracted_dest_name = ?,
                              notes = ?
                              WHERE id = ? AND tenant_id = ?`,
-                            [fileKey, ocrResult.amount, ocrResult.reference, `Problemas: ${problems.join(', ')}`, bestMatch.id, tenantId]
+                            [
+                              fileKey,
+                              ocrResult.amount,
+                              ocrResult.reference,
+                              sanitizeReceiptDate(ocrResult.date),
+                              sanitizeReceiptDestName(ocrResult.destName),
+                              `Problemas: ${problems.join(', ')}`,
+                              bestMatch.id,
+                              tenantId,
+                            ]
                           );
                           console.log(`[webhook] Payment ${bestMatch.id} MISMATCH: ${problems.join(', ')}`);
                         }

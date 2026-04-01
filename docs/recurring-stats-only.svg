@@ -1,0 +1,47 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1440" height="900" viewBox="0 0 1440 900" fill="none">
+  <rect width="1440" height="900" fill="#F7F4EC"/>
+  <text x="74" y="88" fill="#243748" font-family="Arial, sans-serif" font-size="38" font-weight="700">Lógica 3: Stats internas + solo próxima cita visible</text>
+  <text x="74" y="126" fill="#617182" font-family="Arial, sans-serif" font-size="22">La recurrencia alimenta métricas y churn, pero Agenda solo muestra la próxima sesión de cada cliente.</text>
+
+  <rect x="72" y="174" width="1296" height="654" rx="34" fill="#FFFDF9" stroke="#E7E1D7"/>
+
+  <rect x="112" y="218" width="378" height="232" rx="28" fill="#F8F6FC" stroke="#D8D0E8"/>
+  <text x="140" y="260" fill="#7C5BA3" font-family="Arial, sans-serif" font-size="18" font-weight="700">Google Calendar</text>
+  <text x="140" y="298" fill="#243748" font-family="Arial, sans-serif" font-size="28" font-weight="700">Serie completa</text>
+  <text x="140" y="334" fill="#405261" font-family="Arial, sans-serif" font-size="20">La serie sigue íntegra en GCal.</text>
+  <text x="140" y="370" fill="#617182" font-family="Arial, sans-serif" font-size="18">El cron la lee, pero no la refleja completa en Agenda.</text>
+
+  <rect x="530" y="218" width="378" height="232" rx="28" fill="#FFFFFF" stroke="#D8D0E8"/>
+  <text x="558" y="260" fill="#7C5BA3" font-family="Arial, sans-serif" font-size="18" font-weight="700">Backoffice oculto</text>
+  <text x="558" y="298" fill="#243748" font-family="Arial, sans-serif" font-size="28" font-weight="700">Ledger de recurrencia</text>
+  <text x="558" y="334" fill="#405261" font-family="Arial, sans-serif" font-size="20">Se guardan próximas sesiones para</text>
+  <text x="558" y="364" fill="#405261" font-family="Arial, sans-serif" font-size="20">retención, churn y forecasting.</text>
+  <text x="558" y="400" fill="#617182" font-family="Arial, sans-serif" font-size="18">Pero eso no entra tal cual en la vista Agenda.</text>
+
+  <rect x="948" y="218" width="380" height="232" rx="28" fill="#FFFFFF" stroke="#D8D0E8"/>
+  <text x="976" y="260" fill="#7C5BA3" font-family="Arial, sans-serif" font-size="18" font-weight="700">Vista Agenda</text>
+  <text x="976" y="298" fill="#243748" font-family="Arial, sans-serif" font-size="28" font-weight="700">Solo una próxima sesión</text>
+  <rect x="976" y="338" width="324" height="48" rx="16" fill="#F3EFFA"/>
+  <text x="998" y="368" fill="#405261" font-family="Arial, sans-serif" font-size="18">Daniela · Mié 6 · 20:00</text>
+  <text x="976" y="414" fill="#617182" font-family="Arial, sans-serif" font-size="18">Lo demás existe para métricas, no para operación diaria.</text>
+
+  <path d="M490 334H520" stroke="#A78BCE" stroke-width="6" stroke-linecap="round"/>
+  <path d="M508 318L530 334L508 350" stroke="#A78BCE" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M908 334H938" stroke="#A78BCE" stroke-width="6" stroke-linecap="round"/>
+  <path d="M926 318L948 334L926 350" stroke="#A78BCE" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+
+  <rect x="112" y="500" width="1216" height="280" rx="28" fill="#F3EFFA" stroke="#D8D0E8"/>
+  <text x="142" y="548" fill="#243748" font-family="Arial, sans-serif" font-size="28" font-weight="700">Cuándo sirve y dónde muerde</text>
+
+  <text x="144" y="598" fill="#243748" font-family="Arial, sans-serif" font-size="20" font-weight="700">Sirve si lo más importante es:</text>
+  <text x="144" y="632" fill="#405261" font-family="Arial, sans-serif" font-size="20">• una Agenda muy limpia</text>
+  <text x="144" y="664" fill="#405261" font-family="Arial, sans-serif" font-size="20">• ver solo lo inmediato</text>
+  <text x="144" y="696" fill="#405261" font-family="Arial, sans-serif" font-size="20">• usar la recurrencia más como señal de retención que como operación</text>
+
+  <text x="760" y="598" fill="#243748" font-family="Arial, sans-serif" font-size="20" font-weight="700">Problema:</text>
+  <text x="760" y="632" fill="#405261" font-family="Arial, sans-serif" font-size="20">recordatorios, cobros y debugging se vuelven menos transparentes,</text>
+  <text x="760" y="664" fill="#405261" font-family="Arial, sans-serif" font-size="20">porque Agenda deja de mostrar todas las ocurrencias operativas.</text>
+
+  <text x="144" y="736" fill="#7C5BA3" font-family="Arial, sans-serif" font-size="20" font-weight="700">Conclusión:</text>
+  <text x="274" y="736" fill="#405261" font-family="Arial, sans-serif" font-size="20">es atractiva visualmente, pero no es la mejor primera solución si tus cobros y recordatorios dependen de cada cita.</text>
+</svg>

@@ -1,0 +1,57 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1440" height="900" viewBox="0 0 1440 900" fill="none">
+  <rect width="1440" height="900" fill="#F7F4EC"/>
+  <text x="74" y="88" fill="#243748" font-family="Arial, sans-serif" font-size="38" font-weight="700">Lógica 1: Sync por ventana</text>
+  <text x="74" y="126" fill="#617182" font-family="Arial, sans-serif" font-size="22">El cron expande recurrencias de GCal solo en una ventana útil y hace upsert en la base.</text>
+
+  <rect x="72" y="174" width="1296" height="654" rx="34" fill="#FFFDF9" stroke="#E7E1D7"/>
+
+  <rect x="112" y="218" width="356" height="228" rx="28" fill="#FFFFFF" stroke="#CFE8E9"/>
+  <text x="138" y="258" fill="#4E769B" font-family="Arial, sans-serif" font-size="18" font-weight="700">Google Calendar</text>
+  <text x="138" y="296" fill="#243748" font-family="Arial, sans-serif" font-size="28" font-weight="700">Serie repetitiva</text>
+  <text x="138" y="334" fill="#405261" font-family="Arial, sans-serif" font-size="20">Cliente semanal</text>
+  <text x="138" y="364" fill="#405261" font-family="Arial, sans-serif" font-size="20">Miércoles 20:00</text>
+  <rect x="138" y="386" width="304" height="18" rx="9" fill="#E8F3F4"/>
+  <rect x="138" y="386" width="236" height="18" rx="9" fill="#84C6C8"/>
+  <text x="138" y="432" fill="#617182" font-family="Arial, sans-serif" font-size="18">GCal sigue teniendo la serie completa.</text>
+
+  <rect x="542" y="218" width="356" height="228" rx="28" fill="#FFFFFF" stroke="#CFE8E9"/>
+  <text x="568" y="258" fill="#4E769B" font-family="Arial, sans-serif" font-size="18" font-weight="700">Cron de sync</text>
+  <text x="568" y="296" fill="#243748" font-family="Arial, sans-serif" font-size="28" font-weight="700">Ventana móvil</text>
+  <text x="568" y="334" fill="#405261" font-family="Arial, sans-serif" font-size="20">Pasado: 90 días</text>
+  <text x="568" y="364" fill="#405261" font-family="Arial, sans-serif" font-size="20">Futuro: 45 días</text>
+  <rect x="568" y="392" width="62" height="16" rx="8" fill="#D8D0E8"/>
+  <rect x="630" y="392" width="168" height="16" rx="8" fill="#84C6C8"/>
+  <rect x="798" y="392" width="74" height="16" rx="8" fill="#D8D0E8"/>
+  <text x="568" y="434" fill="#617182" font-family="Arial, sans-serif" font-size="18">Solo se materializa lo que importa ahora.</text>
+
+  <rect x="972" y="218" width="356" height="228" rx="28" fill="#FFFFFF" stroke="#CFE8E9"/>
+  <text x="998" y="258" fill="#4E769B" font-family="Arial, sans-serif" font-size="18" font-weight="700">Base de datos</text>
+  <text x="998" y="296" fill="#243748" font-family="Arial, sans-serif" font-size="28" font-weight="700">Appointments reales</text>
+  <text x="998" y="334" fill="#405261" font-family="Arial, sans-serif" font-size="20">Se crean / actualizan ocurrencias</text>
+  <text x="998" y="364" fill="#405261" font-family="Arial, sans-serif" font-size="20">dentro de esa ventana.</text>
+  <text x="998" y="404" fill="#617182" font-family="Arial, sans-serif" font-size="18">Clave sugerida: recurringEventId + originalStartTime</text>
+
+  <path d="M468 330H528" stroke="#84C6C8" stroke-width="6" stroke-linecap="round"/>
+  <path d="M516 314L538 330L516 346" stroke="#84C6C8" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M898 330H958" stroke="#84C6C8" stroke-width="6" stroke-linecap="round"/>
+  <path d="M946 314L968 330L946 346" stroke="#84C6C8" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+
+  <rect x="112" y="500" width="1216" height="280" rx="28" fill="#F6FBFB" stroke="#CFE8E9"/>
+  <text x="142" y="548" fill="#243748" font-family="Arial, sans-serif" font-size="28" font-weight="700">Qué termina viendo Agenda</text>
+  <text x="142" y="584" fill="#617182" font-family="Arial, sans-serif" font-size="20">No aparecen 500 eventos futuros. Solo las sesiones cercanas y las pasadas recientes, suficientes para operar y medir churn.</text>
+
+  <rect x="144" y="624" width="1040" height="74" rx="20" fill="#FFFFFF" stroke="#D7E7E8"/>
+  <rect x="170" y="646" width="168" height="30" rx="15" fill="#84C6C8"/>
+  <rect x="352" y="646" width="168" height="30" rx="15" fill="#84C6C8"/>
+  <rect x="534" y="646" width="168" height="30" rx="15" fill="#84C6C8"/>
+  <rect x="716" y="646" width="168" height="30" rx="15" fill="#84C6C8"/>
+  <rect x="898" y="646" width="168" height="30" rx="15" fill="#84C6C8"/>
+  <text x="1212" y="672" fill="#617182" font-family="Arial, sans-serif" font-size="20">…</text>
+
+  <rect x="1204" y="622" width="96" height="78" rx="20" fill="#FFFFFF" stroke="#D7E7E8"/>
+  <text x="1222" y="650" fill="#4E769B" font-family="Arial, sans-serif" font-size="16" font-weight="700">Agenda</text>
+  <text x="1222" y="676" fill="#405261" font-family="Arial, sans-serif" font-size="18">Hoy + 45d</text>
+
+  <text x="144" y="738" fill="#243748" font-family="Arial, sans-serif" font-size="20" font-weight="700">Resultado</text>
+  <text x="236" y="738" fill="#405261" font-family="Arial, sans-serif" font-size="20">Estadísticas correctas, recordatorios funcionando y una Agenda razonable.</text>
+</svg>

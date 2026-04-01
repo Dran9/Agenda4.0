@@ -1,0 +1,65 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1440" height="920" viewBox="0 0 1440 920" fill="none">
+  <rect width="1440" height="920" fill="#F7F4EC"/>
+  <rect x="52" y="48" width="1336" height="824" rx="36" fill="#FFFDF9" stroke="#E7E1D7"/>
+  <text x="92" y="112" fill="#243748" font-family="Arial, sans-serif" font-size="38" font-weight="700">3 formas de tratar eventos repetitivos de Google Calendar</text>
+  <text x="92" y="150" fill="#617182" font-family="Arial, sans-serif" font-size="22">Comparación visual: qué entra desde GCal, qué se materializa en la base y cuánto ruido genera en Agenda.</text>
+
+  <rect x="92" y="202" width="396" height="588" rx="28" fill="#F6FBFB" stroke="#CFE8E9"/>
+  <rect x="522" y="202" width="396" height="588" rx="28" fill="#FFF9ED" stroke="#F0D8A8"/>
+  <rect x="952" y="202" width="396" height="588" rx="28" fill="#F8F6FC" stroke="#D8D0E8"/>
+
+  <text x="122" y="250" fill="#243748" font-family="Arial, sans-serif" font-size="28" font-weight="700">1. Sync por ventana</text>
+  <text x="552" y="250" fill="#243748" font-family="Arial, sans-serif" font-size="28" font-weight="700">2. Serie maestra + ocurrencias</text>
+  <text x="982" y="250" fill="#243748" font-family="Arial, sans-serif" font-size="28" font-weight="700">3. Solo stats + próxima cita</text>
+
+  <text x="122" y="290" fill="#4E769B" font-family="Arial, sans-serif" font-size="18" font-weight="700">Lo que hace</text>
+  <text x="552" y="290" fill="#A86A00" font-family="Arial, sans-serif" font-size="18" font-weight="700">Lo que hace</text>
+  <text x="982" y="290" fill="#7C5BA3" font-family="Arial, sans-serif" font-size="18" font-weight="700">Lo que hace</text>
+
+  <text x="122" y="324" fill="#405261" font-family="Arial, sans-serif" font-size="20">• Expande recurrencias solo en un rango útil.</text>
+  <text x="122" y="356" fill="#405261" font-family="Arial, sans-serif" font-size="20">• Guarda pasado reciente y futuro cercano.</text>
+  <text x="122" y="388" fill="#405261" font-family="Arial, sans-serif" font-size="20">• Agenda no se llena con meses lejanos.</text>
+
+  <text x="552" y="324" fill="#405261" font-family="Arial, sans-serif" font-size="20">• Guarda la serie como objeto principal.</text>
+  <text x="552" y="356" fill="#405261" font-family="Arial, sans-serif" font-size="20">• Genera instancias solo cuando hacen falta.</text>
+  <text x="552" y="388" fill="#405261" font-family="Arial, sans-serif" font-size="20">• Separa bien “plan” de “sesión real”.</text>
+
+  <text x="982" y="324" fill="#405261" font-family="Arial, sans-serif" font-size="20">• Usa recurrencias para métricas internas.</text>
+  <text x="982" y="356" fill="#405261" font-family="Arial, sans-serif" font-size="20">• En Agenda solo vive la próxima cita.</text>
+  <text x="982" y="388" fill="#405261" font-family="Arial, sans-serif" font-size="20">• Es el enfoque con menos ruido visual.</text>
+
+  <rect x="122" y="432" width="336" height="116" rx="22" fill="#FFFFFF" stroke="#D7E7E8"/>
+  <text x="144" y="468" fill="#243748" font-family="Arial, sans-serif" font-size="17" font-weight="700">Ventaja principal</text>
+  <text x="144" y="500" fill="#405261" font-family="Arial, sans-serif" font-size="20">La más práctica. Repara stats, churn,</text>
+  <text x="144" y="528" fill="#405261" font-family="Arial, sans-serif" font-size="20">recordatorios y pagos con pocos cambios.</text>
+
+  <rect x="552" y="432" width="336" height="116" rx="22" fill="#FFFFFF" stroke="#E8DDBE"/>
+  <text x="574" y="468" fill="#243748" font-family="Arial, sans-serif" font-size="17" font-weight="700">Ventaja principal</text>
+  <text x="574" y="500" fill="#405261" font-family="Arial, sans-serif" font-size="20">Modelo más limpio y escalable si luego</text>
+  <text x="574" y="528" fill="#405261" font-family="Arial, sans-serif" font-size="20">quieres editar series desde tu propia app.</text>
+
+  <rect x="982" y="432" width="336" height="116" rx="22" fill="#FFFFFF" stroke="#DDD5EA"/>
+  <text x="1004" y="468" fill="#243748" font-family="Arial, sans-serif" font-size="17" font-weight="700">Ventaja principal</text>
+  <text x="1004" y="500" fill="#405261" font-family="Arial, sans-serif" font-size="20">Agenda casi vacía y muy legible.</text>
+  <text x="1004" y="528" fill="#405261" font-family="Arial, sans-serif" font-size="20">Buena para operación minimalista.</text>
+
+  <rect x="122" y="576" width="336" height="140" rx="22" fill="#EDF7F8" stroke="#CFE8E9"/>
+  <text x="144" y="612" fill="#243748" font-family="Arial, sans-serif" font-size="17" font-weight="700">Costo / complejidad</text>
+  <text x="144" y="644" fill="#405261" font-family="Arial, sans-serif" font-size="20">Media. Necesita cron y upsert por</text>
+  <text x="144" y="672" fill="#405261" font-family="Arial, sans-serif" font-size="20">ocurrencia, pero no cambia tu hábito.</text>
+  <text x="144" y="700" fill="#4E769B" font-family="Arial, sans-serif" font-size="18" font-weight="700">Recomendada</text>
+
+  <rect x="552" y="576" width="336" height="140" rx="22" fill="#FFF4DE" stroke="#F0D8A8"/>
+  <text x="574" y="612" fill="#243748" font-family="Arial, sans-serif" font-size="17" font-weight="700">Costo / complejidad</text>
+  <text x="574" y="644" fill="#405261" font-family="Arial, sans-serif" font-size="20">Alta. Cambia esquema, reglas de edición</text>
+  <text x="574" y="672" fill="#405261" font-family="Arial, sans-serif" font-size="20">y la forma de pensar la agenda.</text>
+  <text x="574" y="700" fill="#A86A00" font-family="Arial, sans-serif" font-size="18" font-weight="700">Mejor a mediano plazo</text>
+
+  <rect x="982" y="576" width="336" height="140" rx="22" fill="#F3EFFA" stroke="#D8D0E8"/>
+  <text x="1004" y="612" fill="#243748" font-family="Arial, sans-serif" font-size="17" font-weight="700">Costo / complejidad</text>
+  <text x="1004" y="644" fill="#405261" font-family="Arial, sans-serif" font-size="20">Media-alta. Parece simple, pero complica</text>
+  <text x="1004" y="672" fill="#405261" font-family="Arial, sans-serif" font-size="20">recordatorios, cobros y trazabilidad.</text>
+  <text x="1004" y="700" fill="#7C5BA3" font-family="Arial, sans-serif" font-size="18" font-weight="700">Útil solo si priorizas limpieza visual</text>
+
+  <text x="92" y="828" fill="#4D5B67" font-family="Arial, sans-serif" font-size="20">Si buscas resolver rápido sin reescribir medio sistema: la opción 1 es la mejor primera jugada.</text>
+</svg>

@@ -1,0 +1,51 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1440" height="900" viewBox="0 0 1440 900" fill="none">
+  <rect width="1440" height="900" fill="#F7F4EC"/>
+  <text x="74" y="88" fill="#243748" font-family="Arial, sans-serif" font-size="38" font-weight="700">Lógica 2: Serie maestra + ocurrencias cercanas</text>
+  <text x="74" y="126" fill="#617182" font-family="Arial, sans-serif" font-size="22">La app aprende a pensar en “series” y “instancias”, no solo en citas sueltas.</text>
+
+  <rect x="72" y="174" width="1296" height="654" rx="34" fill="#FFFDF9" stroke="#E7E1D7"/>
+
+  <rect x="112" y="218" width="388" height="238" rx="28" fill="#FFF9ED" stroke="#F0D8A8"/>
+  <text x="140" y="260" fill="#A86A00" font-family="Arial, sans-serif" font-size="18" font-weight="700">Tabla / modelo nuevo</text>
+  <text x="140" y="298" fill="#243748" font-family="Arial, sans-serif" font-size="28" font-weight="700">Recurring series</text>
+  <text x="140" y="334" fill="#405261" font-family="Arial, sans-serif" font-size="20">Cliente: Daniela</text>
+  <text x="140" y="364" fill="#405261" font-family="Arial, sans-serif" font-size="20">Cada miércoles · 20:00</text>
+  <text x="140" y="394" fill="#405261" font-family="Arial, sans-serif" font-size="20">Regla: semanal hasta fin de año</text>
+  <text x="140" y="430" fill="#617182" font-family="Arial, sans-serif" font-size="18">La serie vive como un objeto propio en tu sistema.</text>
+
+  <rect x="526" y="218" width="388" height="238" rx="28" fill="#FFFFFF" stroke="#F0D8A8"/>
+  <text x="554" y="260" fill="#A86A00" font-family="Arial, sans-serif" font-size="18" font-weight="700">Motor interno</text>
+  <text x="554" y="298" fill="#243748" font-family="Arial, sans-serif" font-size="28" font-weight="700">Generador de ocurrencias</text>
+  <text x="554" y="334" fill="#405261" font-family="Arial, sans-serif" font-size="20">Crea próximas sesiones solo cuando</text>
+  <text x="554" y="364" fill="#405261" font-family="Arial, sans-serif" font-size="20">entran en ventana operativa.</text>
+  <text x="554" y="400" fill="#617182" font-family="Arial, sans-serif" font-size="18">También puede marcar excepciones, pausas y cambios.</text>
+
+  <rect x="940" y="218" width="388" height="238" rx="28" fill="#FFFFFF" stroke="#F0D8A8"/>
+  <text x="968" y="260" fill="#A86A00" font-family="Arial, sans-serif" font-size="18" font-weight="700">Agenda</text>
+  <text x="968" y="298" fill="#243748" font-family="Arial, sans-serif" font-size="28" font-weight="700">Instancias cercanas</text>
+  <rect x="970" y="330" width="330" height="40" rx="14" fill="#FFF4DE"/>
+  <rect x="970" y="382" width="330" height="40" rx="14" fill="#FFF4DE"/>
+  <rect x="970" y="434" width="330" height="40" rx="14" fill="#FFF4DE"/>
+  <text x="992" y="356" fill="#405261" font-family="Arial, sans-serif" font-size="18">Mié 6 · 20:00 · Serie Daniela</text>
+  <text x="992" y="408" fill="#405261" font-family="Arial, sans-serif" font-size="18">Mié 13 · 20:00 · Serie Daniela</text>
+  <text x="992" y="460" fill="#405261" font-family="Arial, sans-serif" font-size="18">Mié 20 · 20:00 · Serie Daniela</text>
+
+  <path d="M500 338H512" stroke="#D69E2E" stroke-width="6" stroke-linecap="round"/>
+  <path d="M490 322L514 338L490 354" stroke="#D69E2E" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M914 338H926" stroke="#D69E2E" stroke-width="6" stroke-linecap="round"/>
+  <path d="M904 322L928 338L904 354" stroke="#D69E2E" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+
+  <rect x="112" y="508" width="1216" height="270" rx="28" fill="#FFF4DE" stroke="#F0D8A8"/>
+  <text x="142" y="554" fill="#243748" font-family="Arial, sans-serif" font-size="28" font-weight="700">Qué ganas y qué pagas</text>
+
+  <text x="144" y="602" fill="#243748" font-family="Arial, sans-serif" font-size="20" font-weight="700">Pros</text>
+  <text x="144" y="636" fill="#405261" font-family="Arial, sans-serif" font-size="20">• Modelo elegante para pausas, excepciones y “este y los siguientes”.</text>
+  <text x="144" y="668" fill="#405261" font-family="Arial, sans-serif" font-size="20">• Más cerca de cómo realmente funciona un paciente recurrente.</text>
+
+  <text x="720" y="602" fill="#243748" font-family="Arial, sans-serif" font-size="20" font-weight="700">Contras</text>
+  <text x="720" y="636" fill="#405261" font-family="Arial, sans-serif" font-size="20">• Requiere nuevo esquema y reglas de negocio.</text>
+  <text x="720" y="668" fill="#405261" font-family="Arial, sans-serif" font-size="20">• Más superficie de bugs si hoy tu app piensa solo en citas unitarias.</text>
+
+  <text x="144" y="726" fill="#A86A00" font-family="Arial, sans-serif" font-size="20" font-weight="700">Conclusión:</text>
+  <text x="260" y="726" fill="#405261" font-family="Arial, sans-serif" font-size="20">es el mejor modelo si después quieres que la recurrencia viva en tu propia app, no solo en GCal.</text>
+</svg>

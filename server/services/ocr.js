@@ -118,6 +118,29 @@ function parseBolivianReceipt(text) {
     return String(value || '').replace(/\D/g, '');
   }
 
+  function findWhitelistedAccountInText() {
+    const candidates = new Set();
+
+    for (const line of lines) {
+      const inlineMatches = line.match(/\d[\d\s.-]{7,}\d/g) || [];
+      for (const match of inlineMatches) {
+        const normalized = normalizeAccount(match);
+        if (normalized.length >= 8) candidates.add(normalized);
+      }
+
+      const normalizedLine = normalizeAccount(line);
+      if (normalizedLine.length >= 8) candidates.add(normalizedLine);
+    }
+
+    for (const candidate of candidates) {
+      if (VALID_DESTINATION_ACCOUNTS.has(candidate)) {
+        return candidate;
+      }
+    }
+
+    return null;
+  }
+
   // ─── Amount (Bs, BOB) ───
   let amount = null;
   const amountPatterns = [
@@ -303,6 +326,15 @@ function parseBolivianReceipt(text) {
     const accountMatch = fullText.match(/(?:n[°º]\s*de\s*cuenta|n[uú]mero\s*de\s*cuenta|cuenta)[:\s]*([\d\s.-]{6,})/i);
     if (accountMatch) {
       destAccount = normalizeAccount(accountMatch[1]);
+    }
+  }
+
+  // Pattern 5: columnar OCR may separate labels and values; if the valid account
+  // appears anywhere in the text, trust the explicit account match over names.
+  if (!destAccount || !VALID_DESTINATION_ACCOUNTS.has(destAccount)) {
+    const matchedAccount = findWhitelistedAccountInText();
+    if (matchedAccount) {
+      destAccount = matchedAccount;
     }
   }
 

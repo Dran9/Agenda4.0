@@ -31,7 +31,7 @@
   --btn-secondary-bg: transparent;
   --btn-secondary-border: #D4D1CB;
   --btn-secondary-text: #3C3939;
-  --bg-page: #D2E9ED;
+  --bg-page: #FAF8F1;
   --bg-card: #FFFFFF;
   --bg-input: #F0EEF0;
   --text-primary: #3C3939;
@@ -50,7 +50,7 @@
 
 body {
   font-family: 'Work Sans', -apple-system, BlinkMacSystemFont, sans-serif;
-  background: #D2E9ED;
+  background: #FAF8F1;
   color: var(--text-primary);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
@@ -69,7 +69,7 @@ input, select, button, textarea {
   display: flex;
   flex-direction: column;
   align-items: center;
-  background: #D2E9ED;
+  background: #FAF8F1;
 }
 
 @media (min-width: 520px) {
@@ -94,6 +94,8 @@ input, select, button, textarea {
   display: flex;
   gap: 8px;
   justify-content: center;
+  align-items: center;
+  min-height: 16px;
   margin-top: 32px;
   margin-bottom: 16px;
 }
@@ -101,17 +103,19 @@ input, select, button, textarea {
 .progress-dot {
   width: 8px;
   height: 8px;
-  border-radius: 50%;
-  background: var(--platino);
-  transition: background 300ms;
+  border-radius: 999px;
+  background: rgba(169, 197, 211, 0.6);
+  transition: width 300ms ease-in-out, background-color 300ms ease-in-out, opacity 300ms ease-in-out;
 }
 
 .progress-dot.active {
-  background: var(--azul-acero);
+  width: 32px;
+  background: #1e293b;
 }
 
 .progress-dot.done {
-  background: var(--turquesa);
+  width: 32px;
+  background: #1e293b;
 }
 
 /* Card */

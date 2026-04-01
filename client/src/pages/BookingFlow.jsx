@@ -7,7 +7,7 @@ import {
 import {
   ArrowRight, ArrowLeft, ChevronDown, Calendar as CalendarIcon,
   Clock, CalendarClock, CalendarCheck, Check, Sun, Sunset,
-  Coffee, Globe, Search, RefreshCw, Heart, MessageSquareHeart, ShieldAlert, Info, MousePointerClick, Smartphone, SmilePlus,
+  Coffee, Globe, Search, RefreshCw, Heart, MessageSquareHeart, ShieldAlert, Info, Smartphone, SmilePlus,
   CalendarArrowUp, CircleArrowRight, Clock4, CircleCheck, CircleX,
 } from 'lucide-react';
 
@@ -91,7 +91,10 @@ function ProgressDots({ current, total = 4, done = false }) {
   return (
     <div className="progress-dots">
       {Array.from({ length: total }, (_, i) => (
-        <div key={i} className={`progress-dot ${done ? 'done' : i < current ? 'active' : ''}`} />
+        <div
+          key={i}
+          className={`progress-dot ${i + 1 === current ? 'active' : ''} ${done && i + 1 === total ? 'done' : ''}`}
+        />
       ))}
     </div>
   );
@@ -459,7 +462,7 @@ export default function BookingFlow() {
     return (
       <div style={{ width: '100%', marginBottom: 16 }}>
         <p style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, fontSize: 20, fontWeight: 600, color: '#3C3939', textAlign: 'center', marginBottom: 10 }}>
-          <MousePointerClick size={18} color="#3C3939" />
+          <Globe size={20} color="#3C3939" />
           ¿En qué país estás?
         </p>
         <div style={{ display: 'flex', justifyContent: 'center' }}>

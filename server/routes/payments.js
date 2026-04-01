@@ -4,6 +4,7 @@ const { authMiddleware } = require('../middleware/auth');
 const { saveFile, getFile } = require('../services/storage');
 const { extractReceiptData } = require('../services/ocr');
 const { updateEventSummary, getOAuthClient } = require('../services/calendar');
+const { buildCalendarSummary } = require('../services/calendarSummary');
 const { google } = require('googleapis');
 
 const router = Router();
@@ -367,7 +368,7 @@ router.put('/goal', authMiddleware, async (req, res) => {
 async function updateGCalPaymentPrefix(paymentId, tenantId, isPaid) {
   try {
     const [rows] = await pool.query(
-      `SELECT a.gcal_event_id, c.first_name, c.last_name, c.phone
+      `SELECT a.gcal_event_id, a.status as appointment_status, c.first_name, c.last_name, c.phone
        FROM payments p
        JOIN appointments a ON p.appointment_id = a.id
        JOIN clients c ON p.client_id = c.id
@@ -377,15 +378,16 @@ async function updateGCalPaymentPrefix(paymentId, tenantId, isPaid) {
 
     if (!rows.length || !rows[0].gcal_event_id) return;
 
-    const { gcal_event_id, first_name, last_name, phone } = rows[0];
-    const baseSummary = `Terapia ${first_name} ${last_name} - ${phone}`;
-    const newSummary = isPaid ? `$ ${baseSummary}` : baseSummary;
+    const { gcal_event_id, appointment_status, first_name, last_name, phone } = rows[0];
+    const baseSummary = `Terapia ${first_name} ${last_name} - ${phone}`.trim();
+    const isConfirmed = ['Confirmada', 'Completada'].includes(appointment_status);
+    const newSummary = buildCalendarSummary(baseSummary, { paid: isPaid, confirmed: isConfirmed });
 
     const calendarId = process.env.CALENDAR_ID || process.env.GOOGLE_CALENDAR_ID;
     if (!calendarId) return;
 
     await updateEventSummary(calendarId, gcal_event_id, newSummary);
-    console.log(`[payments] GCal updated: ${isPaid ? 'added $' : 'removed $'} for event ${gcal_event_id}`);
+    console.log(`[payments] GCal updated: ${isPaid ? 'added 💰' : 'removed 💰'} for event ${gcal_event_id}`);
   } catch (err) {
     console.error('[payments] GCal update failed (non-fatal):', err.message);
   }

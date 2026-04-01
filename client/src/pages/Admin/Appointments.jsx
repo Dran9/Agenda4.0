@@ -10,18 +10,38 @@ function formatReceiptAmount(amount) {
   return `Bs ${Number(amount).toLocaleString('es-BO')}`;
 }
 
+function ReceiptLine({ label, value, tone = 'ok' }) {
+  const labelClass = tone === 'problem'
+    ? 'text-rose-600'
+    : tone === 'muted'
+      ? 'text-gray-400'
+      : 'text-emerald-600';
+  const valueClass = tone === 'problem'
+    ? 'text-rose-700'
+    : tone === 'muted'
+      ? 'text-gray-400'
+      : 'text-emerald-700';
+
+  return (
+    <div className={valueClass}>
+      <span className={`font-medium ${labelClass}`}>{label}:</span> {value || '—'}
+    </div>
+  );
+}
+
 function ReceiptSummary({ appt }) {
   const hasOcrSummary = appt.ocr_extracted_amount != null || appt.ocr_extracted_dest_name || appt.ocr_extracted_date || appt.payment_notes;
   if (!hasOcrSummary) return null;
+  const cardClass = appt.payment_status === 'Mismatch'
+    ? 'border-rose-200 bg-rose-50'
+    : 'border-emerald-200 bg-emerald-50';
 
   return (
-    <div className="mt-2 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-xs leading-5 text-gray-700">
-      {appt.payment_notes && (
-        <div><span className="font-medium text-gray-500">Motivo:</span> {appt.payment_notes}</div>
-      )}
-      <div><span className="font-medium text-gray-500">Fecha de abono:</span> {appt.ocr_extracted_date || '—'}</div>
-      <div><span className="font-medium text-gray-500">Destinatario:</span> {appt.ocr_extracted_dest_name || '—'}</div>
-      <div><span className="font-medium text-gray-500">Monto:</span> {formatReceiptAmount(appt.ocr_extracted_amount)}</div>
+    <div className={`mt-2 rounded-lg border px-3 py-2 text-xs leading-5 ${cardClass}`}>
+      {appt.payment_notes && <ReceiptLine label="Motivo" value={appt.payment_notes} tone="problem" />}
+      <ReceiptLine label="Fecha de abono" value={appt.ocr_extracted_date} tone={appt.ocr_extracted_date ? 'ok' : 'muted'} />
+      <ReceiptLine label="Destinatario" value={appt.ocr_extracted_dest_name} tone={appt.ocr_extracted_dest_name ? 'ok' : 'muted'} />
+      <ReceiptLine label="Monto" value={formatReceiptAmount(appt.ocr_extracted_amount)} tone={appt.ocr_extracted_amount != null ? 'ok' : 'muted'} />
     </div>
   );
 }
@@ -247,7 +267,7 @@ export default function Appointments() {
           <div className="p-8 text-center text-gray-400">Cargando...</div>
         ) : (
           <>
-            <table className="w-full min-w-[1640px] text-sm">
+            <table className="w-full min-w-[1900px] text-sm">
               <thead>
                 <tr className="text-xs text-gray-500 border-b border-gray-100 bg-gray-50">
                   <th className="p-3 w-10">
@@ -266,6 +286,7 @@ export default function Appointments() {
                   <th className="text-left p-3 font-medium min-w-[150px]">Status</th>
                   <th className="text-left p-3 font-medium min-w-[340px]">Pago</th>
                   <th className="text-left p-3 font-medium min-w-[220px]">Reminder</th>
+                  <th className="text-left p-3 font-medium min-w-[260px]">Calendar ID</th>
                   <th className="text-left p-3 font-medium w-10"></th>
                 </tr>
               </thead>
@@ -341,6 +362,15 @@ export default function Appointments() {
                       )}
                     </td>
                     <td className="p-3 align-top">
+                      {appt.gcal_event_id ? (
+                        <div className="max-w-[240px] break-all font-mono text-[11px] text-gray-500">
+                          {appt.gcal_event_id}
+                        </div>
+                      ) : (
+                        <span className="text-xs text-gray-300">—</span>
+                      )}
+                    </td>
+                    <td className="p-3 align-top">
                       <button
                         type="button"
                         onClick={() => handleDelete(appt.id)}
@@ -353,7 +383,7 @@ export default function Appointments() {
                   </tr>
                 ))}
                 {appointments.length === 0 && (
-                  <tr><td colSpan={10} className="p-8 text-center text-gray-400">Sin citas</td></tr>
+                  <tr><td colSpan={11} className="p-8 text-center text-gray-400">Sin citas</td></tr>
                 )}
               </tbody>
             </table>

@@ -1,6 +1,7 @@
 const { Router } = require('express');
 const { pool } = require('../db');
 const { getOperationalContext, classifyIncomingMessage, buildClassificationMetadata } = require('../services/messageContext');
+const { buildCalendarSummary, hasCalendarPaymentMarker, stripCalendarMarkers } = require('../services/calendarSummary');
 
 const router = Router();
 const CALENDAR_ID = () => process.env.CALENDAR_ID || process.env.GOOGLE_CALENDAR_ID || 'danielmacleann@gmail.com';
@@ -61,6 +62,62 @@ function getBoliviaDateKey(dateStr) {
   const month = parts.find((part) => part.type === 'month')?.value;
   const day = parts.find((part) => part.type === 'day')?.value;
   return year && month && day ? `${year}-${month}-${day}` : null;
+}
+
+function formatWhatsappName(name) {
+  if (!name) return 'hola';
+  const first = String(name).trim().split(/\s+/)[0] || 'hola';
+  return first.charAt(0).toUpperCase() + first.slice(1).toLowerCase();
+}
+
+function formatDisplayDate(value) {
+  if (!value) return '—';
+  const key = parseReceiptDateKey(value);
+  if (!key) return String(value);
+  const [year, month, day] = key.split('-');
+  return `${day}/${month}/${year}`;
+}
+
+function formatMismatchProblem(problem) {
+  if (problem.type === 'fecha_pasada') {
+    return `FECHA PASADA (comprobante ${problem.receiptDate} no es posterior a la sesión ${problem.sessionDate})`;
+  }
+  if (problem.type === 'monto') {
+    return 'MONTO';
+  }
+  if (problem.type === 'destinatario') {
+    return 'DESTINATARIO';
+  }
+  return 'VALIDACIÓN';
+}
+
+function buildMismatchNotes(problems) {
+  return `Problemas: ${problems.map(formatMismatchProblem).join(', ')}`;
+}
+
+function buildMismatchWhatsappMessage(firstName, problems) {
+  const saludo = formatWhatsappName(firstName);
+  const lines = problems.map((problem) => {
+    if (problem.type === 'fecha_pasada') {
+      return `• La fecha del abono figura como ${formatDisplayDate(problem.receiptDate)} y la sesión registrada es del ${formatDisplayDate(problem.sessionDate)}.`;
+    }
+    if (problem.type === 'monto') {
+      return '• El monto del comprobante no coincide con el valor registrado de la sesión.';
+    }
+    if (problem.type === 'destinatario') {
+      return '• El destinatario no coincide claramente con la cuenta registrada para el pago.';
+    }
+    return '• No se pudo validar automáticamente el comprobante.';
+  });
+
+  return [
+    `Hola ${saludo}, gracias por enviar tu comprobante.`,
+    '',
+    `No pude validarlo automáticamente por ${problems.length > 1 ? 'estos motivos' : 'este motivo'}:`,
+    ...lines,
+    '',
+    'Si puedes, envíame una nueva captura donde se vean con claridad la fecha, el monto y el destinatario para revisarlo nuevamente.',
+  ].join('\n');
 }
 
 // GET /api/webhook — Meta verification
@@ -135,7 +192,7 @@ router.post('/', async (req, res) => {
               [tenantId, `button_${payload}_${phone}`, JSON.stringify({ payload, text, wa_message_id: msg.id }), phone, clientId]
             );
 
-            // ─── CONFIRM_NOW: Add ✅ to GCal (runs independently, no DB dependency) ───
+            // ─── CONFIRM_NOW: add ✅ to GCal without losing 💰 if already paid ───
             if (payload === 'CONFIRM_NOW') {
               try {
                 const { updateEventSummary, listEvents } = require('../services/calendar');
@@ -150,7 +207,14 @@ router.post('/', async (req, res) => {
                   && (e.summary.includes(phone) || e.summary.includes(phoneShort))
                 );
                 if (match) {
-                  await updateEventSummary(calendarId, match.id, `✅ ${match.summary}`);
+                  await updateEventSummary(
+                    calendarId,
+                    match.id,
+                    buildCalendarSummary(match.summary, {
+                      confirmed: true,
+                      paid: hasCalendarPaymentMarker(match.summary),
+                    })
+                  );
                   await pool.query(
                     `INSERT INTO webhooks_log (tenant_id, event, type, payload, status, client_phone, client_id)
                      VALUES (?, ?, 'status_change', ?, 'procesado', ?, ?)`,
@@ -375,7 +439,7 @@ router.post('/', async (req, res) => {
                       // Keep mismatch retryable so a second valid receipt can fix the same appointment.
                       const [pendingPayments] = await pool.query(
                         `SELECT p.id, p.amount, p.appointment_id, p.status,
-                                a.date_time, a.gcal_event_id,
+                                a.date_time, a.gcal_event_id, a.status as appointment_status,
                                 c.first_name, c.last_name, c.phone as client_phone, c.fee
                          FROM payments p
                          JOIN appointments a ON p.appointment_id = a.id
@@ -409,13 +473,13 @@ router.post('/', async (req, res) => {
 
                         // 1. Destinatario: accept only receipts that mention "MacLean" / "Mac Lean"
                         if (!ocrResult.destVerified) {
-                          problems.push('destinatario');
+                          problems.push({ type: 'destinatario' });
                         }
 
                         // 2. Monto: OCR amount must match client fee or payment amount
                         const expectedAmount = parseInt(bestMatch.fee) || parseInt(bestMatch.amount);
                         if (expectedAmount && ocrResult.amount !== expectedAmount) {
-                          problems.push(`monto (esperado Bs ${expectedAmount}, recibido Bs ${ocrResult.amount})`);
+                          problems.push({ type: 'monto', expectedAmount, receivedAmount: ocrResult.amount });
                         }
 
                         // 3. Fecha: receipt date must be strictly after the session date
@@ -424,7 +488,11 @@ router.post('/', async (req, res) => {
                           const sessionDateKey = getBoliviaDateKey(bestMatch.date_time);
 
                           if (receiptDateKey && sessionDateKey && receiptDateKey <= sessionDateKey) {
-                            problems.push(`fecha (comprobante ${ocrResult.date} no es posterior a la sesión ${sessionDateKey})`);
+                            problems.push({
+                              type: 'fecha_pasada',
+                              receiptDate: ocrResult.date,
+                              sessionDate: sessionDateKey,
+                            });
                           }
                         }
 
@@ -447,18 +515,24 @@ router.post('/', async (req, res) => {
                             ]
                           );
 
-                          // Update GCal with $ prefix
+                          // Update GCal with ✅ 💰 prefix
                           try {
                             const calendarId = CALENDAR_ID();
                             if (calendarId && bestMatch.gcal_event_id) {
                               const { updateEventSummary } = require('../services/calendar');
                               const currentSummary = `Terapia ${bestMatch.first_name} ${bestMatch.last_name || ''} - ${bestMatch.client_phone}`.trim();
-                              const base = currentSummary.replace(/^[\$✅]\s*/, '');
-                              await updateEventSummary(calendarId, bestMatch.gcal_event_id, `$ ✅ ${base}`);
-                              console.log(`[webhook] GCal updated with $ for payment ${bestMatch.id}`);
+                              await updateEventSummary(
+                                calendarId,
+                                bestMatch.gcal_event_id,
+                                buildCalendarSummary(currentSummary, {
+                                  confirmed: ['Confirmada', 'Completada'].includes(bestMatch.appointment_status),
+                                  paid: true,
+                                })
+                              );
+                              console.log(`[webhook] GCal updated with 💰 for payment ${bestMatch.id}`);
                             }
                           } catch (gcalErr) {
-                            console.error(`[webhook] GCal $ update failed (non-fatal):`, gcalErr.message);
+                            console.error(`[webhook] GCal 💰 update failed (non-fatal):`, gcalErr.message);
                           }
 
                           // Send confirmation reply
@@ -483,12 +557,19 @@ router.post('/', async (req, res) => {
                               ocrResult.reference,
                               sanitizeReceiptDate(ocrResult.date),
                               sanitizeReceiptDestName(ocrResult.destName),
-                              `Problemas: ${problems.join(', ')}`,
+                              buildMismatchNotes(problems),
                               bestMatch.id,
                               tenantId,
                             ]
                           );
-                          console.log(`[webhook] Payment ${bestMatch.id} MISMATCH: ${problems.join(', ')}`);
+                          try {
+                            const { sendTextMessage } = require('../services/whatsapp');
+                            await sendTextMessage(phone, buildMismatchWhatsappMessage(bestMatch.first_name, problems));
+                          } catch (replyErr) {
+                            console.error(`[webhook] Payment mismatch reply failed:`, replyErr.message);
+                          }
+
+                          console.log(`[webhook] Payment ${bestMatch.id} MISMATCH: ${buildMismatchNotes(problems)}`);
                         }
                       } else {
                         console.log(`[webhook] OCR detected Bs ${ocrResult.amount} but no unresolved payment for client ${clientId}`);
@@ -636,9 +717,9 @@ router.get('/debug-check/:phone', authMiddleware, async (req, res) => {
     const events = await listEvents(calendarId, todayStart.toISOString(), weekLater.toISOString());
     const phoneShort = phone.slice(-8);
 
-    const allTerapia = events.filter(e => e.summary?.startsWith('Terapia'));
+    const allTerapia = events.filter(e => stripCalendarMarkers(e.summary || '').startsWith('Terapia'));
     const matchEvent = events.find(e =>
-      e.summary && e.summary.startsWith('Terapia') && !e.summary.startsWith('✅')
+      e.summary && stripCalendarMarkers(e.summary).startsWith('Terapia') && !e.summary.includes('✅')
       && (e.summary.includes(phone) || e.summary.includes(phoneShort))
     );
 
@@ -653,7 +734,14 @@ router.get('/debug-check/:phone', authMiddleware, async (req, res) => {
     };
 
     if (matchEvent && !dryRun) {
-      await updateEventSummary(calendarId, matchEvent.id, `✅ ${matchEvent.summary}`);
+      await updateEventSummary(
+        calendarId,
+        matchEvent.id,
+        buildCalendarSummary(matchEvent.summary, {
+          confirmed: true,
+          paid: hasCalendarPaymentMarker(matchEvent.summary),
+        })
+      );
       result.updated = true;
     }
 

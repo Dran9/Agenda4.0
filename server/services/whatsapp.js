@@ -1,5 +1,5 @@
 const GRAPH_API_URL = 'https://graph.facebook.com/v18.0';
-const DEFAULT_REMINDER_HEADER_IMAGE_URL = 'https://plum-rhinoceros-787093.hostingersite.com/api/static/reminder-header.png';
+const DEFAULT_REMINDER_HEADER_IMAGE_URL = 'https://urls.danielmaclean.com/codigs/imago-recordatio-fb.jpg';
 
 function getDayInSpanish(date) {
   const days = ['Domingo','Lunes','Martes','Miércoles','Jueves','Viernes','Sábado'];

@@ -525,7 +525,19 @@ router.post('/', async (req, res) => {
                           problems.push({ type: 'monto', expectedAmount, receivedAmount: ocrResult.amount });
                         }
 
-                        // 3. Fecha: temporalmente desactivada para pruebas de monto
+                        // 3. Fecha: receipt date must be strictly after the session date
+                        if (ocrResult.date && bestMatch.date_time) {
+                          const receiptDateKey = parseReceiptDateKey(ocrResult.date);
+                          const sessionDateKey = getBoliviaDateKey(bestMatch.date_time);
+
+                          if (receiptDateKey && sessionDateKey && receiptDateKey <= sessionDateKey) {
+                            problems.push({
+                              type: 'fecha_pasada',
+                              receiptDate: ocrResult.date,
+                              sessionDate: sessionDateKey,
+                            });
+                          }
+                        }
 
                         if (problems.length === 0) {
                           // All validations passed → Confirmado

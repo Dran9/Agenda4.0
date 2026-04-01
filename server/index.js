@@ -112,6 +112,12 @@ app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', version: '4.0.0', timestamp: new Date().toISOString() });
 });
 
+app.get('/api/static/reminder-header.png', (req, res) => {
+  const reminderHeaderPath = path.join(__dirname, '..', 'client', 'public', 'favicon-ladrillo.png');
+  res.set('Cache-Control', 'public, max-age=300');
+  res.sendFile(reminderHeaderPath);
+});
+
 // ─── Serve client build ──────────────────────────────────────────
 const distPath = path.join(__dirname, '..', 'client', 'dist');
 if (fs.existsSync(distPath)) {

@@ -1,4 +1,5 @@
 const GRAPH_API_URL = 'https://graph.facebook.com/v18.0';
+const DEFAULT_REMINDER_HEADER_IMAGE_URL = 'https://tumvp.in/api/static/reminder-header.png';
 
 function getDayInSpanish(date) {
   const days = ['Domingo','Lunes','Martes','Miércoles','Jueves','Viernes','Sábado'];
@@ -25,6 +26,7 @@ function formatTemplateDateParts(date) {
 async function sendConfirmationTemplate(phone, nombre, fechaISO) {
   const token = process.env.WA_TOKEN;
   const phoneNumberId = process.env.WA_PHONE_ID;
+  const reminderHeaderImageUrl = (process.env.WA_REMINDER_HEADER_IMAGE_URL || DEFAULT_REMINDER_HEADER_IMAGE_URL).trim();
 
   // Parse date — handle Date objects (from mysql2) and strings
   const date = parseLaPazDate(fechaISO);
@@ -47,7 +49,7 @@ async function sendConfirmationTemplate(phone, nombre, fechaISO) {
           type: 'header',
           parameters: [{
             type: 'image',
-            image: { link: 'https://api.pcloud.com/getpubthumb?code=XZi3Uw5ZKuvF6z2Pmw0EOXnAHiRywFfJNhJy&linkpassword=&size=960x540&crop=0&type=auto' }
+            image: { link: reminderHeaderImageUrl }
           }]
         },
         {

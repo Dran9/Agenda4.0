@@ -835,12 +835,12 @@ export default function BookingFlow() {
         )}
         <div className="notice-box" style={{ marginBottom: 24 }}>
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6 }}>
-            <MessageSquareHeart size={22} color="#84C6C8" />
+            <MessageSquareHeart size={26} color="#1A1A17" />
             <p style={{ fontSize: 19, fontWeight: 500, color: 'var(--grafito)', lineHeight: 1.5, textAlign: 'center', margin: 0 }}>Te llegará un recordatorio el día antes de tu cita.</p>
           </div>
           <div style={{ borderTop: '1px solid rgba(0,0,0,0.06)', marginTop: 12, paddingTop: 12 }}>
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6 }}>
-              <ShieldAlert size={22} color="#1A1A17" />
+              <ShieldAlert size={26} color="#1A1A17" />
               <p style={{ fontSize: 19, fontWeight: 500, color: 'var(--grafito)', lineHeight: 1.5, textAlign: 'center', margin: 0 }}>
                 Toda cancelación o cambio debe realizarse con mínimo <strong>6 horas</strong> de anticipación, caso contrario, se cobrará el <strong>50%</strong> del monto de la sesión.
               </p>

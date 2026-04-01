@@ -54,6 +54,27 @@ function Logo({ width = 90 }) {
   );
 }
 
+function WhatsAppOutlineIcon({ size = 24, color = '#4E769B' }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path
+        d="M20 11.5C20 16.194 16.194 20 11.5 20C10.028 20 8.643 19.626 7.436 18.968L4 20L5.094 16.751C4.392 15.257 4 13.588 4 11.826C4 7.132 7.806 3.326 12.5 3.326C17.194 3.326 21 7.132 21 11.826"
+        stroke={color}
+        strokeWidth="1.8"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <path
+        d="M9.221 8.938C9.4 8.524 9.585 8.512 9.755 8.519C9.893 8.525 10.051 8.526 10.208 8.533C10.364 8.54 10.62 8.473 10.805 8.917C10.99 9.361 11.434 10.877 11.489 10.967C11.545 11.058 11.582 11.168 11.492 11.323C11.402 11.479 11.357 11.575 11.267 11.679C11.177 11.783 11.078 11.911 10.998 12.004C10.908 12.109 10.814 12.223 10.92 12.404C11.026 12.585 11.392 13.188 12.003 13.731C12.789 14.43 13.451 14.649 13.647 14.737C13.843 14.824 13.957 14.812 14.068 14.677C14.179 14.542 14.534 14.124 14.67 13.943C14.806 13.763 14.941 13.793 15.107 13.854C15.273 13.914 16.157 14.349 16.339 14.44C16.521 14.53 16.643 14.576 16.688 14.652C16.734 14.727 16.734 15.086 16.583 15.499C16.433 15.912 15.707 16.311 15.381 16.356C15.055 16.401 14.648 16.42 13.245 15.87C11.842 15.321 10.912 14.318 10.627 14.008C10.342 13.699 9.604 12.829 9.189 11.916C8.775 11.003 8.769 10.342 8.907 9.924C9.046 9.507 9.042 9.352 9.221 8.938Z"
+        stroke={color}
+        strokeWidth="1.45"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
 function ProgressDots({ current, total = 4, done = false }) {
   return (
     <div className="progress-dots">
@@ -417,16 +438,16 @@ export default function BookingFlow() {
       : TIMEZONE_GROUPS;
     return (
       <div style={{ width: '100%', marginBottom: 16 }}>
+        <p style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, fontSize: 20, fontWeight: 600, color: '#3C3939', textAlign: 'center', marginBottom: 10 }}>
+          <MousePointerClick size={18} color="#3C3939" />
+          ¿En qué país estás?
+        </p>
         <div style={{ display: 'flex', justifyContent: 'center' }}>
           <button type="button" className="timezone-selector" onClick={e => { e.stopPropagation(); setShowTzDropdown(!showTzDropdown); }}>
             <span>{selectedTz.flag} {selectedTz.label} ({getCurrentTimeInTz(selectedTz.tz)})</span>
             <ChevronDown size={12} />
           </button>
         </div>
-        <p style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5, fontSize: 18, fontWeight: 600, color: '#B34E35', textAlign: 'center', marginTop: 6 }}>
-          <MousePointerClick size={15} color="#B34E35" />
-          Confirma tu país
-        </p>
         {showTzDropdown && (
           <div className="timezone-dropdown" onClick={e => e.stopPropagation()}>
             <div style={{ position: 'relative' }}>
@@ -519,14 +540,14 @@ export default function BookingFlow() {
         {selectedDate && (
           <div className="card">
             <TimezoneSelector />
-            <h2 style={{ fontSize: 19, fontWeight: 600, color: 'var(--negro)', marginBottom: 16, textAlign: 'center' }}>
+            <h2 style={{ fontSize: 24, fontWeight: 600, color: 'var(--negro)', marginBottom: 16, textAlign: 'center' }}>
               {formatDateES(selectedDate)}
             </h2>
 
             {(slotsLoading || (!prefetchDone && slots.length === 0)) ? (
               <p style={{ textAlign: 'center', color: 'var(--gris-medio)', padding: '24px 0', fontSize: 18 }}>Consultando disponibilidad...</p>
             ) : slots.length === 0 ? (
-              <p style={{ textAlign: 'center', color: 'var(--gris-medio)', padding: '24px 0', fontSize: 18 }}>No hay horarios disponibles este día</p>
+              <p style={{ textAlign: 'center', color: '#B34E35', padding: '24px 0', fontSize: 18, fontWeight: 600 }}>No hay horarios disponibles este día</p>
             ) : (
               <>
                 {morningSlots.length > 0 && (
@@ -593,7 +614,7 @@ export default function BookingFlow() {
           <form onSubmit={e => { e.preventDefault(); if (phoneComplete) handlePhoneSubmit(); }}>
             <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 16 }}>
               <div style={{ width: 48, height: 48, borderRadius: '50%', background: '#CFE8E9', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                <span style={{ fontSize: 22, fontWeight: 700, color: '#4E769B', lineHeight: 1 }}>#</span>
+                <WhatsAppOutlineIcon size={26} color="#4E769B" />
               </div>
             </div>
             <div className="phone-unified-field">
@@ -649,7 +670,13 @@ export default function BookingFlow() {
       <Layout devMode={devMode}>
         <Logo width={90} />
         <h1 style={{ fontSize: 26, fontWeight: 600, textAlign: 'center', color: 'var(--negro)', marginBottom: 12, lineHeight: 1.2 }}>
-          {flow.showOnboarding ? '¡Hola! Para darte un mejor servicio, déjanos hacerte unas preguntas.' : flow.isReturning ? `${flow.clientName}, qué bueno verte de nuevo` : 'Confirma tu sesión'}
+          {flow.showOnboarding ? (
+            <>
+              Preparando tu sesión
+              <br />
+              <span style={{ display: 'inline-block', marginTop: 6 }}>Ahora necesito algunos datos básicos</span>
+            </>
+          ) : flow.isReturning ? `${flow.clientName}, qué bueno verte de nuevo` : 'Confirma tu sesión'}
         </h1>
         {flow.showOnboarding && (
           <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 16 }}>

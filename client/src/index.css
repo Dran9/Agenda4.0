@@ -31,7 +31,7 @@
   --btn-secondary-bg: transparent;
   --btn-secondary-border: #D4D1CB;
   --btn-secondary-text: #3C3939;
-  --bg-page: #D9F0FF;
+  --bg-page: #D2E9ED;
   --bg-card: #FFFFFF;
   --bg-input: #F0EEF0;
   --text-primary: #3C3939;
@@ -50,7 +50,7 @@
 
 body {
   font-family: 'Work Sans', -apple-system, BlinkMacSystemFont, sans-serif;
-  background: linear-gradient(180deg, #dff4ff 0%, #ccecff 100%);
+  background: #D2E9ED;
   color: var(--text-primary);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
@@ -69,6 +69,7 @@ input, select, button, textarea {
   display: flex;
   flex-direction: column;
   align-items: center;
+  background: #D2E9ED;
 }
 
 @media (min-width: 520px) {

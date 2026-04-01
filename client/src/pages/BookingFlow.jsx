@@ -835,7 +835,7 @@ export default function BookingFlow() {
         )}
         <div className="notice-box" style={{ marginBottom: 24 }}>
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6 }}>
-            <MessageSquareHeart size={22} color="#1A1A17" />
+            <MessageSquareHeart size={22} color="#84C6C8" />
             <p style={{ fontSize: 19, fontWeight: 500, color: 'var(--grafito)', lineHeight: 1.5, textAlign: 'center', margin: 0 }}>Te llegará un recordatorio el día antes de tu cita.</p>
           </div>
           <div style={{ borderTop: '1px solid rgba(0,0,0,0.06)', marginTop: 12, paddingTop: 12 }}>

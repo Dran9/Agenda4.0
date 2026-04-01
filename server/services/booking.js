@@ -127,16 +127,16 @@ async function createClient(phone, onboarding, tenantId, conn, feeOverride) {
 // ─── Create booking (GCal + DB with compensation) ───────────────
 async function createBooking(client, dateTime, tenantId) {
   const calendarId = CALENDAR_ID();
+  const dayStr = dateTime.split('T')[0];
   try {
-    return await withAdvisoryLock(`booking:${tenantId}:${dateTime}`, 10, async () => {
+    return await withAdvisoryLock(`booking:${tenantId}:${dayStr}`, 10, async () => {
       // Load config for duration
       const [cfgRows] = await pool.query(
         'SELECT appointment_duration FROM config WHERE tenant_id = ?', [tenantId]
       );
       const duration = cfgRows[0]?.appointment_duration || 60;
 
-      // Verify slot is free while holding an advisory lock for this exact slot
-      const dayStr = dateTime.split('T')[0];
+      // Verify slot is free while holding a day-scoped lock to prevent overlapping concurrent bookings
       const timeMin = new Date(`${dayStr}T00:00:00-04:00`).toISOString();
       const timeMax = new Date(`${dayStr}T23:59:59-04:00`).toISOString();
       const events = await listEvents(calendarId, timeMin, timeMax);

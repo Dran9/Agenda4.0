@@ -10,13 +10,12 @@ const {
 const { authMiddleware } = require('../middleware/auth');
 const { checkClientByPhone, createClient, createBooking, rescheduleAppointment } = require('../services/booking');
 const { verifyPublicRescheduleToken } = require('../services/publicBookingToken');
+const { isTrustedDevMode } = require('../utils/devmode');
 
 const router = Router();
 
 // Default tenant (Daniel) — later resolved by domain/slug
 const DEFAULT_TENANT = 1;
-
-function isDevMode(req) { return req.query.devmode === '1'; }
 const bookingRateBuckets = new Map();
 
 async function getBookingRateLimitConfig(tenantId) {
@@ -32,7 +31,7 @@ async function getBookingRateLimitConfig(tenantId) {
 }
 
 async function bookingLimiter(req, res, next) {
-  if (isDevMode(req)) return next();
+  if (isTrustedDevMode(req)) return next();
 
   try {
     const tenantId = req.tenantId || DEFAULT_TENANT;

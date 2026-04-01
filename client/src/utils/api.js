@@ -1,9 +1,10 @@
 // Centralized fetch wrapper
 const BASE_URL = '/api';
+const LOCAL_DEV_HOSTS = new Set(['localhost', '127.0.0.1']);
 
 // Detect devmode from page URL once
 const pageParams = new URLSearchParams(window.location.search);
-const isDevMode = pageParams.get('devmode') === '1';
+const isDevMode = LOCAL_DEV_HOSTS.has(window.location.hostname) && pageParams.get('devmode') === '1';
 
 async function request(path, options = {}) {
   // Append devmode to API URL so server-side rate limiter sees it

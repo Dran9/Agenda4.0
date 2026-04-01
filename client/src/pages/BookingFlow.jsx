@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useMemo, useReducer } from 'react';
 import Calendar from '../components/Calendar';
 import { api } from '../utils/api';
 import {
-  TIMEZONE_GROUPS, DEFAULT_TZ, convertLaPazTimeToTz, getCurrentTimeInTz, detectTimezoneFromIP, TZ_TO_PHONE_CODE,
+  TIMEZONE_GROUPS, ALL_TIMEZONES, DEFAULT_TZ, convertLaPazTimeToTz, getCurrentTimeInTz, detectTimezoneFromIP, TZ_TO_PHONE_CODE,
 } from '../utils/timezones';
 import {
   ArrowRight, ArrowLeft, ChevronDown, Calendar as CalendarIcon,
@@ -36,6 +36,15 @@ const SOURCES = ['Referencia de amigos', 'Redes sociales', 'Otro'];
 
 const DAY_NAMES_ES = ['domingo', 'lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado'];
 const MONTH_NAMES_ES = ['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
+const PHONE_PREFIX_OPTIONS = COUNTRY_CODES
+  .map((country) => ({ ...country, digitsOnly: country.code.replace(/\D/g, '') }))
+  .sort((a, b) => b.digitsOnly.length - a.digitsOnly.length);
+const PHONE_CODE_TO_TZ = Object.entries(TZ_TO_PHONE_CODE).reduce((acc, [tz, code]) => {
+  if (!acc[code]) {
+    acc[code] = ALL_TIMEZONES.find(zone => zone.tz === tz) || DEFAULT_TZ;
+  }
+  return acc;
+}, {});
 
 function formatDateES(dateStr) {
   const d = new Date(dateStr + 'T12:00:00');
@@ -52,6 +61,27 @@ function formatShortDateES(dateStr) {
   const month = MONTH_NAMES_ES[d.getMonth()];
   const year = d.getFullYear();
   return `${num} ${month.charAt(0).toUpperCase() + month.slice(1, 3)} ${year}`;
+}
+
+function parsePrefilledPhone(rawValue) {
+  const digits = String(rawValue || '').replace(/\D/g, '');
+  if (!digits) return null;
+
+  for (const option of PHONE_PREFIX_OPTIONS) {
+    if (!digits.startsWith(option.digitsOnly)) continue;
+    const localDigits = digits.slice(option.digitsOnly.length);
+    if (localDigits.length === option.digits) {
+      return {
+        localDigits,
+        timezone: PHONE_CODE_TO_TZ[option.digitsOnly] || DEFAULT_TZ,
+      };
+    }
+  }
+
+  return {
+    localDigits: digits,
+    timezone: null,
+  };
 }
 
 function Logo({ width = 90 }) {
@@ -207,6 +237,7 @@ export default function BookingFlow() {
   const urlPhone = pageParams.get('t') || urlReschedulePhone;
   const urlFee = pageParams.get('fee') || '';
   const urlCode = pageParams.get('code') || '';
+  const parsedPrefilledPhone = useMemo(() => parsePrefilledPhone(urlPhone), [urlPhone]);
 
   const [flow, dispatch] = useReducer(flowReducer, initialFlowState);
   const [config, setConfig] = useState(null);
@@ -259,12 +290,10 @@ export default function BookingFlow() {
 
   // Pre-fill phone from URL param (?t= or ?r=)
   useEffect(() => {
-    if (urlPhone) {
-      // Take last 8 digits (no country code)
-      const digits = urlPhone.replace(/\D/g, '').slice(-8);
-      if (digits.length > 0) setPhoneNumber(digits);
-    }
-  }, []);
+    if (!parsedPrefilledPhone) return;
+    if (parsedPrefilledPhone.localDigits) setPhoneNumber(parsedPrefilledPhone.localDigits);
+    if (parsedPrefilledPhone.timezone) setSelectedTz(parsedPrefilledPhone.timezone);
+  }, [parsedPrefilledPhone]);
 
   // Fetch client name for reschedule banner
   useEffect(() => {
@@ -280,6 +309,7 @@ export default function BookingFlow() {
 
   // Auto-detect timezone by IP (country code derived from timezone selector)
   useEffect(() => {
+    if (parsedPrefilledPhone?.timezone) return;
     fetch('https://ipapi.co/json/')
       .then(r => r.json())
       .then(data => {
@@ -287,7 +317,7 @@ export default function BookingFlow() {
         if (detectedTz) setSelectedTz(detectedTz);
       })
       .catch(() => {});
-  }, []);
+  }, [parsedPrefilledPhone]);
 
   // Pre-fetch current month's available dates
   const DAY_MAP = { 0: 'domingo', 1: 'lunes', 2: 'martes', 3: 'miercoles', 4: 'jueves', 5: 'viernes', 6: 'sabado' };

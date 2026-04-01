@@ -7,6 +7,7 @@ const rateLimit = require('express-rate-limit');
 
 const { initializeDatabase } = require('./db');
 const { startReminderCron, startAutoCompleteCron, startPaymentReminderCron } = require('./cron/scheduler');
+const { isTrustedDevMode } = require('./utils/devmode');
 
 // Routes
 const bookingRoutes = require('./routes/booking');
@@ -24,15 +25,10 @@ app.set('trust proxy', 1);
 app.use(cors());
 app.use(express.json({ limit: '5mb' }));
 
-// ─── Rate limiter for client check ───────────────────────────────
-function isDevMode(req) {
-  return req.query.devmode === '1';
-}
-
 const clientLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 5,
-  skip: isDevMode,
+  skip: isTrustedDevMode,
   message: { error: 'Demasiados intentos.' },
 });
 

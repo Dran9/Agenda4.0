@@ -6,24 +6,59 @@ function pad(d) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
+function parseJsonSafe(value) {
+  try {
+    return value ? JSON.parse(value) : null;
+  } catch (_) {
+    return null;
+  }
+}
+
 async function wasReminderAlreadySent({ tenantId, appointmentId, eventId, hours = 48 }) {
-  const [alreadySent] = await pool.query(
-    `SELECT id FROM webhooks_log
+  const [rows] = await pool.query(
+    `SELECT id, payload FROM webhooks_log
      WHERE type = 'reminder_sent' AND tenant_id = ?
        AND (appointment_id = ? OR event = ?)
        AND created_at > DATE_SUB(NOW(), INTERVAL ? HOUR)
+     ORDER BY created_at DESC
      LIMIT 1`,
     [tenantId, appointmentId || null, eventId || null, hours]
   );
-  return alreadySent.length > 0;
+  const latestAttempt = rows[0];
+  if (!latestAttempt) return false;
+
+  const waMessageId = parseJsonSafe(latestAttempt.payload)?.wa_message_id;
+  if (!waMessageId) return true;
+
+  const [failedStatuses] = await pool.query(
+    `SELECT id FROM webhooks_log
+     WHERE tenant_id = ?
+       AND type = 'status_change'
+       AND event = ?
+       AND status = 'error'
+     LIMIT 1`,
+    [tenantId, waMessageId]
+  );
+
+  return failedStatuses.length === 0;
 }
 
 async function sendAppointmentReminder(appt, eventId) {
-  await sendConfirmationTemplate(appt.phone, appt.first_name, appt.date_time);
+  const result = await sendConfirmationTemplate(appt.phone, appt.first_name, appt.date_time);
   await pool.query(
     `INSERT INTO webhooks_log (tenant_id, event, type, payload, status, client_phone, client_id, appointment_id)
      VALUES (?, ?, 'reminder_sent', ?, 'enviado', ?, ?, ?)`,
-    [appt.tenant_id, eventId, JSON.stringify({ appointment_id: appt.id || null }), appt.phone, appt.client_id, appt.id || null]
+    [
+      appt.tenant_id,
+      eventId,
+      JSON.stringify({
+        appointment_id: appt.id || null,
+        wa_message_id: result.messages?.[0]?.id || null,
+      }),
+      appt.phone,
+      appt.client_id,
+      appt.id || null,
+    ]
   );
 }
 

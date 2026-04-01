@@ -281,6 +281,7 @@ export default function BookingFlow() {
     return '+591'; // default Bolivia
   }, [selectedTz]);
   const currentCountry = COUNTRY_CODES.find(c => c.code === countryCode) || COUNTRY_CODES[0];
+  const selectedCountryName = currentCountry.name === 'USA' ? 'Estados Unidos' : currentCountry.name;
   const phoneDigits = phoneNumber.replace(/\D/g, '');
   const expectedDigits = currentCountry.digits;
   const phoneComplete = phoneDigits.length === expectedDigits;
@@ -377,6 +378,7 @@ export default function BookingFlow() {
   }, [config, getDatesForMonth, prefetchDates]);
 
   useEffect(() => { setIsInternational(countryCode !== '+591'); }, [countryCode]);
+  useEffect(() => { setCountry(selectedCountryName || 'Bolivia'); }, [selectedCountryName]);
 
   useEffect(() => {
     if (!showTzDropdown) return;
@@ -762,7 +764,29 @@ export default function BookingFlow() {
                     : <p style={{ fontSize: 14, color: 'var(--gris-medio)', marginTop: 6 }}>Entre {minAge} y {maxAge} años</p>}
                 </div>
                 {isInternational ? (
-                  <div><span className="field-label">PAÍS <span style={{color:'#B34E35'}}>*</span></span><input value={country} onChange={e => setCountry(e.target.value)} className="input-field" placeholder="Tu país" /></div>
+                  <div>
+                    <span className="field-label">PAÍS</span>
+                    <div
+                      style={{
+                        minHeight: 54,
+                        borderRadius: 12,
+                        background: 'var(--bg-input)',
+                        padding: '0 18px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        gap: 12,
+                      }}
+                    >
+                      <div>
+                        <div style={{ fontSize: 22, fontWeight: 600, color: 'var(--text-primary)' }}>{country}</div>
+                        <div style={{ fontSize: 13, color: 'var(--gris-medio)', marginTop: 2 }}>
+                          Se toma del prefijo de WhatsApp que elegiste en la pantalla anterior.
+                        </div>
+                      </div>
+                      <div style={{ fontSize: 12, fontWeight: 600, color: '#4E769B', whiteSpace: 'nowrap' }}>{countryCode}</div>
+                    </div>
+                  </div>
                 ) : (
                   <div>
                     <span className="field-label">CIUDAD <span style={{color:'#B34E35'}}>*</span></span>

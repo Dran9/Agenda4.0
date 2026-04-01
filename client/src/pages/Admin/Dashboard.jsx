@@ -137,7 +137,7 @@ export default function Dashboard() {
   async function handleTriggerReminder(date) {
     try {
       const result = await api.get(`/admin/test-reminder?date=${date}`);
-      if (result.sent > 0) showToast(`${result.sent} recordatorio(s) enviado(s); ${result.skipped || 0} omitido(s) por dedupe`);
+      if (result.sent > 0) showToast(`${result.sent} recordatorio(s) aceptado(s) por WhatsApp; ${result.skipped || 0} omitido(s) por dedupe`);
       else showToast(result.skipped > 0 ? 'No hubo pendientes nuevos; lo demás ya estaba enviado' : 'No hubo mensajes para enviar');
     } catch (err) {
       showToast(`Error: ${err.message}`, 'error');

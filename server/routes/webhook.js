@@ -146,6 +146,49 @@ router.post('/', async (req, res) => {
       for (const change of entry.changes || []) {
         if (change.field !== 'messages') continue;
         const value = change.value;
+        const tenantId = 1; // Default tenant for now
+
+        if (Array.isArray(value.statuses) && value.statuses.length > 0) {
+          for (const statusItem of value.statuses) {
+            const waStatus = statusItem.status || 'unknown';
+            const recipientPhone = statusItem.recipient_id || null;
+            let clientId = null;
+
+            if (recipientPhone) {
+              const [clients] = await pool.query(
+                'SELECT id FROM clients WHERE phone = ? AND tenant_id = ? LIMIT 1',
+                [recipientPhone, tenantId]
+              );
+              clientId = clients[0]?.id || null;
+            }
+
+            await pool.query(
+              `INSERT INTO webhooks_log (tenant_id, event, type, payload, status, client_phone, client_id)
+               VALUES (?, ?, 'status_change', ?, ?, ?, ?)`,
+              [
+                tenantId,
+                statusItem.id || `wa_status_${Date.now()}`,
+                JSON.stringify({
+                  kind: 'whatsapp_status',
+                  wa_status: waStatus,
+                  recipient_id: recipientPhone,
+                  conversation: statusItem.conversation || null,
+                  pricing: statusItem.pricing || null,
+                  errors: statusItem.errors || null,
+                  raw: statusItem,
+                }),
+                waStatus === 'failed' ? 'error' : 'procesado',
+                recipientPhone,
+                clientId,
+              ]
+            ).catch((err) => {
+              console.error('[webhook] Failed to store WhatsApp status:', err.message);
+            });
+
+            console.log(`[webhook] WA status ${waStatus} for ${recipientPhone || 'unknown'} (${statusItem.id || 'no-id'})`);
+          }
+        }
+
         if (!value.messages) continue;
 
         for (const msg of value.messages) {

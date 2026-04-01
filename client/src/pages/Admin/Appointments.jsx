@@ -178,7 +178,7 @@ export default function Appointments() {
         return;
       }
       if (result.sent > 0) {
-        showToast(force ? 'Recordatorio reenviado a esta cita' : 'Recordatorio enviado a esta cita');
+        showToast(force ? 'Recordatorio aceptado por WhatsApp para reenvío' : 'Recordatorio aceptado por WhatsApp');
         return;
       }
       if (result.failed > 0) {

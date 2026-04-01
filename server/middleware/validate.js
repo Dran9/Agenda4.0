@@ -1,24 +1,38 @@
 const { z } = require('zod');
 
 // Schemas
-const bookingSchema = z.object({
-  phone: z.string().min(8).max(20).optional(),
-  date_time: z.string().regex(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/),
-  client_id: z.number().int().positive().optional(),
-  code: z.string().max(50).optional(),
-  fee_override: z.union([z.string(), z.number()]).optional(),
-  onboarding: z.object({
-    first_name: z.string().min(1).max(100),
-    last_name: z.string().min(1).max(100),
-    age: z.number().int().min(1).max(120).optional(),
-    city: z.string().max(100).optional(),
-    country: z.string().max(100).optional(),
-    source: z.string().max(100).optional(),
-    timezone: z.string().max(50).optional(),
-  }).optional(),
+const onboardingSchema = z.object({
+  first_name: z.string().min(1).max(100),
+  last_name: z.string().min(1).max(100),
+  age: z.number().int().min(1).max(120).optional(),
+  city: z.string().max(100).optional(),
+  country: z.string().max(100).optional(),
+  source: z.string().max(100).optional(),
+  timezone: z.string().max(50).optional(),
 });
 
-const rescheduleSchema = z.object({
+const publicBookingSchema = z.object({
+  phone: z.string().min(8).max(20),
+  date_time: z.string().regex(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/),
+  code: z.string().max(50).optional(),
+  fee_override: z.union([z.string(), z.number()]).optional(),
+  onboarding: onboardingSchema.optional(),
+});
+
+const adminBookingSchema = z.object({
+  client_id: z.number().int().positive(),
+  date_time: z.string().regex(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/),
+  fee_override: z.union([z.string(), z.number()]).optional(),
+});
+
+const publicRescheduleSchema = z.object({
+  phone: z.string().min(8).max(20),
+  old_appointment_id: z.number().int().positive(),
+  date_time: z.string().regex(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/),
+  reschedule_token: z.string().min(1).max(1000),
+});
+
+const adminRescheduleSchema = z.object({
   client_id: z.number().int().positive(),
   old_appointment_id: z.number().int().positive(),
   date_time: z.string().regex(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/),
@@ -56,4 +70,11 @@ function validate(schema) {
   };
 }
 
-module.exports = { validate, bookingSchema, rescheduleSchema, clientSchema };
+module.exports = {
+  validate,
+  publicBookingSchema,
+  adminBookingSchema,
+  publicRescheduleSchema,
+  adminRescheduleSchema,
+  clientSchema,
+};

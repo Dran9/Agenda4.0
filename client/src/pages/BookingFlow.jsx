@@ -86,6 +86,7 @@ const initialFlowState = {
   activeAppointment: null,
   showOnboarding: false, isReturning: false,
   rescheduleMode: false, oldAppointment: null, wasRescheduled: false,
+  rescheduleToken: '',
   bookedAppointment: null,
 };
 
@@ -96,21 +97,37 @@ function flowReducer(state, action) {
     case 'PHONE_CHECK_START':
       return { ...state, loading: true, error: '' };
     case 'PHONE_HAS_APPOINTMENT':
-      return { ...state, loading: false, screen: 6, activeAppointment: action.appointment, clientId: action.clientId, clientName: action.clientName };
+      return {
+        ...state,
+        loading: false,
+        screen: 6,
+        activeAppointment: action.appointment,
+        clientId: action.clientId,
+        clientName: action.clientName,
+        rescheduleToken: action.rescheduleToken || '',
+      };
     case 'PHONE_RETURNING':
-      return { ...state, loading: false, screen: 3, isReturning: true, clientName: action.clientName, clientId: action.clientId };
+      return { ...state, loading: false, screen: 3, isReturning: true, clientName: action.clientName, clientId: action.clientId, rescheduleToken: '' };
     case 'PHONE_NEW':
-      return { ...state, loading: false, screen: 3, showOnboarding: true };
+      return { ...state, loading: false, screen: 3, showOnboarding: true, rescheduleToken: '' };
     case 'PHONE_ERROR':
       return { ...state, loading: false, error: action.error };
     case 'BOOK_START':
       return { ...state, loading: true, error: '' };
     case 'BOOK_SUCCESS':
-      return { ...state, loading: false, screen: 5, bookedAppointment: action.appointment, clientName: action.clientName || state.clientName };
+      return { ...state, loading: false, screen: 5, bookedAppointment: action.appointment, clientName: action.clientName || state.clientName, rescheduleToken: '' };
     case 'BOOK_NEEDS_ONBOARDING':
       return { ...state, loading: false, showOnboarding: true };
     case 'BOOK_HAS_APPOINTMENT':
-      return { ...state, loading: false, screen: 6, activeAppointment: action.appointment, clientId: action.clientId, clientName: action.clientName || state.clientName };
+      return {
+        ...state,
+        loading: false,
+        screen: 6,
+        activeAppointment: action.appointment,
+        clientId: action.clientId,
+        clientName: action.clientName || state.clientName,
+        rescheduleToken: action.rescheduleToken || state.rescheduleToken,
+      };
     case 'BOOK_ERROR':
       return { ...state, loading: false, error: action.error };
     case 'ENTER_RESCHEDULE':
@@ -118,7 +135,17 @@ function flowReducer(state, action) {
     case 'RESCHEDULE_START':
       return { ...state, loading: true, error: '' };
     case 'RESCHEDULE_SUCCESS':
-      return { ...state, loading: false, screen: 5, wasRescheduled: true, bookedAppointment: action.appointment, rescheduleMode: false, oldAppointment: null, activeAppointment: null };
+      return {
+        ...state,
+        loading: false,
+        screen: 5,
+        wasRescheduled: true,
+        bookedAppointment: action.appointment,
+        rescheduleMode: false,
+        oldAppointment: null,
+        activeAppointment: null,
+        rescheduleToken: '',
+      };
     case 'RESCHEDULE_ERROR':
       return { ...state, loading: false, error: action.error };
     case 'KEEP_APPOINTMENT':
@@ -335,7 +362,13 @@ export default function BookingFlow() {
       const data = await api.post('/book', body);
       if (data.status === 'needs_onboarding') dispatch({ type: 'PHONE_NEW' });
       else if (data.status === 'booked') dispatch({ type: 'BOOK_SUCCESS', appointment: { date: selectedDate, time: selectedSlot }, clientName: data.client_name });
-      else if (data.status === 'has_appointment') dispatch({ type: 'PHONE_HAS_APPOINTMENT', appointment: data.appointment, clientId: data.client_id, clientName: data.client_name });
+      else if (data.status === 'has_appointment') dispatch({
+        type: 'PHONE_HAS_APPOINTMENT',
+        appointment: data.appointment,
+        clientId: data.client_id,
+        clientName: data.client_name,
+        rescheduleToken: data.reschedule_token,
+      });
     } catch (err) { dispatch({ type: 'PHONE_ERROR', error: err.message }); }
   }
 
@@ -349,7 +382,13 @@ export default function BookingFlow() {
       if (urlCode) body.code = urlCode;
       const data = await api.post('/book', body);
       if (data.status === 'needs_onboarding') dispatch({ type: 'BOOK_NEEDS_ONBOARDING' });
-      else if (data.status === 'has_appointment') dispatch({ type: 'BOOK_HAS_APPOINTMENT', appointment: data.appointment, clientId: data.client_id, clientName: data.client_name });
+      else if (data.status === 'has_appointment') dispatch({
+        type: 'BOOK_HAS_APPOINTMENT',
+        appointment: data.appointment,
+        clientId: data.client_id,
+        clientName: data.client_name,
+        rescheduleToken: data.reschedule_token,
+      });
       else if (data.status === 'booked') dispatch({ type: 'BOOK_SUCCESS', appointment: { date: selectedDate, time: selectedSlot }, clientName: onboarding?.first_name || flow.clientName });
     } catch (err) { dispatch({ type: 'BOOK_ERROR', error: err.message }); }
   }
@@ -359,7 +398,14 @@ export default function BookingFlow() {
     try {
       const appt = flow.oldAppointment || flow.activeAppointment;
       if (!appt) throw new Error('No se encontró la cita original');
-      await api.post('/reschedule', { client_id: flow.clientId, old_appointment_id: appt.id, date_time: `${selectedDate}T${selectedSlot}` });
+      if (!flow.rescheduleToken) throw new Error('La autorización para reagendar expiró. Vuelve a verificar tu teléfono.');
+      const phone = countryCode.replace('+', '') + phoneDigits;
+      await api.post('/reschedule', {
+        phone,
+        old_appointment_id: appt.id,
+        date_time: `${selectedDate}T${selectedSlot}`,
+        reschedule_token: flow.rescheduleToken,
+      });
       dispatch({ type: 'RESCHEDULE_SUCCESS', appointment: { date: selectedDate, time: selectedSlot } });
     } catch (err) { dispatch({ type: 'RESCHEDULE_ERROR', error: err.message }); }
   }
@@ -437,7 +483,13 @@ export default function BookingFlow() {
         const data = await api.post('/book', body);
         if (data.status === 'needs_onboarding') dispatch({ type: 'PHONE_NEW' });
         else if (data.status === 'booked') dispatch({ type: 'BOOK_SUCCESS', appointment: { date: selectedDate, time }, clientName: data.client_name });
-        else if (data.status === 'has_appointment') dispatch({ type: 'PHONE_HAS_APPOINTMENT', appointment: data.appointment, clientId: data.client_id, clientName: data.client_name });
+        else if (data.status === 'has_appointment') dispatch({
+          type: 'PHONE_HAS_APPOINTMENT',
+          appointment: data.appointment,
+          clientId: data.client_id,
+          clientName: data.client_name,
+          rescheduleToken: data.reschedule_token,
+        });
       } catch (err) { dispatch({ type: 'PHONE_ERROR', error: err.message }); }
     }
 

@@ -1,5 +1,6 @@
 const { pool } = require('../db');
 const { listEvents } = require('./calendar');
+const { getLaPazDateKey, getLaPazMinutes, getBusyRangesForDate } = require('./calendarBusy');
 
 const DAY_NAMES = ['domingo', 'lunes', 'martes', 'miercoles', 'jueves', 'viernes', 'sabado'];
 
@@ -27,7 +28,8 @@ async function getAvailableSlots(date, tenantId) {
   // Check if date is within window
   const now = new Date();
   const targetDate = new Date(date + 'T00:00:00-04:00');
-  const today = new Date(now.toLocaleString('en-US', { timeZone: 'America/La_Paz' }));
+  const todayKey = getLaPazDateKey(now);
+  const today = new Date(`${todayKey}T00:00:00-04:00`);
   today.setHours(0, 0, 0, 0);
 
   const diffDays = Math.floor((targetDate - today) / (1000 * 60 * 60 * 24));
@@ -47,21 +49,10 @@ async function getAvailableSlots(date, tenantId) {
   const timeMax = new Date(`${date}T23:59:59-04:00`).toISOString();
   const events = await listEvents(calendarId, timeMin, timeMax);
 
-  // Parse events to La Paz time ranges
-  const busyRanges = events.map(e => {
-    const start = new Date(e.start.dateTime || e.start.date);
-    const end = new Date(e.end.dateTime || e.end.date);
-    const startLP = new Date(start.toLocaleString('en-US', { timeZone: 'America/La_Paz' }));
-    const endLP = new Date(end.toLocaleString('en-US', { timeZone: 'America/La_Paz' }));
-    return {
-      start: startLP.getHours() * 60 + startLP.getMinutes(),
-      end: endLP.getHours() * 60 + endLP.getMinutes(),
-    };
-  });
+  const busyRanges = getBusyRangesForDate(events, date);
 
   // Current time in La Paz
-  const nowLP = new Date(now.toLocaleString('en-US', { timeZone: 'America/La_Paz' }));
-  const nowMinutes = nowLP.getHours() * 60 + nowLP.getMinutes();
+  const nowMinutes = getLaPazMinutes(now);
   const isToday = diffDays === 0;
 
   // Filter slots

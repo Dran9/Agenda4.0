@@ -1,5 +1,7 @@
 const { pool, withTransaction, withAdvisoryLock } = require('../db');
 const { listEvents, createEvent, deleteEvent } = require('./calendar');
+const { getBusyRangesForDate } = require('./calendarBusy');
+const { createPublicRescheduleToken } = require('./publicBookingToken');
 
 const CALENDAR_ID = () => process.env.CALENDAR_ID || 'danielmacleann@gmail.com';
 
@@ -36,11 +38,18 @@ async function checkClientByPhone(phone, tenantId, options = {}) {
   );
 
   if (appointments.length > 0) {
+    const activeAppointment = appointments[0];
     return {
       status: 'has_appointment',
       client_name: client.first_name,
       client_id: client.id,
-      appointment: { id: appointments[0].id, date_time: appointments[0].date_time },
+      appointment: { id: activeAppointment.id, date_time: activeAppointment.date_time },
+      reschedule_token: createPublicRescheduleToken({
+        tenantId,
+        clientId: client.id,
+        appointmentId: activeAppointment.id,
+        phone: client.phone,
+      }),
     };
   }
 
@@ -135,16 +144,9 @@ async function createBooking(client, dateTime, tenantId) {
       const [hh, mm] = dateTime.split('T')[1].split(':').map(Number);
       const slotStartMin = hh * 60 + mm;
       const slotEndMin = slotStartMin + duration;
+      const busyRanges = getBusyRangesForDate(events, dayStr);
 
-      const conflict = events.some(e => {
-        const es = new Date(e.start.dateTime || e.start.date);
-        const ee = new Date(e.end.dateTime || e.end.date);
-        const esLP = new Date(es.toLocaleString('en-US', { timeZone: 'America/La_Paz' }));
-        const eeLP = new Date(ee.toLocaleString('en-US', { timeZone: 'America/La_Paz' }));
-        const eStart = esLP.getHours() * 60 + esLP.getMinutes();
-        const eEnd = eeLP.getHours() * 60 + eeLP.getMinutes();
-        return slotStartMin < eEnd && slotEndMin > eStart;
-      });
+      const conflict = busyRanges.some((range) => slotStartMin < range.end && slotEndMin > range.start);
 
       if (conflict) {
         return { error: 'El horario ya no está disponible', status: 409 };

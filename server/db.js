@@ -305,7 +305,7 @@ async function initializeDatabase() {
     const [tenants] = await conn.query('SELECT id FROM tenants WHERE slug = ?', ['daniel']);
     if (tenants.length === 0) {
       await conn.query(
-        `INSERT INTO tenants (name, slug, domain) VALUES ('Daniel MacLean', 'daniel', 'tumvp.in')`
+        `INSERT INTO tenants (name, slug, domain) VALUES ('Daniel MacLean', 'daniel', 'plum-rhinoceros-787093.hostingersite.com')`
       );
       await conn.query(`
         INSERT INTO config (tenant_id, available_hours, available_days) VALUES (
@@ -346,6 +346,11 @@ async function initializeDatabase() {
     await conn.query(`ALTER TABLE payments MODIFY COLUMN ocr_extracted_amount INT`).catch(() => {});
     await conn.query(`ALTER TABLE payments ADD COLUMN IF NOT EXISTS ocr_extracted_date VARCHAR(50)`).catch(() => {});
     await conn.query(`ALTER TABLE payments ADD COLUMN IF NOT EXISTS ocr_extracted_dest_name VARCHAR(255)`).catch(() => {});
+    await conn.query(
+      `UPDATE tenants
+       SET domain = 'plum-rhinoceros-787093.hostingersite.com'
+       WHERE slug = 'daniel' AND domain = 'tumvp.in'`
+    ).catch(() => {});
 
     console.log('[DB] All 10 tables initialized');
   } finally {

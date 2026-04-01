@@ -16,7 +16,7 @@ export default defineConfig({
   server: {
     proxy: {
       '/api': {
-        target: 'https://tumvp.in',
+        target: 'https://plum-rhinoceros-787093.hostingersite.com',
         changeOrigin: true,
       },
     },

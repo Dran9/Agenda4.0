@@ -8,6 +8,7 @@ const rateLimit = require('express-rate-limit');
 const { initializeDatabase } = require('./db');
 const { startReminderCron, startAutoCompleteCron, startPaymentReminderCron } = require('./cron/scheduler');
 const { isTrustedDevMode } = require('./utils/devmode');
+const { sendServerError } = require('./utils/httpErrors');
 
 // Routes
 const bookingRoutes = require('./routes/booking');
@@ -23,7 +24,14 @@ const paymentsRoutes = require('./routes/payments');
 const app = express();
 app.set('trust proxy', 1);
 app.use(cors());
-app.use(express.json({ limit: '5mb' }));
+app.use(express.json({
+  limit: '5mb',
+  verify: (req, _res, buf) => {
+    if (req.originalUrl?.startsWith('/api/webhook')) {
+      req.rawBody = Buffer.from(buf);
+    }
+  },
+}));
 
 const clientLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
@@ -67,7 +75,10 @@ app.get('/api/admin/test-reminder', authMiddleware, async (req, res) => {
     });
     res.json(result);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    sendServerError(res, req, err, {
+      message: 'No se pudieron procesar los recordatorios',
+      logLabel: 'admin test-reminder',
+    });
   }
 });
 
@@ -77,7 +88,10 @@ app.get('/api/admin/test-payment-reminder', authMiddleware, async (req, res) => 
     const result = await checkAndSendPaymentReminders({ tenantId: req.tenantId, force: force === '1' });
     res.json(result);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    sendServerError(res, req, err, {
+      message: 'No se pudieron procesar los recordatorios de pago',
+      logLabel: 'admin test-payment-reminder',
+    });
   }
 });
 
@@ -98,7 +112,10 @@ app.get('/api/admin/test-sheets', authMiddleware, async (req, res) => {
       sheets: info.data.sheets.map(s => s.properties.title),
     });
   } catch (err) {
-    res.json({ error: err.message, code: err.code });
+    sendServerError(res, req, err, {
+      message: 'No se pudo verificar Google Sheets',
+      logLabel: 'admin test-sheets',
+    });
   }
 });
 

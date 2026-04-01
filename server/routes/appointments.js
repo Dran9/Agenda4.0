@@ -2,6 +2,7 @@ const { Router } = require('express');
 const { pool } = require('../db');
 const { authMiddleware } = require('../middleware/auth');
 const { deleteEvent } = require('../services/calendar');
+const { sendServerError } = require('../utils/httpErrors');
 
 const router = Router();
 const CALENDAR_ID = () => process.env.CALENDAR_ID || 'danielmacleann@gmail.com';
@@ -78,7 +79,10 @@ router.get('/', authMiddleware, async (req, res) => {
 
     res.json({ appointments: rows, total: countResult[0].total, page: parseInt(page), limit: parseInt(limit) });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    sendServerError(res, req, err, {
+      message: 'No se pudieron cargar las citas',
+      logLabel: 'appointments list',
+    });
   }
 });
 
@@ -127,7 +131,10 @@ router.put('/:id/status', authMiddleware, async (req, res) => {
 
     res.json({ success: true });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    sendServerError(res, req, err, {
+      message: 'No se pudo actualizar la cita',
+      logLabel: 'appointments status',
+    });
   }
 });
 
@@ -141,7 +148,10 @@ router.put('/:id/notes', authMiddleware, async (req, res) => {
     );
     res.json({ success: true });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    sendServerError(res, req, err, {
+      message: 'No se pudo guardar la nota',
+      logLabel: 'appointments notes',
+    });
   }
 });
 
@@ -162,7 +172,10 @@ router.get('/today', authMiddleware, async (req, res) => {
     );
     res.json(rows);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    sendServerError(res, req, err, {
+      message: 'No se pudieron cargar las citas de hoy',
+      logLabel: 'appointments today',
+    });
   }
 });
 
@@ -184,7 +197,10 @@ router.delete('/:id', authMiddleware, async (req, res) => {
     await pool.query('DELETE FROM appointments WHERE id = ? AND tenant_id = ?', [req.params.id, req.tenantId]);
     res.json({ success: true });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    sendServerError(res, req, err, {
+      message: 'No se pudo eliminar la cita',
+      logLabel: 'appointments delete',
+    });
   }
 });
 

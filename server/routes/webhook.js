@@ -1,10 +1,44 @@
+const crypto = require('crypto');
 const { Router } = require('express');
 const { pool } = require('../db');
 const { getOperationalContext, classifyIncomingMessage, buildClassificationMetadata } = require('../services/messageContext');
 const { buildCalendarSummary, hasCalendarPaymentMarker, stripCalendarMarkers } = require('../services/calendarSummary');
+const { sendServerError } = require('../utils/httpErrors');
 
 const router = Router();
 const CALENDAR_ID = () => process.env.CALENDAR_ID || process.env.GOOGLE_CALENDAR_ID || 'danielmacleann@gmail.com';
+
+function getWebhookAppSecret() {
+  return process.env.WA_APP_SECRET || process.env.META_APP_SECRET || process.env.APP_SECRET || '';
+}
+
+function verifyWebhookSignature(req) {
+  const appSecret = getWebhookAppSecret();
+  if (!appSecret) {
+    return { ok: false, status: 500, error: 'Webhook app secret no configurado' };
+  }
+
+  const signature = req.get('x-hub-signature-256');
+  if (!signature || !signature.startsWith('sha256=')) {
+    return { ok: false, status: 401, error: 'Firma faltante o inválida' };
+  }
+
+  if (!Buffer.isBuffer(req.rawBody)) {
+    return { ok: false, status: 400, error: 'Payload sin firma verificable' };
+  }
+
+  const expected = Buffer.from(
+    `sha256=${crypto.createHmac('sha256', appSecret).update(req.rawBody).digest('hex')}`,
+    'utf8'
+  );
+  const received = Buffer.from(signature, 'utf8');
+
+  if (expected.length !== received.length || !crypto.timingSafeEqual(expected, received)) {
+    return { ok: false, status: 401, error: 'Firma inválida' };
+  }
+
+  return { ok: true };
+}
 
 function sanitizeReceiptDate(value) {
   return value ? String(value).trim().slice(0, 50) : null;
@@ -80,7 +114,7 @@ function formatDisplayDate(value) {
 
 function formatMismatchProblem(problem) {
   if (problem.type === 'fecha_pasada') {
-    return `FECHA PASADA (comprobante ${problem.receiptDate} no es posterior a la sesión ${problem.sessionDate})`;
+    return `FECHA PASADA (comprobante ${problem.receiptDate} es anterior a la sesión ${problem.sessionDate})`;
   }
   if (problem.type === 'monto') {
     return 'MONTO';
@@ -135,7 +169,13 @@ router.get('/', (req, res) => {
 
 // POST /api/webhook — WhatsApp incoming messages & button replies
 router.post('/', async (req, res) => {
-  // Always respond 200 immediately (Meta requirement)
+  const signatureCheck = verifyWebhookSignature(req);
+  if (!signatureCheck.ok) {
+    console.error('[webhook] Signature verification failed:', signatureCheck.error);
+    return res.sendStatus(signatureCheck.status);
+  }
+
+  // Respond quickly once the request is authenticated.
   res.sendStatus(200);
 
   try {
@@ -282,7 +322,7 @@ router.post('/', async (req, res) => {
               if (clientId) {
                 const [appts] = await pool.query(
                   `SELECT id FROM appointments
-                   WHERE client_id = ? AND tenant_id = ? AND status IN ('Agendada','Confirmada') AND date_time > NOW()
+                   WHERE client_id = ? AND tenant_id = ? AND status IN ('Agendada','Confirmada','Reagendada') AND date_time > NOW()
                    ORDER BY date_time LIMIT 1`,
                   [clientId, tenantId]
                 );
@@ -525,12 +565,12 @@ router.post('/', async (req, res) => {
                           problems.push({ type: 'monto', expectedAmount, receivedAmount: ocrResult.amount });
                         }
 
-                        // 3. Fecha: receipt date must be strictly after the session date
+                        // 3. Fecha: receipt date must not be before the session date
                         if (ocrResult.date && bestMatch.date_time) {
                           const receiptDateKey = parseReceiptDateKey(ocrResult.date);
                           const sessionDateKey = getBoliviaDateKey(bestMatch.date_time);
 
-                          if (receiptDateKey && sessionDateKey && receiptDateKey <= sessionDateKey) {
+                          if (receiptDateKey && sessionDateKey && receiptDateKey < sessionDateKey) {
                             problems.push({
                               type: 'fecha_pasada',
                               receiptDate: ocrResult.date,
@@ -697,7 +737,10 @@ router.get('/conversations', authMiddleware, async (req, res) => {
 
     res.json({ conversations: rows, total: countResult[0].total, page: parseInt(page), limit: parseInt(limit) });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    sendServerError(res, req, err, {
+      message: 'No se pudieron cargar las conversaciones',
+      logLabel: 'webhook conversations',
+    });
   }
 });
 
@@ -726,7 +769,10 @@ router.get('/log', authMiddleware, async (req, res) => {
 
     res.json({ logs: rows, total: countResult[0].total, page: parseInt(page), limit: parseInt(limit) });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    sendServerError(res, req, err, {
+      message: 'No se pudo cargar el activity log',
+      logLabel: 'webhook log',
+    });
   }
 });
 
@@ -739,7 +785,10 @@ router.get('/file/:key', authMiddleware, async (req, res) => {
     res.set('Content-Type', file.mime_type);
     res.send(file.data);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    sendServerError(res, req, err, {
+      message: 'No se pudo cargar el archivo',
+      logLabel: 'webhook file',
+    });
   }
 });
 
@@ -790,7 +839,10 @@ router.get('/debug-check/:phone', authMiddleware, async (req, res) => {
 
     res.json(result);
   } catch (err) {
-    res.status(500).json({ error: err.message, stack: err.stack });
+    sendServerError(res, req, err, {
+      message: 'No se pudo ejecutar la validación de calendario',
+      logLabel: 'webhook debug-check',
+    });
   }
 });
 

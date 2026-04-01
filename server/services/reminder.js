@@ -110,7 +110,7 @@ async function checkAndSendReminders({ date, tenantId, force = false, appointmen
       let [appts] = await pool.query(
         `SELECT a.*, c.phone, c.first_name FROM appointments a
          JOIN clients c ON a.client_id = c.id
-         WHERE a.gcal_event_id = ? AND a.status IN ('Agendada','Confirmada') ${tenantFilter}`,
+         WHERE a.gcal_event_id = ? AND a.status IN ('Agendada','Confirmada','Reagendada') ${tenantFilter}`,
         params
       );
 
@@ -246,7 +246,7 @@ async function checkAndSendPaymentReminders({ tenantId = 1, force = false } = {}
        JOIN clients c ON c.id = p.client_id AND c.tenant_id = p.tenant_id
        WHERE p.tenant_id = ?
          AND p.status = 'Pendiente'
-         AND a.status IN ('Agendada','Confirmada')
+         AND a.status IN ('Agendada','Confirmada','Reagendada')
          AND a.date_time > NOW()
          AND a.date_time <= DATE_ADD(NOW(), INTERVAL ? HOUR)
        ORDER BY a.date_time ASC`,

@@ -6,6 +6,7 @@ const { extractReceiptData } = require('../services/ocr');
 const { updateEventSummary, getOAuthClient } = require('../services/calendar');
 const { buildCalendarSummary } = require('../services/calendarSummary');
 const { google } = require('googleapis');
+const { sendServerError } = require('../utils/httpErrors');
 
 const router = Router();
 
@@ -59,7 +60,10 @@ router.get('/', authMiddleware, async (req, res) => {
 
     res.json({ payments: rows, total: countResult[0].total });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    sendServerError(res, req, err, {
+      message: 'No se pudieron cargar los pagos',
+      logLabel: 'payments list',
+    });
   }
 });
 
@@ -85,7 +89,10 @@ router.put('/:id/status', authMiddleware, async (req, res) => {
 
     res.json({ success: true });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    sendServerError(res, req, err, {
+      message: 'No se pudo actualizar el pago',
+      logLabel: 'payments status',
+    });
   }
 });
 
@@ -146,7 +153,10 @@ router.post('/:id/receipt', authMiddleware, async (req, res) => {
       } : null,
     });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    sendServerError(res, req, err, {
+      message: 'No se pudo subir el comprobante',
+      logLabel: 'payments upload-receipt',
+    });
   }
 });
 
@@ -167,7 +177,10 @@ router.get('/:id/receipt', authMiddleware, async (req, res) => {
     res.set('Content-Type', file.mime_type);
     res.send(file.data);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    sendServerError(res, req, err, {
+      message: 'No se pudo cargar el comprobante',
+      logLabel: 'payments get-receipt',
+    });
   }
 });
 
@@ -264,7 +277,10 @@ router.post('/match-receipt', authMiddleware, async (req, res) => {
       })),
     });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    sendServerError(res, req, err, {
+      message: 'No se pudo procesar el comprobante',
+      logLabel: 'payments match-receipt',
+    });
   }
 });
 
@@ -298,7 +314,7 @@ router.get('/summary', authMiddleware, async (req, res) => {
         GROUP BY tenant_id, appointment_id
       ) p ON p.appointment_id = a.id AND p.tenant_id = a.tenant_id
       WHERE a.tenant_id = ? AND YEAR(a.date_time) = ? AND MONTH(a.date_time) = ?
-        AND a.status IN ('Completada', 'Confirmada', 'Agendada')
+        AND a.status IN ('Completada', 'Confirmada', 'Agendada', 'Reagendada')
     `, [t, t, y, m]);
 
     // Monthly history (last 6 months)
@@ -319,7 +335,7 @@ router.get('/summary', authMiddleware, async (req, res) => {
         GROUP BY tenant_id, appointment_id
       ) p ON p.appointment_id = a.id AND p.tenant_id = a.tenant_id
       WHERE a.tenant_id = ? AND a.date_time >= DATE_SUB(NOW(), INTERVAL 6 MONTH)
-        AND a.status IN ('Completada', 'Confirmada', 'Agendada')
+        AND a.status IN ('Completada', 'Confirmada', 'Agendada', 'Reagendada')
       GROUP BY YEAR(a.date_time), MONTH(a.date_time)
       ORDER BY year DESC, month DESC
     `, [t, t]);
@@ -346,7 +362,10 @@ router.get('/summary', authMiddleware, async (req, res) => {
       monthly_goal: cfg?.monthly_goal || null,
     });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    sendServerError(res, req, err, {
+      message: 'No se pudo cargar el resumen de pagos',
+      logLabel: 'payments summary',
+    });
   }
 });
 
@@ -360,7 +379,10 @@ router.put('/goal', authMiddleware, async (req, res) => {
     );
     res.json({ success: true });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    sendServerError(res, req, err, {
+      message: 'No se pudo guardar la meta mensual',
+      logLabel: 'payments goal',
+    });
   }
 });
 

@@ -1,5 +1,6 @@
 const { Router } = require('express');
 const { getAvailableSlots, getPublicConfig } = require('../services/slots');
+const { sendServerError } = require('../utils/httpErrors');
 
 const router = Router();
 const DEFAULT_TENANT = 1;
@@ -15,7 +16,14 @@ router.get('/', async (req, res) => {
   } catch (err) {
     console.error('[slots] Error:', err.message, err.response?.data || '');
     // Return empty slots instead of 500 — GCal errors shouldn't break the UI
-    res.json({ slots: [], date: req.query.date, warning: err.message, debug: err.response?.data || null });
+    const payload = { slots: [], date: req.query.date, warning: 'No se pudieron cargar los horarios' };
+    if (process.env.NODE_ENV !== 'production') {
+      payload.debug = {
+        message: err.message,
+        response: err.response?.data || null,
+      };
+    }
+    res.json(payload);
   }
 });
 
@@ -27,7 +35,10 @@ router.get('/config/public', async (req, res) => {
     if (!config) return res.status(404).json({ error: 'Config no encontrada' });
     res.json(config);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    sendServerError(res, req, err, {
+      message: 'No se pudo cargar la configuración pública',
+      logLabel: 'slots public-config',
+    });
   }
 });
 

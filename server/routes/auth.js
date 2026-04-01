@@ -1,11 +1,22 @@
 const { Router } = require('express');
+const rateLimit = require('express-rate-limit');
 const { pool } = require('../db');
 const { generateToken } = require('../middleware/auth');
+const { isTrustedDevMode } = require('../utils/devmode');
+const { sendServerError } = require('../utils/httpErrors');
 
 const router = Router();
+const loginLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 5,
+  skip: isTrustedDevMode,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Demasiados intentos. Esperá 15 minutos.' },
+});
 
 // POST /api/auth/login — simple password-based login
-router.post('/login', async (req, res) => {
+router.post('/login', loginLimiter, async (req, res) => {
   try {
     const { password, slug } = req.body;
     if (!password) return res.status(400).json({ error: 'Password requerido' });
@@ -24,7 +35,10 @@ router.post('/login', async (req, res) => {
     const token = generateToken(tenant.id, null);
     res.json({ token, tenant: { id: tenant.id, name: tenant.name, slug: tenant.slug } });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    sendServerError(res, req, err, {
+      message: 'No se pudo iniciar sesión',
+      logLabel: 'auth login',
+    });
   }
 });
 

@@ -58,12 +58,12 @@ function markError(key, err, enabled = schedulerState[key].enabled) {
 // Auto-complete appointments ~1h after their scheduled time
 async function autoCompleteAppointments() {
   try {
-    // Find appointments that ended >1h ago and are still Agendada/Confirmada
+    // Find appointments that ended >1h ago and are still pending completion
     const [appts] = await pool.query(
       `SELECT a.id, a.client_id, a.tenant_id, a.duration, c.fee
        FROM appointments a
        JOIN clients c ON a.client_id = c.id
-       WHERE a.status IN ('Agendada','Confirmada')
+       WHERE a.status IN ('Agendada','Confirmada','Reagendada')
          AND DATE_ADD(a.date_time, INTERVAL COALESCE(a.duration, 60) MINUTE) < DATE_SUB(NOW(), INTERVAL 1 HOUR)`
     );
 

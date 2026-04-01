@@ -101,13 +101,18 @@ async function extractPdfWithGoogleVision(pdfBuffer, apiKey) {
  * Tested with: Mercantil Santa Cruz, BCP, BISA, BancoSol, Banco Ganadero, BNB, Banco Union
  *
  * Valid destination accounts:
+ * - 30151182874355
  * - 6896894011
  * - 3501136408
  */
 function parseBolivianReceipt(text) {
   const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
   const fullText = text;
-  const VALID_DESTINATION_ACCOUNTS = new Set(['6896894011', '3501136408']);
+  const VALID_DESTINATION_ACCOUNTS = new Set(
+    ['30151182874355', '6896894011', '3501136408', ...(process.env.VALID_DESTINATION_ACCOUNTS || '').split(',')]
+      .map(value => String(value || '').replace(/\D/g, ''))
+      .filter(Boolean)
+  );
 
   function normalizeAccount(value) {
     return String(value || '').replace(/\D/g, '');
@@ -148,10 +153,24 @@ function parseBolivianReceipt(text) {
   // ─── Sender name (who paid) ───
   let name = null;
 
-  // BISA format: "De    VARGAS VILLARROEL DANIELA"
-  const deMatch = fullText.match(/^De\s+([A-ZÁÉÍÓÚÑ][A-ZÁÉÍÓÚÑa-záéíóúñ\s]+)/m);
-  if (deMatch && !/banco|credito|bolivia/i.test(deMatch[1])) {
-    name = deMatch[1].trim();
+  // BISA/QR format: "De" on one line and the sender name on the next
+  const deIdx = lines.findIndex(l => /^de[:\s]*$/i.test(l));
+  if (deIdx >= 0 && deIdx + 1 < lines.length) {
+    const candidate = lines[deIdx + 1];
+    if (
+      /^[A-ZÁÉÍÓÚÑa-záéíóúñ\s.]{4,}$/.test(candidate)
+      && !/banco|credito|bolivia/i.test(candidate)
+    ) {
+      name = candidate.trim();
+    }
+  }
+
+  // Inline format: "De: VARGAS VILLARROEL DANIELA"
+  if (!name) {
+    const deMatch = fullText.match(/^De[:\s]+([^\n]+)/im);
+    if (deMatch && !/banco|credito|bolivia/i.test(deMatch[1])) {
+      name = deMatch[1].trim();
+    }
   }
 
   // BCP format: "Enviado por: Nunez Maldonado Valentina..."
@@ -255,6 +274,20 @@ function parseBolivianReceipt(text) {
     const paraMatch = fullText.match(/Para[:\s]+([^\n]+)/i);
     if (paraMatch) destName = paraMatch[1].trim();
   }
+  // Pattern 3: BISA/QR "Para" on one line and name on the next
+  if (!destName) {
+    const paraIdx = lines.findIndex(l => /^para[:\s]*$/i.test(l));
+    if (paraIdx >= 0 && paraIdx + 1 < lines.length) {
+      const candidate = lines[paraIdx + 1];
+      if (
+        /^[A-ZÁÉÍÓÚÑa-záéíóúñ\s.]{4,}$/.test(candidate)
+        && !/nit|ci\s*\/|banco|cuenta/i.test(candidate)
+        && !/^\d/.test(candidate)
+      ) {
+        destName = candidate;
+      }
+    }
+  }
   if (!destName) {
     const aNombreDestIdx = lines.findIndex((l, i) => {
       const prevLines = lines.slice(Math.max(0, i - 4), i).join(' ');
@@ -262,6 +295,14 @@ function parseBolivianReceipt(text) {
     });
     if (aNombreDestIdx >= 0 && aNombreDestIdx + 1 < lines.length) {
       destName = lines[aNombreDestIdx + 1];
+    }
+  }
+
+  // Pattern 4: explicit account labels like "N° de cuenta"
+  if (!destAccount) {
+    const accountMatch = fullText.match(/(?:n[°º]\s*de\s*cuenta|n[uú]mero\s*de\s*cuenta|cuenta)[:\s]*([\d\s.-]{6,})/i);
+    if (accountMatch) {
+      destAccount = normalizeAccount(accountMatch[1]);
     }
   }
 

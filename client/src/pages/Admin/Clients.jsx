@@ -383,6 +383,7 @@ export default function Clients() {
           onSave={handleUpdate}
           sources={sources}
           statuses={statuses}
+          showToast={showToast}
         />
       )}
     </AdminLayout>
@@ -467,7 +468,7 @@ function CreateClientModal({ onClose, onCreate, saving, sources }) {
   );
 }
 
-function EditClientModal({ client, onClose, onSave, sources, statuses }) {
+function EditClientModal({ client, onClose, onSave, sources, statuses, showToast }) {
   const [form, setForm] = useState({ ...client });
   const [saving, setSaving] = useState(false);
 

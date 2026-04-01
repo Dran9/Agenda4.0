@@ -14,8 +14,8 @@ const onboardingSchema = z.object({
 const publicBookingSchema = z.object({
   phone: z.string().min(8).max(20),
   date_time: z.string().regex(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/),
-  code: z.string().max(50).optional(),
-  fee_override: z.union([z.string(), z.number()]).optional(),
+  fee_mode: z.enum(['pe']).optional(),
+  code: z.string().max(1000).optional(),
   onboarding: onboardingSchema.optional(),
 });
 

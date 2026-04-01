@@ -32,7 +32,7 @@ async function checkClientByPhone(phone, tenantId, options = {}) {
   const client = clients[0];
   const [appointments] = await pool.query(
     `SELECT id, date_time FROM appointments
-     WHERE client_id = ? AND tenant_id = ? AND status IN ('Agendada','Confirmada') AND date_time > NOW()
+     WHERE client_id = ? AND tenant_id = ? AND status IN ('Agendada','Confirmada','Reagendada') AND date_time > NOW()
      ORDER BY date_time ASC LIMIT 1`,
     [client.id, tenantId]
   );

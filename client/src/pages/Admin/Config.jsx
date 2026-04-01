@@ -139,6 +139,9 @@ export default function Config() {
   const [availability, setAvailability] = useState({});
   const [copyPopoverDay, setCopyPopoverDay] = useState(null);
   const [copyTo, setCopyTo] = useState({});
+  const [specialFeePhone, setSpecialFeePhone] = useState('');
+  const [specialFeeLinkData, setSpecialFeeLinkData] = useState(null);
+  const [generatingSpecialFeeLink, setGeneratingSpecialFeeLink] = useState(false);
 
   useEffect(() => {
     api.get('/config')
@@ -296,6 +299,40 @@ export default function Config() {
         },
       },
     }));
+  }
+
+  function updateSpecialFeePhone(value) {
+    setSpecialFeePhone(value.replace(/\D/g, '').slice(0, 15));
+    setSpecialFeeLinkData(null);
+  }
+
+  async function handleGenerateSpecialFeeLink() {
+    if (!specialFeePhone) {
+      showToast('Ingresa un teléfono para generar el link', 'error');
+      return;
+    }
+
+    setGeneratingSpecialFeeLink(true);
+    try {
+      const data = await api.post('/config/special-fee-link', { phone: specialFeePhone });
+      setSpecialFeePhone(data.phone || specialFeePhone);
+      setSpecialFeeLinkData(data);
+      showToast('Link firmado generado');
+    } catch (err) {
+      showToast('Error: ' + err.message, 'error');
+    } finally {
+      setGeneratingSpecialFeeLink(false);
+    }
+  }
+
+  async function handleCopySpecialFeeLink() {
+    if (!specialFeeLinkData?.url) return;
+    try {
+      await navigator.clipboard.writeText(specialFeeLinkData.url);
+      showToast('Link copiado');
+    } catch (err) {
+      showToast('No se pudo copiar el link', 'error');
+    }
   }
 
   async function handleSave() {
@@ -640,6 +677,62 @@ export default function Config() {
                     className="w-20 px-3 py-2 border border-gray-200 rounded-lg text-sm text-right font-medium"
                   />
                 </div>
+              </div>
+              <div className="mt-4 border-t border-gray-100 pt-4">
+                <div className="flex flex-col gap-3 lg:flex-row lg:items-end">
+                  <div className="flex-1">
+                    <label className="block text-xs text-gray-500 mb-1">Teléfono del cliente</label>
+                    <input
+                      type="tel"
+                      value={specialFeePhone}
+                      onChange={e => updateSpecialFeePhone(e.target.value)}
+                      placeholder="59172034151"
+                      className="w-full px-3 py-2.5 border border-gray-200 rounded-lg text-sm"
+                    />
+                  </div>
+                  <div className="lg:w-[180px]">
+                    <label className="block text-xs text-gray-500 mb-1">Modo</label>
+                    <div className="px-3 py-2.5 border border-gray-200 rounded-lg text-sm bg-gray-50 text-gray-700">
+                      Precio especial
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleGenerateSpecialFeeLink}
+                    disabled={!specialFeePhone || generatingSpecialFeeLink}
+                    className="rounded-xl bg-[#4E769B] px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-[#618BBF] disabled:cursor-not-allowed disabled:opacity-40"
+                  >
+                    {generatingSpecialFeeLink ? 'Generando...' : 'Generar link'}
+                  </button>
+                </div>
+
+                <p className="mt-3 text-xs text-gray-500">
+                  Firmado significa que el link queda amarrado a este teléfono y al modo <span className="font-medium">precio especial</span>. Si alguien edita la URL a mano, el server lo rechaza.
+                </p>
+
+                {specialFeeLinkData?.url ? (
+                  <div className="mt-4 rounded-xl border border-[#D9E48B] bg-[#F8FBE8] p-4">
+                    <div className="text-xs text-gray-500 mb-2">
+                      Aplica <span className="font-medium">Bs {specialFeeLinkData.fee_amount ?? config?.special_fee ?? ''}</span> y vence en {specialFeeLinkData.expires_in}.
+                    </div>
+                    <div className="flex flex-col gap-2 lg:flex-row">
+                      <input
+                        type="text"
+                        readOnly
+                        value={specialFeeLinkData.url}
+                        className="flex-1 px-3 py-2.5 border border-gray-200 rounded-lg text-xs bg-white text-gray-700"
+                      />
+                      <button
+                        type="button"
+                        onClick={handleCopySpecialFeeLink}
+                        className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-slate-700 transition hover:border-slate-300 hover:text-slate-900"
+                      >
+                        <Copy size={14} />
+                        Copiar
+                      </button>
+                    </div>
+                  </div>
+                ) : null}
               </div>
             </div>
 

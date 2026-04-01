@@ -2,6 +2,7 @@ const { Router } = require('express');
 const { pool } = require('../db');
 const { authMiddleware } = require('../middleware/auth');
 const { calculateRetentionStatus } = require('../services/retention');
+const { sendServerError } = require('../utils/httpErrors');
 
 const router = Router();
 
@@ -33,7 +34,7 @@ router.get('/', authMiddleware, async (req, res) => {
           (SELECT COUNT(*) FROM appointments WHERE tenant_id = ? AND status = 'No-show') as total_noshow,
           (SELECT COUNT(*) FROM appointments WHERE tenant_id = ? AND status = 'Reagendada') as total_rescheduled,
           (SELECT COUNT(*) FROM clients WHERE tenant_id = ? AND created_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)) as new_clients_30d,
-          (SELECT COUNT(*) FROM appointments WHERE tenant_id = ? AND date_time >= DATE_SUB(NOW(), INTERVAL 7 DAY) AND status IN ('Completada','Confirmada','Agendada')) as sessions_this_week,
+          (SELECT COUNT(*) FROM appointments WHERE tenant_id = ? AND date_time >= DATE_SUB(NOW(), INTERVAL 7 DAY) AND status IN ('Completada','Confirmada','Agendada','Reagendada')) as sessions_this_week,
           (SELECT COALESCE(SUM(p.amount), 0) FROM payments p JOIN appointments a ON p.appointment_id = a.id WHERE p.tenant_id = ? AND p.status = 'Confirmado' AND MONTH(a.date_time) = MONTH(NOW()) AND YEAR(a.date_time) = YEAR(NOW())) as income_this_month
       `, [t, t, t, t, t, t, t, t, t]),
 
@@ -71,7 +72,7 @@ router.get('/', authMiddleware, async (req, res) => {
       // Popular hours
       pool.query(`
         SELECT HOUR(date_time) as hour, COUNT(*) as count
-        FROM appointments WHERE tenant_id = ? AND status IN ('Completada', 'Confirmada', 'Agendada')
+        FROM appointments WHERE tenant_id = ? AND status IN ('Completada', 'Confirmada', 'Agendada', 'Reagendada')
         GROUP BY hour ORDER BY hour
       `, [t]),
 
@@ -100,7 +101,7 @@ router.get('/', authMiddleware, async (req, res) => {
         ) a ON a.client_id = c.id
         LEFT JOIN (
           SELECT client_id, COUNT(*) as future_appt
-          FROM appointments WHERE status IN ('Agendada','Confirmada') AND date_time > NOW()
+          FROM appointments WHERE status IN ('Agendada','Confirmada','Reagendada') AND date_time > NOW()
           GROUP BY client_id
         ) f ON f.client_id = c.id
         WHERE c.tenant_id = ? AND c.deleted_at IS NULL
@@ -120,7 +121,7 @@ router.get('/', authMiddleware, async (req, res) => {
         SELECT c.id, c.frequency,
           (SELECT COUNT(*) FROM appointments WHERE client_id = c.id AND tenant_id = ? AND status = 'Completada') as completed_sessions,
           (SELECT MAX(date_time) FROM appointments WHERE client_id = c.id AND tenant_id = ? AND status = 'Completada') as last_session,
-          (SELECT MIN(date_time) FROM appointments WHERE client_id = c.id AND tenant_id = ? AND status IN ('Agendada','Confirmada') AND date_time > NOW()) as next_session
+          (SELECT MIN(date_time) FROM appointments WHERE client_id = c.id AND tenant_id = ? AND status IN ('Agendada','Confirmada','Reagendada') AND date_time > NOW()) as next_session
         FROM clients c
         WHERE c.tenant_id = ? AND c.deleted_at IS NULL
       `, [t, t, t, t]),
@@ -154,8 +155,10 @@ router.get('/', authMiddleware, async (req, res) => {
       recent_activity: recentActivity,
     });
   } catch (err) {
-    console.error('[analytics] Error:', err.message);
-    res.status(500).json({ error: err.message });
+    sendServerError(res, req, err, {
+      message: 'No se pudieron cargar las métricas',
+      logLabel: 'analytics',
+    });
   }
 });
 

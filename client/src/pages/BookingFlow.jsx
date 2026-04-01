@@ -235,7 +235,7 @@ export default function BookingFlow() {
   const urlReschedule = !!urlRParam;
   const urlReschedulePhone = urlRParam.replace(/\D/g, '').length >= 8 ? urlRParam : '';
   const urlPhone = pageParams.get('t') || urlReschedulePhone;
-  const urlFee = pageParams.get('fee') || '';
+  const urlFeeMode = pageParams.get('f') || '';
   const urlCode = pageParams.get('code') || '';
   const parsedPrefilledPhone = useMemo(() => parsePrefilledPhone(urlPhone), [urlPhone]);
 
@@ -258,9 +258,6 @@ export default function BookingFlow() {
   const [city, setCity] = useState('Cochabamba');
   const [country, setCountry] = useState('Bolivia');
   const [source, setSource] = useState('');
-
-  // Reschedule client name (fetched from DB when ?r=phone)
-  const [rescheduleClientName, setRescheduleClientName] = useState('');
 
   // Calendar/slots
   const [selectedDate, setSelectedDate] = useState(null);
@@ -294,15 +291,6 @@ export default function BookingFlow() {
     if (parsedPrefilledPhone.localDigits) setPhoneNumber(parsedPrefilledPhone.localDigits);
     if (parsedPrefilledPhone.timezone) setSelectedTz(parsedPrefilledPhone.timezone);
   }, [parsedPrefilledPhone]);
-
-  // Fetch client name for reschedule banner
-  useEffect(() => {
-    if (urlReschedulePhone) {
-      api.post('/client/check', { phone: urlReschedulePhone })
-        .then(data => { if (data.client_name) setRescheduleClientName(data.client_name.split(' ')[0]); })
-        .catch(() => {});
-    }
-  }, []);
 
   // Load config
   useEffect(() => { api.get('/config/public').then(setConfig).catch(() => {}); }, []);
@@ -431,16 +419,14 @@ export default function BookingFlow() {
     try {
       const phone = countryCode.replace('+', '') + phoneDigits;
       const body = { phone, date_time: `${selectedDate}T${selectedSlot}` };
-      if (urlFee) body.fee_override = urlFee;
+      if (urlFeeMode) body.fee_mode = urlFeeMode;
       if (urlCode) body.code = urlCode;
       const data = await api.post('/book', body);
       if (data.status === 'needs_onboarding') dispatch({ type: 'PHONE_NEW' });
-      else if (data.status === 'booked') dispatch({ type: 'BOOK_SUCCESS', appointment: { date: selectedDate, time: selectedSlot }, clientName: data.client_name });
+      else if (data.status === 'booked') dispatch({ type: 'BOOK_SUCCESS', appointment: { date: selectedDate, time: selectedSlot } });
       else if (data.status === 'has_appointment') dispatch({
         type: 'PHONE_HAS_APPOINTMENT',
         appointment: data.appointment,
-        clientId: data.client_id,
-        clientName: data.client_name,
         rescheduleToken: data.reschedule_token,
       });
     } catch (err) { dispatch({ type: 'PHONE_ERROR', error: err.message }); }
@@ -452,15 +438,13 @@ export default function BookingFlow() {
       const phone = countryCode.replace('+', '') + phoneDigits;
       const body = { phone, date_time: `${selectedDate}T${selectedSlot}` };
       if (onboarding) body.onboarding = onboarding;
-      if (urlFee) body.fee_override = urlFee;
+      if (urlFeeMode) body.fee_mode = urlFeeMode;
       if (urlCode) body.code = urlCode;
       const data = await api.post('/book', body);
       if (data.status === 'needs_onboarding') dispatch({ type: 'BOOK_NEEDS_ONBOARDING' });
       else if (data.status === 'has_appointment') dispatch({
         type: 'BOOK_HAS_APPOINTMENT',
         appointment: data.appointment,
-        clientId: data.client_id,
-        clientName: data.client_name,
         rescheduleToken: data.reschedule_token,
       });
       else if (data.status === 'booked') dispatch({ type: 'BOOK_SUCCESS', appointment: { date: selectedDate, time: selectedSlot }, clientName: onboarding?.first_name || flow.clientName });
@@ -552,16 +536,14 @@ export default function BookingFlow() {
       try {
         const phone = countryCode.replace('+', '') + phoneDigits;
         const body = { phone, date_time: `${selectedDate}T${time}` };
-        if (urlFee) body.fee_override = urlFee;
+        if (urlFeeMode) body.fee_mode = urlFeeMode;
         if (urlCode) body.code = urlCode;
         const data = await api.post('/book', body);
         if (data.status === 'needs_onboarding') dispatch({ type: 'PHONE_NEW' });
-        else if (data.status === 'booked') dispatch({ type: 'BOOK_SUCCESS', appointment: { date: selectedDate, time }, clientName: data.client_name });
+        else if (data.status === 'booked') dispatch({ type: 'BOOK_SUCCESS', appointment: { date: selectedDate, time } });
         else if (data.status === 'has_appointment') dispatch({
           type: 'PHONE_HAS_APPOINTMENT',
           appointment: data.appointment,
-          clientId: data.client_id,
-          clientName: data.client_name,
           rescheduleToken: data.reschedule_token,
         });
       } catch (err) { dispatch({ type: 'PHONE_ERROR', error: err.message }); }
@@ -575,8 +557,8 @@ export default function BookingFlow() {
         </h1>
         {(flow.rescheduleMode || urlReschedule) && (
           <div style={{ background: 'var(--dorado)', textAlign: 'center', padding: '10px 16px', borderRadius: 12, marginBottom: 12, fontSize: 18, fontWeight: 600, color: 'var(--negro)' }}>
-            {rescheduleClientName || flow.clientName
-              ? `${rescheduleClientName || flow.clientName}, vamos a reprogramar tu cita`
+            {flow.clientName
+              ? `${flow.clientName}, vamos a reprogramar tu cita`
               : 'Vamos a reprogramar tu cita'}
           </div>
         )}

@@ -4,9 +4,23 @@ const { authMiddleware } = require('../middleware/auth');
 const multer = require('multer');
 const { saveFile, getFile, listFiles } = require('../services/storage');
 const { getSchedulerRuntime, refreshConfigSchedulers } = require('../cron/scheduler');
+const { createPublicFeeToken } = require('../services/publicBookingToken');
+const { sendServerError } = require('../utils/httpErrors');
 
 const router = Router();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024 } });
+
+function normalizePhone(value) {
+  return String(value || '').replace(/\D/g, '');
+}
+
+function buildTenantBaseUrl(req, domain) {
+  const trimmed = String(domain || '').trim().replace(/\/+$/, '');
+  if (trimmed) {
+    return /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
+  }
+  return `${req.protocol}://${req.get('host')}`;
+}
 
 // GET /api/config — get full config (admin)
 router.get('/', authMiddleware, async (req, res) => {
@@ -15,7 +29,10 @@ router.get('/', authMiddleware, async (req, res) => {
     if (rows.length === 0) return res.status(404).json({ error: 'Config no encontrada' });
     res.json({ ...rows[0], _runtime: getSchedulerRuntime() });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    sendServerError(res, req, err, {
+      message: 'No se pudo cargar la configuración',
+      logLabel: 'config get',
+    });
   }
 });
 
@@ -55,7 +72,50 @@ router.put('/', authMiddleware, async (req, res) => {
     }
     res.json({ success: true });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    sendServerError(res, req, err, {
+      message: 'No se pudo guardar la configuración',
+      logLabel: 'config update',
+    });
+  }
+});
+
+// POST /api/config/special-fee-link — generate signed public link (admin)
+router.post('/special-fee-link', authMiddleware, async (req, res) => {
+  try {
+    const phone = normalizePhone(req.body?.phone);
+    if (phone.length < 8 || phone.length > 20) {
+      return res.status(400).json({ error: 'Teléfono inválido' });
+    }
+
+    const code = createPublicFeeToken({
+      tenantId: req.tenantId,
+      phone,
+      feeMode: 'pe',
+    });
+
+    const [tenantResult, cfgResult] = await Promise.all([
+      pool.query('SELECT domain FROM tenants WHERE id = ? LIMIT 1', [req.tenantId]),
+      pool.query('SELECT special_fee FROM config WHERE tenant_id = ? LIMIT 1', [req.tenantId]),
+    ]);
+    const tenant = tenantResult[0]?.[0] || null;
+    const cfg = cfgResult[0]?.[0] || null;
+
+    const baseUrl = buildTenantBaseUrl(req, tenant?.domain);
+    const url = `${baseUrl}/?t=${encodeURIComponent(phone)}&f=pe&code=${encodeURIComponent(code)}`;
+
+    res.json({
+      phone,
+      fee_mode: 'pe',
+      fee_amount: parseInt(cfg?.special_fee, 10) || null,
+      code,
+      url,
+      expires_in: '30d',
+    });
+  } catch (err) {
+    sendServerError(res, req, err, {
+      message: 'No se pudo generar el link de precio especial',
+      logLabel: 'config special-fee-link',
+    });
   }
 });
 
@@ -71,7 +131,10 @@ router.post('/qr/:key', authMiddleware, upload.single('file'), async (req, res) 
     await saveFile(req.tenantId, req.params.key, req.file.buffer, req.file.mimetype, req.file.originalname);
     res.json({ success: true });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    sendServerError(res, req, err, {
+      message: 'No se pudo subir el archivo',
+      logLabel: 'config upload',
+    });
   }
 });
 
@@ -84,7 +147,10 @@ router.get('/qr/:key', async (req, res) => {
     res.set('Content-Type', file.mime_type);
     res.send(file.data);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    sendServerError(res, req, err, {
+      message: 'No se pudo cargar el archivo',
+      logLabel: 'config qr',
+    });
   }
 });
 

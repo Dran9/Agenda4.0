@@ -4,6 +4,7 @@ const { authMiddleware } = require('../middleware/auth');
 const { validate, clientSchema } = require('../middleware/validate');
 const { calculateRetentionStatus } = require('../services/retention');
 const { deleteEvent } = require('../services/calendar');
+const { sendServerError } = require('../utils/httpErrors');
 
 const router = Router();
 const CALENDAR_ID = () => process.env.CALENDAR_ID || 'danielmacleann@gmail.com';
@@ -33,6 +34,18 @@ function daysSince(dateTime) {
   return Math.floor((Date.now() - new Date(dateTime).getTime()) / (1000 * 60 * 60 * 24));
 }
 
+function sanitizePublicClientStatus(result) {
+  if (!result?.status) return { status: 'new' };
+  if (result.status === 'has_appointment') {
+    return {
+      status: 'has_appointment',
+      appointment: result.appointment,
+      reschedule_token: result.reschedule_token,
+    };
+  }
+  return { status: result.status };
+}
+
 // GET /api/clients — list all (admin)
 router.get('/', authMiddleware, async (req, res) => {
   try {
@@ -41,7 +54,7 @@ router.get('/', authMiddleware, async (req, res) => {
         (SELECT COUNT(*) FROM appointments WHERE client_id = c.id AND tenant_id = ? AND status = 'Completada') as completed_sessions,
         (SELECT MAX(date_time) FROM appointments WHERE client_id = c.id AND tenant_id = ? AND status = 'Completada') as last_session,
         (SELECT MIN(date_time) FROM appointments WHERE client_id = c.id AND tenant_id = ? AND status = 'Completada') as first_session,
-        (SELECT MIN(date_time) FROM appointments WHERE client_id = c.id AND tenant_id = ? AND status IN ('Agendada','Confirmada') AND date_time > NOW()) as next_session,
+        (SELECT MIN(date_time) FROM appointments WHERE client_id = c.id AND tenant_id = ? AND status IN ('Agendada','Confirmada','Reagendada') AND date_time > NOW()) as next_session,
         (SELECT COUNT(*) FROM appointments WHERE client_id = c.id AND tenant_id = ?) as total_appointments,
         (SELECT COUNT(*) FROM appointments WHERE client_id = c.id AND tenant_id = ? AND status = 'Reagendada') as reschedule_count
        FROM clients c WHERE c.tenant_id = ? AND c.deleted_at IS NULL
@@ -73,7 +86,10 @@ router.get('/', authMiddleware, async (req, res) => {
 
     res.json(clients);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    sendServerError(res, req, err, {
+      message: 'No se pudieron cargar los clientes',
+      logLabel: 'clients list',
+    });
   }
 });
 
@@ -102,7 +118,10 @@ router.get('/:id', authMiddleware, async (req, res) => {
 
     res.json({ client, appointments, payments });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    sendServerError(res, req, err, {
+      message: 'No se pudo cargar el cliente',
+      logLabel: 'clients detail',
+    });
   }
 });
 
@@ -127,7 +146,10 @@ router.post('/', authMiddleware, validate(clientSchema), async (req, res) => {
     );
     res.json({ client_id: result.insertId, existing: false });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    sendServerError(res, req, err, {
+      message: 'No se pudo crear el cliente',
+      logLabel: 'clients create',
+    });
   }
 });
 
@@ -150,7 +172,10 @@ router.put('/:id', authMiddleware, async (req, res) => {
     await pool.query(`UPDATE clients SET ${setClauses} WHERE id = ? AND tenant_id = ?`, values);
     res.json({ success: true });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    sendServerError(res, req, err, {
+      message: 'No se pudo actualizar el cliente',
+      logLabel: 'clients update',
+    });
   }
 });
 
@@ -181,21 +206,31 @@ router.delete('/:id', authMiddleware, async (req, res) => {
     await pool.query('DELETE FROM clients WHERE id = ? AND tenant_id = ?', [req.params.id, req.tenantId]);
     res.json({ success: true });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    sendServerError(res, req, err, {
+      message: 'No se pudo eliminar el cliente',
+      logLabel: 'clients delete',
+    });
   }
 });
 
 // POST /api/client/check — public phone check (no auth)
 router.post('/check', async (req, res) => {
   try {
+    if (req.baseUrl === '/api/clients') {
+      return res.status(404).json({ error: 'Endpoint no encontrado' });
+    }
+
     const { phone } = req.body;
     if (!phone) return res.status(400).json({ error: 'Campo requerido: phone' });
     const { checkClientByPhone } = require('../services/booking');
     const tenantId = req.tenantId || 1;
     const result = await checkClientByPhone(phone, tenantId, { reactivateDeleted: false });
-    res.json(result);
+    res.json(sanitizePublicClientStatus(result));
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    sendServerError(res, req, err, {
+      message: 'No se pudo verificar el cliente',
+      logLabel: 'client check',
+    });
   }
 });
 

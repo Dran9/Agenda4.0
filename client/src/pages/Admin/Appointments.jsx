@@ -11,14 +11,17 @@ function formatReceiptAmount(amount) {
 }
 
 function ReceiptSummary({ appt }) {
-  const hasOcrSummary = appt.ocr_extracted_amount != null || appt.ocr_extracted_dest_name || appt.ocr_extracted_date;
+  const hasOcrSummary = appt.ocr_extracted_amount != null || appt.ocr_extracted_dest_name || appt.ocr_extracted_date || appt.payment_notes;
   if (!hasOcrSummary) return null;
 
   return (
     <div className="mt-2 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-xs leading-5 text-gray-700">
-      <div><span className="font-medium text-gray-500">Monto:</span> {formatReceiptAmount(appt.ocr_extracted_amount)}</div>
-      <div><span className="font-medium text-gray-500">Destinatario:</span> {appt.ocr_extracted_dest_name || '—'}</div>
+      {appt.payment_notes && (
+        <div><span className="font-medium text-gray-500">Motivo:</span> {appt.payment_notes}</div>
+      )}
       <div><span className="font-medium text-gray-500">Fecha de abono:</span> {appt.ocr_extracted_date || '—'}</div>
+      <div><span className="font-medium text-gray-500">Destinatario:</span> {appt.ocr_extracted_dest_name || '—'}</div>
+      <div><span className="font-medium text-gray-500">Monto:</span> {formatReceiptAmount(appt.ocr_extracted_amount)}</div>
     </div>
   );
 }

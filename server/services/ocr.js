@@ -200,13 +200,13 @@ function parseBolivianReceipt(text) {
   }
 
   // ─── Destination verification ───
-  // "Daniel Mac" (together or separated) ALWAYS identifies Daniel as recipient.
-  // We look for it near destination keywords: destino, a nombre de, motivo, para.
+  // "Mac Lean" / "MacLean" identifies Daniel as recipient.
+  // We only look near true destination keywords, not free-text "Motivo".
   // This works across ALL Bolivian banks regardless of format.
 
   // Collect all text near destination-related keywords
   let destText = '';
-  const destKeywords = /cuenta\s*(de\s+)?destino|a\s+nombre\s+de|beneficiario|destinatario|motivo|concepto|para\b/i;
+  const destKeywords = /cuenta\s*(de\s+)?destino|a\s+la\s+cuenta|a\s+nombre\s+de|beneficiario|destinatario|para\b/i;
   for (let i = 0; i < lines.length; i++) {
     if (destKeywords.test(lines[i])) {
       // Grab this line + next 3 lines as context
@@ -221,9 +221,31 @@ function parseBolivianReceipt(text) {
   // Extract the dest name for display (what the receipt says)
   let destName = null;
 
+  // Pattern 0: BCP-style destination block
+  // A la cuenta
+  // 3015...
+  // A nombre de
+  // Oscar Daniel Mac Lean Estrada
+  const aLaCuentaIdx = lines.findIndex(l => /a\s+la\s+cuenta/i.test(l));
+  if (aLaCuentaIdx >= 0) {
+    for (let i = aLaCuentaIdx + 1; i < Math.min(aLaCuentaIdx + 6, lines.length); i++) {
+      if (/a nombre de/i.test(lines[i]) && i + 1 < lines.length) {
+        const candidate = lines[i + 1];
+        if (
+          /^[A-ZÁÉÍÓÚÑa-záéíóúñ\s.]{4,}$/.test(candidate)
+          && !/cuenta|destino|nit|ci\s*\/|banco|credito|solidario|ganadero|mercantil|bisa|bnb/i.test(candidate)
+          && !/^\d/.test(candidate)
+        ) {
+          destName = candidate;
+          break;
+        }
+      }
+    }
+  }
+
   // Pattern 1: "Cuenta destino" / "Cuenta de destino" section — next lines
   const destIdx = lines.findIndex(l => /cuenta\s*(de\s+)?destino/i.test(l));
-  if (destIdx >= 0) {
+  if (!destName && destIdx >= 0) {
     for (let i = destIdx + 1; i < Math.min(destIdx + 5, lines.length); i++) {
       const line = lines[i];
       if (/cuenta\s*(de\s+)?origen|fecha|monto|n[uú]mero|nro|concepto/i.test(line)) break;
@@ -234,9 +256,9 @@ function parseBolivianReceipt(text) {
     }
   }
 
-  // Pattern 2: BISA "Para Daniel MacLean" / BCP "A nombre de" in dest section
+  // Pattern 2: BISA "Para Daniel MacLean" on the same line
   if (!destName) {
-    const paraMatch = fullText.match(/(?:Para|Motivo)[:\s]+([A-ZÁÉÍÓÚÑa-záéíóúñ\s.]+)/i);
+    const paraMatch = fullText.match(/Para[:\s]+([^\n]+)/i);
     if (paraMatch) destName = paraMatch[1].trim();
   }
   if (!destName) {

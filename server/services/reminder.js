@@ -59,7 +59,9 @@ async function checkAndSendReminders({ date, tenantId, force = false, appointmen
     let sent = 0;
     let skipped = 0;
     let matched = 0;
+    let failed = 0;
     let targetFound = false;
+    const errors = [];
 
     for (const event of events) {
       const summary = event.summary || '';
@@ -143,6 +145,13 @@ async function checkAndSendReminders({ date, tenantId, force = false, appointmen
         if (targeted) break;
       } catch (waErr) {
         console.error(`[reminder] Failed to send to ${appt.phone}:`, waErr.message);
+        failed++;
+        errors.push({
+          phone: appt.phone,
+          appointment_id: appt.id || null,
+          event_id: event.id,
+          message: waErr.message,
+        });
         if (targeted) break;
       }
     }
@@ -151,15 +160,17 @@ async function checkAndSendReminders({ date, tenantId, force = false, appointmen
       return {
         sent,
         skipped,
+        failed,
         total: events.length,
         matched,
+        errors,
         force: !!force,
         targeted: true,
         targetFound: false,
       };
     }
 
-    return { sent, skipped, total: events.length, matched, force: !!force, targeted };
+    return { sent, skipped, failed, total: events.length, matched, errors, force: !!force, targeted };
   } catch (err) {
     console.error('[reminder] Error:', err.message);
     throw err;

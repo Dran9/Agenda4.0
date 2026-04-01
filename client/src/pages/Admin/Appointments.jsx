@@ -181,6 +181,10 @@ export default function Appointments() {
         showToast(force ? 'Recordatorio reenviado a esta cita' : 'Recordatorio enviado a esta cita');
         return;
       }
+      if (result.failed > 0) {
+        showToast(`Error al ${force ? 'reenviar' : 'enviar'} recordatorio: ${result.errors?.[0]?.message || 'falló el envío a WhatsApp'}`, 'error');
+        return;
+      }
       if (result.skipped > 0) {
         showToast('Esta cita ya tenía recordatorio enviado. Usa reenviar si quieres repetirlo.');
         return;

@@ -46,6 +46,14 @@ function formatDateES(dateStr) {
   return `${day.charAt(0).toUpperCase() + day.slice(1)}, ${num} de ${month} de ${year}`;
 }
 
+function formatShortDateES(dateStr) {
+  const d = new Date(dateStr + 'T12:00:00');
+  const num = d.getDate();
+  const month = MONTH_NAMES_ES[d.getMonth()];
+  const year = d.getFullYear();
+  return `${num} ${month.charAt(0).toUpperCase() + month.slice(1, 3)} ${year}`;
+}
+
 function Logo({ width = 90 }) {
   return (
     <div style={{ display: 'flex', justifyContent: 'center' }} className={width >= 120 ? 'logo' : 'logo-small'}>
@@ -72,6 +80,31 @@ function WhatsAppOutlineIcon({ size = 24, color = '#4E769B' }) {
         strokeLinejoin="round"
       />
     </svg>
+  );
+}
+
+function DateTimePill({ date, timeLabel, timezoneLabel }) {
+  if (!date || !timeLabel) return null;
+
+  return (
+    <div style={{ paddingTop: 4, paddingBottom: 18 }}>
+      <div className="booking-datetime-pill">
+        <div className="booking-datetime-pill-section">
+          <CalendarIcon size={23} color="#4E6275" strokeWidth={1.95} />
+          <span className="booking-datetime-pill-text">{formatShortDateES(date)}</span>
+        </div>
+        <div className="booking-datetime-pill-divider" />
+        <div className="booking-datetime-pill-section">
+          <Clock size={23} color="#4E6275" strokeWidth={1.95} />
+          <span className="booking-datetime-pill-text">{timeLabel} hs</span>
+        </div>
+      </div>
+      {timezoneLabel && (
+        <div className="booking-datetime-pill-note">
+          Zona: {timezoneLabel}
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -185,6 +218,7 @@ const pageParams = new URLSearchParams(window.location.search);
 
 export default function BookingFlow() {
   const devMode = pageParams.get('devmode') === '1';
+  const previewMode = pageParams.get('mock') || '';
   const urlRParam = pageParams.get('r') || '';
   const urlReschedule = !!urlRParam;
   const urlReschedulePhone = urlRParam.replace(/\D/g, '').length >= 8 ? urlRParam : '';
@@ -222,6 +256,13 @@ export default function BookingFlow() {
   const [slotsLoading, setSlotsLoading] = useState(false);
   const [slotsCache, setSlotsCache] = useState(new Map());
   const [prefetchDone, setPrefetchDone] = useState(false);
+
+  useEffect(() => {
+    if (!devMode || previewMode !== 'onboarding' || selectedDate) return;
+    setSelectedDate(pageParams.get('date') || '2026-04-01');
+    setSelectedSlot(pageParams.get('time') || '09:00');
+    dispatch({ type: 'PHONE_NEW' });
+  }, [devMode, previewMode, selectedDate]);
 
   // Derive phone prefix from timezone selection (unified — no second country picker)
   const countryCode = useMemo(() => {
@@ -691,60 +732,72 @@ export default function BookingFlow() {
           </p>
         )}
         <div className="card" style={{ marginBottom: 20 }}>
-          <div className="detail-row" style={{ paddingTop: 0 }}>
-            <div className="detail-icon"><CalendarIcon size={18} color="var(--gris-medio)" /></div>
-            <div><div className="detail-label">Fecha</div><div className="detail-value">{formatDateES(selectedDate)}</div></div>
-          </div>
-          <div className="detail-row" style={{ paddingBottom: flow.showOnboarding ? 16 : 0 }}>
-            <div className="detail-icon"><Clock size={18} color="var(--gris-medio)" /></div>
-            <div>
-              <div className="detail-label">Hora</div><div className="detail-value">{displayTime(selectedSlot)} hs</div>
-              {selectedTz.tz !== 'America/La_Paz' && <div style={{ fontSize: 14, color: 'var(--gris-medio)', marginTop: 2 }}>Zona: {selectedTz.flag} {selectedTz.label}</div>}
-            </div>
-          </div>
-          <div className={`onboarding-slide ${flow.showOnboarding ? 'open' : ''}`}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, marginBottom: 16 }}>
-              <Info size={12} color="var(--terracota)" />
-              <span style={{ fontSize: 16, color: 'var(--terracota)' }}>Todos los campos son obligatorios</span>
-            </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-              <div><span className="field-label">NOMBRE <span style={{color:'#B34E35'}}>*</span></span><input value={firstName} onChange={e => setFirstName(e.target.value)} className="input-field" placeholder="Un solo nombre" /></div>
-              <div><span className="field-label">APELLIDO <span style={{color:'#B34E35'}}>*</span></span><input value={lastName} onChange={e => setLastName(e.target.value)} className="input-field" placeholder="Un solo apellido" /></div>
-              <div>
-                <span className="field-label">EDAD <span style={{color:'#B34E35'}}>*</span></span>
-                <input type="number" value={age} onChange={e => setAge(e.target.value)} min={minAge} max={maxAge} className="input-field" style={{ width: 120 }} placeholder={`${minAge}`} />
-                {ageOutOfRange
-                  ? <p style={{ fontSize: 16, color: 'var(--terracota)', marginTop: 6, fontWeight: 600 }}>Solo atiendo pacientes entre {minAge} y {maxAge} años</p>
-                  : <p style={{ fontSize: 14, color: 'var(--gris-medio)', marginTop: 6 }}>Entre {minAge} y {maxAge} años</p>}
+          {flow.showOnboarding ? (
+            <DateTimePill
+              date={selectedDate}
+              timeLabel={displayTime(selectedSlot)}
+              timezoneLabel={selectedTz.tz !== 'America/La_Paz' ? `${selectedTz.flag} ${selectedTz.label}` : ''}
+            />
+          ) : (
+            <>
+              <div className="detail-row" style={{ paddingTop: 0 }}>
+                <div className="detail-icon"><CalendarIcon size={18} color="var(--gris-medio)" /></div>
+                <div><div className="detail-label">Fecha</div><div className="detail-value">{formatDateES(selectedDate)}</div></div>
               </div>
-              {isInternational ? (
-                <div><span className="field-label">PAÍS <span style={{color:'#B34E35'}}>*</span></span><input value={country} onChange={e => setCountry(e.target.value)} className="input-field" placeholder="Tu país" /></div>
-              ) : (
+              <div className="detail-row" style={{ paddingBottom: 0 }}>
+                <div className="detail-icon"><Clock size={18} color="var(--gris-medio)" /></div>
                 <div>
-                  <span className="field-label">CIUDAD <span style={{color:'#B34E35'}}>*</span></span>
-                  <div style={{ position: 'relative' }}>
-                    <select value={city} onChange={e => setCity(e.target.value)} className="input-field" style={{ appearance: 'none', paddingRight: 40 }}>
-                      {CITIES.map(c => <option key={c} value={c}>{c}</option>)}
-                    </select>
-                    <ChevronDown size={16} color="var(--gris-medio)" style={{ position: 'absolute', right: 14, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }} />
+                  <div className="detail-label">Hora</div><div className="detail-value">{displayTime(selectedSlot)} hs</div>
+                  {selectedTz.tz !== 'America/La_Paz' && <div style={{ fontSize: 14, color: 'var(--gris-medio)', marginTop: 2 }}>Zona: {selectedTz.flag} {selectedTz.label}</div>}
+                </div>
+              </div>
+            </>
+          )}
+          <div className={`onboarding-slide ${flow.showOnboarding ? 'open' : ''}`}>
+            <div style={{ borderTop: '1px solid rgba(60, 57, 57, 0.08)', paddingTop: 18 }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, marginBottom: 16 }}>
+                <Info size={12} color="var(--terracota)" />
+                <span style={{ fontSize: 16, color: 'var(--terracota)' }}>Todos los campos son obligatorios</span>
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                <div><span className="field-label">NOMBRE <span style={{color:'#B34E35'}}>*</span></span><input value={firstName} onChange={e => setFirstName(e.target.value)} className="input-field" placeholder="Un solo nombre" /></div>
+                <div><span className="field-label">APELLIDO <span style={{color:'#B34E35'}}>*</span></span><input value={lastName} onChange={e => setLastName(e.target.value)} className="input-field" placeholder="Un solo apellido" /></div>
+                <div>
+                  <span className="field-label">EDAD <span style={{color:'#B34E35'}}>*</span></span>
+                  <input type="number" value={age} onChange={e => setAge(e.target.value)} min={minAge} max={maxAge} className="input-field" style={{ width: 120 }} placeholder={`${minAge}`} />
+                  {ageOutOfRange
+                    ? <p style={{ fontSize: 16, color: 'var(--terracota)', marginTop: 6, fontWeight: 600 }}>Solo atiendo pacientes entre {minAge} y {maxAge} años</p>
+                    : <p style={{ fontSize: 14, color: 'var(--gris-medio)', marginTop: 6 }}>Entre {minAge} y {maxAge} años</p>}
+                </div>
+                {isInternational ? (
+                  <div><span className="field-label">PAÍS <span style={{color:'#B34E35'}}>*</span></span><input value={country} onChange={e => setCountry(e.target.value)} className="input-field" placeholder="Tu país" /></div>
+                ) : (
+                  <div>
+                    <span className="field-label">CIUDAD <span style={{color:'#B34E35'}}>*</span></span>
+                    <div style={{ position: 'relative' }}>
+                      <select value={city} onChange={e => setCity(e.target.value)} className="input-field" style={{ appearance: 'none', paddingRight: 40 }}>
+                        {CITIES.map(c => <option key={c} value={c}>{c}</option>)}
+                      </select>
+                      <ChevronDown size={16} color="var(--gris-medio)" style={{ position: 'absolute', right: 14, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }} />
+                    </div>
+                  </div>
+                )}
+                <div>
+                  <span className="field-label" style={{ marginBottom: 10 }}>¿CÓMO SUPISTE DE DANIEL? <span style={{color:'#B34E35'}}>*</span></span>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                    {SOURCES.map(s => (
+                      <label key={s} className="radio-option">
+                        <div className={`radio-circle ${source === s ? 'active' : ''}`}>{source === s && <div className="radio-circle-inner" />}</div>
+                        <span style={{ fontSize: 18, fontWeight: 500 }}>{s}</span>
+                        <input type="radio" name="source" value={s} checked={source === s} onChange={e => setSource(e.target.value)} style={{ position: 'absolute', opacity: 0, pointerEvents: 'none' }} />
+                      </label>
+                    ))}
                   </div>
                 </div>
-              )}
-              <div>
-                <span className="field-label" style={{ marginBottom: 10 }}>¿CÓMO SUPISTE DE DANIEL? <span style={{color:'#B34E35'}}>*</span></span>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                  {SOURCES.map(s => (
-                    <label key={s} className="radio-option">
-                      <div className={`radio-circle ${source === s ? 'active' : ''}`}>{source === s && <div className="radio-circle-inner" />}</div>
-                      <span style={{ fontSize: 18, fontWeight: 500 }}>{s}</span>
-                      <input type="radio" name="source" value={s} checked={source === s} onChange={e => setSource(e.target.value)} style={{ position: 'absolute', opacity: 0, pointerEvents: 'none' }} />
-                    </label>
-                  ))}
-                </div>
+              </div>
               </div>
             </div>
           </div>
-        </div>
         {flow.error && <p style={{ color: 'var(--terracota)', fontSize: 16, textAlign: 'center', marginBottom: 12 }}>{flow.error}</p>}
         <button type="button" onClick={handleConfirm} disabled={flow.loading || (flow.showOnboarding && (!firstName || !lastName || !age || !source || ageOutOfRange))} className="btn-primary" style={{ marginBottom: 12 }}>
           <Check size={18} />{flow.loading ? 'Confirmando...' : 'Confirmar cita'}

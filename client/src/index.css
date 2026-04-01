@@ -271,6 +271,48 @@ input, select, button, textarea {
   color: var(--text-primary);
 }
 
+.booking-datetime-pill {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  width: 100%;
+  border-radius: 999px;
+  padding: 15px 19px;
+  background: #a9c5d3;
+  color: var(--negro);
+}
+
+.booking-datetime-pill-section {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  flex: 1 1 0;
+}
+
+.booking-datetime-pill-divider {
+  width: 1px;
+  height: 32px;
+  background: rgba(60, 57, 57, 0.12);
+  flex-shrink: 0;
+}
+
+.booking-datetime-pill-text {
+  font-size: 19px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  line-height: 1.1;
+  white-space: nowrap;
+}
+
+.booking-datetime-pill-note {
+  margin-top: 10px;
+  text-align: center;
+  font-size: 14px;
+  color: var(--gris-medio);
+}
+
 /* Radio option styled */
 .radio-option {
   display: flex;
@@ -612,6 +654,21 @@ input, select, button, textarea {
   max-height: 800px;
   opacity: 1;
   overflow: visible;
+}
+
+@media (max-width: 420px) {
+  .booking-datetime-pill {
+    padding: 14px 16px;
+    gap: 8px;
+  }
+
+  .booking-datetime-pill-section {
+    gap: 8px;
+  }
+
+  .booking-datetime-pill-text {
+    font-size: 17px;
+  }
 }
 
 /* Phone unified field */

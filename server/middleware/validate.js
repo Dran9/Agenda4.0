@@ -11,12 +11,24 @@ const onboardingSchema = z.object({
   timezone: z.string().max(50).optional(),
 });
 
+const bookingContextSchema = {
+  timezone: z.string().max(50).optional(),
+  ip_country_code: z.string().max(10).optional(),
+  ip_country_name: z.string().max(100).optional(),
+  location_country_code: z.string().max(10).optional(),
+  location_country_name: z.string().max(100).optional(),
+  location_confirmed_manually: z.boolean().optional(),
+  device_type: z.enum(['mobile', 'tablet', 'desktop']).optional(),
+  user_agent: z.string().max(500).optional(),
+};
+
 const publicBookingSchema = z.object({
   phone: z.string().min(8).max(20),
   date_time: z.string().regex(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/),
   fee_mode: z.enum(['pe']).optional(),
   code: z.string().max(1000).optional(),
   onboarding: onboardingSchema.optional(),
+  ...bookingContextSchema,
 });
 
 const adminBookingSchema = z.object({
@@ -30,6 +42,7 @@ const publicRescheduleSchema = z.object({
   old_appointment_id: z.number().int().positive(),
   date_time: z.string().regex(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/),
   reschedule_token: z.string().min(1).max(1000),
+  ...bookingContextSchema,
 });
 
 const adminRescheduleSchema = z.object({

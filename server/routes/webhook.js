@@ -129,28 +129,33 @@ function buildMismatchNotes(problems) {
   return `Problemas: ${problems.map(formatMismatchProblem).join(', ')}`;
 }
 
-function buildMismatchWhatsappMessage(firstName, problems) {
-  const saludo = formatWhatsappName(firstName);
-  const lines = problems.map((problem) => {
+function buildMismatchReasonText(problems) {
+  return problems.map((problem) => {
     if (problem.type === 'fecha_pasada') {
-      return `• La fecha del abono figura como ${formatDisplayDate(problem.receiptDate)} y la sesión registrada es del ${formatDisplayDate(problem.sessionDate)}.`;
+      return 'La fecha del comprobante es anterior a la fecha de la sesión.';
     }
     if (problem.type === 'monto') {
-      return '• El monto del comprobante no coincide con el valor registrado de la sesión.';
+      return 'El monto del comprobante no coincide con el valor registrado de la sesión.';
     }
     if (problem.type === 'destinatario') {
-      return '• El destinatario no coincide claramente con la cuenta registrada para el pago.';
+      return 'El destinatario no coincide claramente con la cuenta registrada para el pago.';
     }
-    return '• No se pudo validar automáticamente el comprobante.';
-  });
+    return 'No se pudo validar automáticamente el comprobante.';
+  }).join(' / ');
+}
+
+function buildMismatchWhatsappMessage(firstName, problems) {
+  const saludo = formatWhatsappName(firstName);
+  const reason = buildMismatchReasonText(problems);
 
   return [
-    `Hola ${saludo}, gracias por enviar tu comprobante.`,
+    `Hola ${saludo}, gracias por enviar tu comprobante 😊`,
     '',
-    `No pude validarlo automáticamente por ${problems.length > 1 ? 'estos motivos' : 'este motivo'}:`,
-    ...lines,
+    'No pude validarlo automáticamente por este motivo:',
+    `*${reason}*`,
     '',
-    'Si puedes, envíame una nueva captura donde se vean con claridad la fecha, el monto y el destinatario para revisarlo nuevamente.',
+    'Por favor, revisa el comprobante y envíalo nuevamente.',
+    '🤑 Si hubo un error de mi parte o consideras que la información sí es correcta, puedes escribirle a Daniel por aquí mismo.',
   ].join('\n');
 }
 
@@ -275,6 +280,8 @@ router.post('/', async (req, res) => {
               [tenantId, `button_${payload}_${phone}`, JSON.stringify({ payload, text, wa_message_id: msg.id }), phone, clientId]
             );
 
+            let confirmedAppointmentId = null;
+
             // ─── CONFIRM_NOW: add ✅ to GCal without losing 💰 if already paid ───
             if (payload === 'CONFIRM_NOW') {
               try {
@@ -327,6 +334,7 @@ router.post('/', async (req, res) => {
                   [clientId, tenantId]
                 );
                 if (appts[0]) {
+                  confirmedAppointmentId = appts[0].id;
                   await pool.query(
                     `UPDATE appointments SET status = 'Confirmada', confirmed_at = NOW() WHERE id = ? AND tenant_id = ?`,
                     [appts[0].id, tenantId]
@@ -365,16 +373,52 @@ router.post('/', async (req, res) => {
                   // Send QR payment image after confirmation (delayed 60s to feel natural)
                   if (payload === 'CONFIRM_NOW') {
                     setTimeout(async () => {
-                    try {
-                      const [clientRows] = await pool.query('SELECT fee, city FROM clients WHERE id = ?', [clientId]);
-                      const client = clientRows[0];
-                      if (client) {
-                        const capitalCities = (cfg.capital_cities || '').split(',').map(c => c.trim());
+                      try {
+                        if (!confirmedAppointmentId) {
+                          console.log(`[webhook] Skipping automatic Bolivian QR for ${phone}: missing appointment context`);
+                          return;
+                        }
+
+                        const [appointmentRows] = await pool.query(
+                          `SELECT a.phone, a.booking_context, c.fee
+                           FROM appointments a
+                           JOIN clients c ON c.id = a.client_id
+                           WHERE a.id = ? AND a.tenant_id = ?
+                           LIMIT 1`,
+                          [confirmedAppointmentId, tenantId]
+                        );
+                        const appointment = appointmentRows[0];
+                        if (!appointment) return;
+
+                        let bookingContext = appointment.booking_context || null;
+                        if (bookingContext && typeof bookingContext === 'string') {
+                          try {
+                            bookingContext = JSON.parse(bookingContext);
+                          } catch (_) {
+                            bookingContext = null;
+                          }
+                        }
+
+                        const normalizedPhone = String(appointment.phone || phone || '').replace(/\D/g, '');
+                        const isBoliviaPhone = normalizedPhone.startsWith('591');
+                        const ipCountryCode = String(bookingContext?.ip_country_code || '').toUpperCase();
+                        const locationCountryCode = String(bookingContext?.location_country_code || '').toUpperCase();
+                        const locationConfirmedManually = !!bookingContext?.location_confirmed_manually;
+                        const isBoliviaLocation = locationCountryCode === 'BO'
+                          && (ipCountryCode === 'BO' || locationConfirmedManually);
+
+                        if (!(isBoliviaPhone && isBoliviaLocation)) {
+                          console.log(
+                            `[webhook] Skipping automatic Bolivian QR for ${phone}: phone_prefix=${isBoliviaPhone ? 'BO' : 'other'}, ip=${ipCountryCode || 'unknown'}, location=${locationCountryCode || 'unknown'}, manual_confirm=${locationConfirmedManually}`
+                          );
+                          return;
+                        }
+
                         let qrKey;
-                        const fee = parseInt(client.fee);
-                        if (fee === parseInt(cfg.capital_fee)) qrKey = 'qr_300';
-                        else if (fee === parseInt(cfg.special_fee)) qrKey = 'qr_150';
-                        else if (fee === parseInt(cfg.default_fee)) qrKey = 'qr_250';
+                        const fee = parseInt(appointment.fee, 10);
+                        if (fee === parseInt(cfg.capital_fee, 10)) qrKey = 'qr_300';
+                        else if (fee === parseInt(cfg.special_fee, 10)) qrKey = 'qr_150';
+                        else if (fee === parseInt(cfg.default_fee, 10)) qrKey = 'qr_250';
                         else qrKey = 'qr_generico';
 
                         const { getFile } = require('../services/storage');
@@ -390,10 +434,9 @@ router.post('/', async (req, res) => {
                           );
                           console.log(`[webhook] QR sent to ${phone}: ${qrKey}`);
                         }
+                      } catch (qrErr) {
+                        console.error(`[webhook] QR send failed for ${phone}:`, qrErr.message);
                       }
-                    } catch (qrErr) {
-                      console.error(`[webhook] QR send failed for ${phone}:`, qrErr.message);
-                    }
                     }, 15000); // 15 second delay
                   }
                 } catch (waErr) {
@@ -621,7 +664,10 @@ router.post('/', async (req, res) => {
                           // Send confirmation reply
                           try {
                             const { sendTextMessage } = require('../services/whatsapp');
-                            await sendTextMessage(phone, `Pago recibido: Bs ${ocrResult.amount}. Gracias, ${bestMatch.first_name}.`);
+                            const paymentOkMessage = bestMatch.first_name
+                              ? `✅ Pago recibido correctamente. Gracias ${formatWhatsappName(bestMatch.first_name)}. Hasta pronto.`
+                              : '✅ Pago recibido correctamente. Gracias. Hasta pronto.';
+                            await sendTextMessage(phone, paymentOkMessage);
                           } catch (replyErr) {
                             console.error(`[webhook] Payment reply failed:`, replyErr.message);
                           }

@@ -140,8 +140,32 @@ router.post('/admin/book', authMiddleware, validate(adminBookingSchema), async (
 // POST /api/book
 router.post('/book', bookingLimiter, validate(publicBookingSchema), async (req, res) => {
   try {
-    const { phone, date_time, onboarding, fee_mode, code } = req.validated;
+    const {
+      phone,
+      date_time,
+      onboarding,
+      fee_mode,
+      code,
+      timezone,
+      ip_country_code,
+      ip_country_name,
+      location_country_code,
+      location_country_name,
+      location_confirmed_manually,
+      device_type,
+      user_agent,
+    } = req.validated;
     const tenantId = req.tenantId || DEFAULT_TENANT;
+    const bookingContext = {
+      timezone,
+      ip_country_code,
+      ip_country_name,
+      location_country_code,
+      location_country_name,
+      location_confirmed_manually,
+      device_type,
+      user_agent,
+    };
     let feeOverride = null;
 
     try {
@@ -158,7 +182,7 @@ router.post('/book', bookingLimiter, validate(publicBookingSchema), async (req, 
         return res.json({ status: 'needs_onboarding' });
       }
       const newClient = await createClient(phone, onboarding, tenantId, null, feeOverride);
-      const result = await createBooking(newClient, date_time, tenantId);
+      const result = await createBooking(newClient, date_time, tenantId, bookingContext);
       if (result.error) return res.status(result.status).json({ error: result.error });
       return res.json({ status: 'booked', ...result });
     }
@@ -176,7 +200,7 @@ router.post('/book', bookingLimiter, validate(publicBookingSchema), async (req, 
       client.fee = newFee;
       console.log(`[booking] Public fee mode applied: client ${client.id} → Bs ${newFee}`);
     }
-    const result = await createBooking(client, date_time, tenantId);
+    const result = await createBooking(client, date_time, tenantId, bookingContext);
     if (result.error) return res.status(result.status).json({ error: result.error });
     return res.json({ status: 'booked', ...result });
   } catch (err) {
@@ -206,8 +230,31 @@ router.post('/admin/reschedule', authMiddleware, validate(adminRescheduleSchema)
 // POST /api/reschedule
 router.post('/reschedule', bookingLimiter, validate(publicRescheduleSchema), async (req, res) => {
   try {
-    const { phone, old_appointment_id, date_time, reschedule_token } = req.validated;
+    const {
+      phone,
+      old_appointment_id,
+      date_time,
+      reschedule_token,
+      timezone,
+      ip_country_code,
+      ip_country_name,
+      location_country_code,
+      location_country_name,
+      location_confirmed_manually,
+      device_type,
+      user_agent,
+    } = req.validated;
     const tenantId = req.tenantId || DEFAULT_TENANT;
+    const bookingContext = {
+      timezone,
+      ip_country_code,
+      ip_country_name,
+      location_country_code,
+      location_country_name,
+      location_confirmed_manually,
+      device_type,
+      user_agent,
+    };
     let decoded;
 
     try {
@@ -224,7 +271,7 @@ router.post('/reschedule', bookingLimiter, validate(publicRescheduleSchema), asy
       return res.status(403).json({ error: 'No autorizado para reagendar esta cita' });
     }
 
-    const result = await rescheduleAppointment(decoded.clientId, decoded.appointmentId, date_time, tenantId);
+    const result = await rescheduleAppointment(decoded.clientId, decoded.appointmentId, date_time, tenantId, bookingContext);
     if (result.error) return res.status(result.status).json({ error: result.error });
     res.json(result);
   } catch (err) {

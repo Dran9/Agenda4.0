@@ -69,6 +69,90 @@ export const TIMEZONE_GROUPS = [
 export const ALL_TIMEZONES = TIMEZONE_GROUPS.flatMap(g => g.zones);
 export const DEFAULT_TZ = ALL_TIMEZONES.find(z => z.tz === 'America/La_Paz');
 
+const COUNTRY_INFO_BY_CODE = {
+  BO: { code: 'BO', name: 'Bolivia' },
+  AR: { code: 'AR', name: 'Argentina' },
+  CL: { code: 'CL', name: 'Chile' },
+  PE: { code: 'PE', name: 'Perú' },
+  CO: { code: 'CO', name: 'Colombia' },
+  MX: { code: 'MX', name: 'México' },
+  PY: { code: 'PY', name: 'Paraguay' },
+  UY: { code: 'UY', name: 'Uruguay' },
+  BR: { code: 'BR', name: 'Brasil' },
+  EC: { code: 'EC', name: 'Ecuador' },
+  VE: { code: 'VE', name: 'Venezuela' },
+  PA: { code: 'PA', name: 'Panamá' },
+  CR: { code: 'CR', name: 'Costa Rica' },
+  PR: { code: 'PR', name: 'Puerto Rico' },
+  DO: { code: 'DO', name: 'Rep. Dominicana' },
+  US: { code: 'US', name: 'Estados Unidos' },
+  CA: { code: 'CA', name: 'Canadá' },
+  ES: { code: 'ES', name: 'España' },
+  PT: { code: 'PT', name: 'Portugal' },
+  FR: { code: 'FR', name: 'Francia' },
+  IT: { code: 'IT', name: 'Italia' },
+  DE: { code: 'DE', name: 'Alemania' },
+  CH: { code: 'CH', name: 'Suiza' },
+  GB: { code: 'GB', name: 'Reino Unido' },
+  AT: { code: 'AT', name: 'Austria' },
+  NL: { code: 'NL', name: 'Países Bajos' },
+  BE: { code: 'BE', name: 'Bélgica' },
+  SE: { code: 'SE', name: 'Suecia' },
+  NO: { code: 'NO', name: 'Noruega' },
+  DK: { code: 'DK', name: 'Dinamarca' },
+  FI: { code: 'FI', name: 'Finlandia' },
+  PL: { code: 'PL', name: 'Polonia' },
+  IE: { code: 'IE', name: 'Irlanda' },
+  RS: { code: 'RS', name: 'Serbia' },
+  JP: { code: 'JP', name: 'Japón' },
+  EG: { code: 'EG', name: 'Egipto' },
+};
+
+const TZ_TO_COUNTRY_CODE = {
+  'America/La_Paz': 'BO',
+  'America/Argentina/Buenos_Aires': 'AR',
+  'America/Santiago': 'CL',
+  'America/Lima': 'PE',
+  'America/Bogota': 'CO',
+  'America/Mexico_City': 'MX',
+  'America/Asuncion': 'PY',
+  'America/Montevideo': 'UY',
+  'America/Sao_Paulo': 'BR',
+  'America/Guayaquil': 'EC',
+  'America/Caracas': 'VE',
+  'America/Panama': 'PA',
+  'America/Costa_Rica': 'CR',
+  'America/Puerto_Rico': 'PR',
+  'America/Santo_Domingo': 'DO',
+  'America/New_York': 'US',
+  'America/Chicago': 'US',
+  'America/Denver': 'US',
+  'America/Los_Angeles': 'US',
+  'America/Toronto': 'CA',
+  'America/Winnipeg': 'CA',
+  'America/Edmonton': 'CA',
+  'America/Vancouver': 'CA',
+  'Europe/Madrid': 'ES',
+  'Europe/Lisbon': 'PT',
+  'Europe/Paris': 'FR',
+  'Europe/Rome': 'IT',
+  'Europe/Berlin': 'DE',
+  'Europe/Zurich': 'CH',
+  'Europe/London': 'GB',
+  'Europe/Vienna': 'AT',
+  'Europe/Amsterdam': 'NL',
+  'Europe/Brussels': 'BE',
+  'Europe/Stockholm': 'SE',
+  'Europe/Oslo': 'NO',
+  'Europe/Copenhagen': 'DK',
+  'Europe/Helsinki': 'FI',
+  'Europe/Warsaw': 'PL',
+  'Europe/Dublin': 'IE',
+  'Europe/Belgrade': 'RS',
+  'Asia/Tokyo': 'JP',
+  'Africa/Cairo': 'EG',
+};
+
 export function convertLaPazTimeToTz(timeStr, dateStr, targetTz) {
   if (targetTz === 'America/La_Paz') return timeStr;
   const utcDate = new Date(`${dateStr}T${timeStr}:00-04:00`);
@@ -88,6 +172,11 @@ export function getCurrentTimeInTz(tz) {
     minute: '2-digit',
     hour12: false,
   }).format(new Date());
+}
+
+export function getTimezoneCountry(tz) {
+  const code = TZ_TO_COUNTRY_CODE[tz] || 'BO';
+  return COUNTRY_INFO_BY_CODE[code] || COUNTRY_INFO_BY_CODE.BO;
 }
 
 // Map timezone → phone country code (for syncing tz selector with phone prefix)

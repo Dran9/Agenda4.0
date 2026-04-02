@@ -5,6 +5,28 @@ const { createPublicRescheduleToken } = require('./publicBookingToken');
 
 const CALENDAR_ID = () => process.env.CALENDAR_ID || 'danielmacleann@gmail.com';
 
+function normalizeBookingContext(input = {}) {
+  const timezone = input.timezone || null;
+  const ipCountryCode = input.ip_country_code ? String(input.ip_country_code).toUpperCase() : null;
+  const locationCountryCode = input.location_country_code ? String(input.location_country_code).toUpperCase() : null;
+
+  const bookingContext = {
+    timezone,
+    ip_country_code: ipCountryCode,
+    ip_country_name: input.ip_country_name || null,
+    location_country_code: locationCountryCode,
+    location_country_name: input.location_country_name || null,
+    location_confirmed_manually: !!input.location_confirmed_manually,
+    device_type: input.device_type || null,
+  };
+
+  if (!Object.values(bookingContext).some(Boolean)) {
+    return { bookingContext: null, userAgent: input.user_agent || null };
+  }
+
+  return { bookingContext, userAgent: input.user_agent || null };
+}
+
 // ─── Check client status by phone ────────────────────────────────
 async function checkClientByPhone(phone, tenantId, options = {}) {
   const { reactivateDeleted = false } = options;
@@ -63,7 +85,7 @@ async function checkClientByPhone(phone, tenantId, options = {}) {
 // ─── Create client from onboarding data ──────────────────────────
 async function createClient(phone, onboarding, tenantId, conn, feeOverride) {
   const db = conn || pool;
-  const { first_name, last_name, age, city, country, source } = onboarding;
+  const { first_name, last_name, age, city, country, source, timezone } = onboarding;
 
   const [cfgRows] = await db.query(
     'SELECT default_fee, capital_fee, capital_cities FROM config WHERE tenant_id = ?',
@@ -77,9 +99,9 @@ async function createClient(phone, onboarding, tenantId, conn, feeOverride) {
   let newClient;
   try {
     const [result] = await db.query(
-      `INSERT INTO clients (tenant_id, phone, first_name, last_name, age, city, country, source, fee)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [tenantId, phone, first_name, last_name, age || null, city || 'Cochabamba', country || 'Bolivia', source || 'Otro', fee]
+      `INSERT INTO clients (tenant_id, phone, first_name, last_name, age, city, country, timezone, source, fee)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [tenantId, phone, first_name, last_name, age || null, city || 'Otro', country || 'Bolivia', timezone || 'America/La_Paz', source || 'Otro', fee]
     );
     const [clients] = await db.query('SELECT * FROM clients WHERE id = ?', [result.insertId]);
     newClient = clients[0];
@@ -88,8 +110,8 @@ async function createClient(phone, onboarding, tenantId, conn, feeOverride) {
       // Reactivate soft-deleted client and update their info
       await db.query(
         `UPDATE clients SET deleted_at = NULL, first_name = ?, last_name = ?, age = ?,
-         city = ?, country = ?, source = ?, fee = ? WHERE phone = ? AND tenant_id = ?`,
-        [first_name, last_name, age || null, city || 'Cochabamba', country || 'Bolivia', source || 'Otro', fee, phone, tenantId]
+         city = ?, country = ?, timezone = ?, source = ?, fee = ? WHERE phone = ? AND tenant_id = ?`,
+        [first_name, last_name, age || null, city || 'Otro', country || 'Bolivia', timezone || 'America/La_Paz', source || 'Otro', fee, phone, tenantId]
       );
       const [clients] = await db.query(
         'SELECT * FROM clients WHERE phone = ? AND tenant_id = ?', [phone, tenantId]
@@ -108,7 +130,7 @@ async function createClient(phone, onboarding, tenantId, conn, feeOverride) {
       firstName: first_name,
       lastName: last_name,
       phone: phone.startsWith('+') ? phone : `+${phone}`,
-      city: city || 'Cochabamba',
+      city: city || 'Otro',
     }).catch(err => console.error('[contacts] Create failed (non-fatal):', err.message));
   } catch (err) {
     console.error('[contacts] Import failed:', err.message);
@@ -125,9 +147,10 @@ async function createClient(phone, onboarding, tenantId, conn, feeOverride) {
 }
 
 // ─── Create booking (GCal + DB with compensation) ───────────────
-async function createBooking(client, dateTime, tenantId) {
+async function createBooking(client, dateTime, tenantId, bookingInput = {}) {
   const calendarId = CALENDAR_ID();
   const dayStr = dateTime.split('T')[0];
+  const { bookingContext, userAgent } = normalizeBookingContext(bookingInput);
   try {
     return await withAdvisoryLock(`booking:${tenantId}:${dayStr}`, 10, async () => {
       // Load config for duration
@@ -186,9 +209,12 @@ async function createBooking(client, dateTime, tenantId) {
           const isFirst = sessionNumber === 1;
 
           const [result] = await conn.query(
-            `INSERT INTO appointments (tenant_id, client_id, date_time, gcal_event_id, status, confirmed_at, is_first, session_number, phone)
-             VALUES (?, ?, ?, ?, 'Agendada', NULL, ?, ?, ?)`,
-            [tenantId, client.id, dateTime, gcalEvent.id, isFirst, sessionNumber, client.phone]
+            `INSERT INTO appointments (
+               tenant_id, client_id, date_time, gcal_event_id, status, confirmed_at,
+               is_first, session_number, phone, user_agent, booking_context
+             )
+             VALUES (?, ?, ?, ?, 'Agendada', NULL, ?, ?, ?, ?, ?)`,
+            [tenantId, client.id, dateTime, gcalEvent.id, isFirst, sessionNumber, client.phone, userAgent, bookingContext ? JSON.stringify(bookingContext) : null]
           );
 
           const fee = client.fee || 250;
@@ -240,7 +266,7 @@ async function createBooking(client, dateTime, tenantId) {
 
 // ─── Reschedule appointment ──────────────────────────────────────
 // Safe order: create new FIRST → only delete old if new succeeds
-async function rescheduleAppointment(clientId, oldAppointmentId, dateTime, tenantId) {
+async function rescheduleAppointment(clientId, oldAppointmentId, dateTime, tenantId, bookingInput = {}) {
   const calendarId = CALENDAR_ID();
 
   // 1. Validate old appointment exists
@@ -258,7 +284,7 @@ async function rescheduleAppointment(clientId, oldAppointmentId, dateTime, tenan
   if (clients.length === 0) return { error: 'Cliente no encontrado', status: 404 };
 
   // 3. Create NEW booking first (GCal + DB) — old appointment still exists as safety net
-  const result = await createBooking(clients[0], dateTime, tenantId);
+  const result = await createBooking(clients[0], dateTime, tenantId, bookingInput);
   if (result.error) return result; // Failed — old appointment untouched, no data loss
 
   // 4. New booking succeeded — now safe to clean up old appointment

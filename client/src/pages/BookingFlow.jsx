@@ -2,12 +2,12 @@ import { useState, useEffect, useCallback, useMemo, useReducer } from 'react';
 import Calendar from '../components/Calendar';
 import { api } from '../utils/api';
 import {
-  TIMEZONE_GROUPS, ALL_TIMEZONES, DEFAULT_TZ, convertLaPazTimeToTz, getCurrentTimeInTz, detectTimezoneFromIP, TZ_TO_PHONE_CODE,
+  TIMEZONE_GROUPS, DEFAULT_TZ, convertLaPazTimeToTz, getCurrentTimeInTz, detectTimezoneFromIP, getTimezoneCountry,
 } from '../utils/timezones';
 import {
   ArrowRight, ArrowLeft, ChevronDown, Calendar as CalendarIcon,
   Clock, CalendarClock, CalendarCheck, Check, Sun, Sunset,
-  Coffee, Globe, Search, RefreshCw, Heart, MessageSquareHeart, ShieldAlert, Info, Smartphone, SmilePlus,
+  Coffee, Globe, Search, RefreshCw, Heart, MessageSquareHeart, ShieldAlert, Info, Smartphone, SmilePlus, AlertTriangle,
   CalendarArrowUp, CircleArrowRight, CircleCheck, Clock4,
 } from 'lucide-react';
 
@@ -38,12 +38,6 @@ const MONTH_NAMES_ES = ['enero','febrero','marzo','abril','mayo','junio','julio'
 const PHONE_PREFIX_OPTIONS = COUNTRY_CODES
   .map((country) => ({ ...country, digitsOnly: country.code.replace(/\D/g, '') }))
   .sort((a, b) => b.digitsOnly.length - a.digitsOnly.length);
-const PHONE_CODE_TO_TZ = Object.entries(TZ_TO_PHONE_CODE).reduce((acc, [tz, code]) => {
-  if (!acc[code]) {
-    acc[code] = ALL_TIMEZONES.find(zone => zone.tz === tz) || DEFAULT_TZ;
-  }
-  return acc;
-}, {});
 
 function formatDateES(dateStr) {
   const d = new Date(dateStr + 'T12:00:00');
@@ -72,15 +66,34 @@ function parsePrefilledPhone(rawValue) {
     if (localDigits.length >= option.minDigits && localDigits.length <= option.maxDigits) {
       return {
         localDigits,
-        timezone: PHONE_CODE_TO_TZ[option.digitsOnly] || DEFAULT_TZ,
+        phoneCode: option.code,
       };
     }
   }
 
   return {
     localDigits: digits,
-    timezone: null,
+    phoneCode: null,
   };
+}
+
+function getDeviceType() {
+  if (typeof navigator === 'undefined') return 'desktop';
+
+  const uaData = navigator.userAgentData;
+  const userAgent = navigator.userAgent || '';
+  const platform = uaData?.platform || navigator.platform || '';
+  const deviceText = `${platform} ${userAgent}`;
+
+  if (uaData?.mobile) return 'mobile';
+  if (/iPad|Tablet|PlayBook|Silk|Kindle|Android(?!.*Mobile)/i.test(deviceText)) return 'tablet';
+  if (/Mobi|iPhone|iPod|Android.*Mobile|Windows Phone/i.test(deviceText)) return 'mobile';
+  return 'desktop';
+}
+
+function getUserAgentString() {
+  if (typeof navigator === 'undefined') return '';
+  return navigator.userAgent || '';
 }
 
 function Logo({ width = 90 }) {
@@ -245,10 +258,15 @@ export default function BookingFlow() {
   const [selectedTz, setSelectedTz] = useState(DEFAULT_TZ);
   const [showTzDropdown, setShowTzDropdown] = useState(false);
   const [tzSearch, setTzSearch] = useState('');
+  const [hasUserSelectedTz, setHasUserSelectedTz] = useState(false);
 
-  // Phone (prefix derived from timezone selector — no separate country picker)
+  // Phone country/prefix
+  const [selectedPhoneCountry, setSelectedPhoneCountry] = useState(COUNTRY_CODES[0]);
+  const [showPhoneCountryDropdown, setShowPhoneCountryDropdown] = useState(false);
   const [phoneNumber, setPhoneNumber] = useState('');
-  const [isInternational, setIsInternational] = useState(false);
+
+  // IP context
+  const [ipLocation, setIpLocation] = useState(null);
 
   // Onboarding
   const [firstName, setFirstName] = useState('');
@@ -272,33 +290,54 @@ export default function BookingFlow() {
     dispatch({ type: 'PHONE_NEW' });
   }, [devMode, previewMode, selectedDate]);
 
-  // Derive phone prefix from timezone selection (unified — no second country picker)
-  const countryCode = useMemo(() => {
-    const tzCode = TZ_TO_PHONE_CODE[selectedTz?.tz];
-    if (tzCode) return '+' + tzCode;
-    return '+591'; // default Bolivia
-  }, [selectedTz]);
-  const currentCountry = COUNTRY_CODES.find(c => c.code === countryCode) || COUNTRY_CODES[0];
-  const selectedCountryName = currentCountry.name === 'USA' ? 'Estados Unidos' : currentCountry.name;
+  const locationCountry = useMemo(() => getTimezoneCountry(selectedTz?.tz), [selectedTz?.tz]);
+  const countryCode = selectedPhoneCountry.code;
   const phoneDigits = phoneNumber.replace(/\D/g, '');
-  const minDigits = currentCountry.minDigits;
-  const maxDigits = currentCountry.maxDigits;
+  const minDigits = selectedPhoneCountry.minDigits;
+  const maxDigits = selectedPhoneCountry.maxDigits;
   const phoneComplete = phoneDigits.length >= minDigits && phoneDigits.length <= maxDigits;
   const expectedDigitsLabel = minDigits === maxDigits ? `${maxDigits}` : `${minDigits}-${maxDigits}`;
+  const isBoliviaLocation = locationCountry.code === 'BO';
+  const isBoliviaPhone = selectedPhoneCountry.code === '+591';
+  const isBoliviaFeeFlow = isBoliviaLocation && isBoliviaPhone;
+  const showIpCountryWarning = !!ipLocation?.countryCode && ipLocation.countryCode !== 'BO';
+  const deviceType = useMemo(() => getDeviceType(), []);
+  const userAgent = useMemo(() => getUserAgentString(), []);
+  const bookingContext = useMemo(() => ({
+    timezone: selectedTz?.tz || DEFAULT_TZ.tz,
+    ip_country_code: ipLocation?.countryCode || null,
+    ip_country_name: ipLocation?.countryName || null,
+    location_country_code: locationCountry.code,
+    location_country_name: locationCountry.name,
+    location_confirmed_manually: hasUserSelectedTz,
+    device_type: deviceType,
+    user_agent: userAgent || null,
+  }), [
+    deviceType,
+    hasUserSelectedTz,
+    ipLocation?.countryCode,
+    ipLocation?.countryName,
+    locationCountry.code,
+    locationCountry.name,
+    selectedTz?.tz,
+    userAgent,
+  ]);
 
   // Pre-fill phone from URL param (?t= or ?r=)
   useEffect(() => {
     if (!parsedPrefilledPhone) return;
     if (parsedPrefilledPhone.localDigits) setPhoneNumber(parsedPrefilledPhone.localDigits);
-    if (parsedPrefilledPhone.timezone) setSelectedTz(parsedPrefilledPhone.timezone);
+    if (parsedPrefilledPhone.phoneCode) {
+      const matchedCountry = COUNTRY_CODES.find(country => country.code === parsedPrefilledPhone.phoneCode);
+      if (matchedCountry) setSelectedPhoneCountry(matchedCountry);
+    }
   }, [parsedPrefilledPhone]);
 
   // Load config
   useEffect(() => { api.get('/config/public').then(setConfig).catch(() => {}); }, []);
 
-  // Auto-detect timezone by IP (country code derived from timezone selector)
+  // Auto-detect timezone by IP for hour display and retain detected country for booking context.
   useEffect(() => {
-    if (parsedPrefilledPhone?.timezone) return;
     let cancelled = false;
 
     const runLookup = () => {
@@ -306,8 +345,12 @@ export default function BookingFlow() {
         .then(r => r.json())
         .then(data => {
           if (cancelled) return;
+          setIpLocation({
+            countryCode: String(data?.country_code || '').toUpperCase() || null,
+            countryName: data?.country_name || null,
+          });
           const detectedTz = detectTimezoneFromIP(data);
-          if (detectedTz) setSelectedTz(detectedTz);
+          if (detectedTz && !hasUserSelectedTz) setSelectedTz(detectedTz);
         })
         .catch(() => {});
     };
@@ -330,7 +373,7 @@ export default function BookingFlow() {
         window.clearTimeout(timeoutId);
       }
     };
-  }, [parsedPrefilledPhone]);
+  }, [hasUserSelectedTz, parsedPrefilledPhone]);
 
   // Pre-fetch current month's available dates
   const DAY_MAP = { 0: 'domingo', 1: 'lunes', 2: 'martes', 3: 'miercoles', 4: 'jueves', 5: 'viernes', 6: 'sabado' };
@@ -442,7 +485,11 @@ export default function BookingFlow() {
     prefetchDates(dates);
   }, [config, getDatesForMonth, prefetchDates]);
 
-  useEffect(() => { setIsInternational(countryCode !== '+591'); }, [countryCode]);
+  useEffect(() => {
+    if (phoneDigits.length > maxDigits) {
+      setPhoneNumber(phoneDigits.slice(0, maxDigits));
+    }
+  }, [maxDigits, phoneDigits]);
 
   useEffect(() => {
     if (!showTzDropdown) return;
@@ -450,6 +497,13 @@ export default function BookingFlow() {
     document.addEventListener('click', handler);
     return () => document.removeEventListener('click', handler);
   }, [showTzDropdown]);
+
+  useEffect(() => {
+    if (!showPhoneCountryDropdown) return;
+    const handler = () => setShowPhoneCountryDropdown(false);
+    document.addEventListener('click', handler);
+    return () => document.removeEventListener('click', handler);
+  }, [showPhoneCountryDropdown]);
 
   const daysWithSlots = useMemo(() => {
     const set = new Set();
@@ -479,14 +533,33 @@ export default function BookingFlow() {
     return convertLaPazTimeToTz(time, selectedDate, selectedTz.tz);
   }
 
+  function buildBookingPayload(dateTime, onboarding = null) {
+    const phone = countryCode.replace('+', '') + phoneDigits;
+    const body = {
+      phone,
+      date_time: dateTime,
+      timezone: bookingContext.timezone,
+      ip_country_code: bookingContext.ip_country_code,
+      ip_country_name: bookingContext.ip_country_name,
+      location_country_code: bookingContext.location_country_code,
+      location_country_name: bookingContext.location_country_name,
+      location_confirmed_manually: bookingContext.location_confirmed_manually,
+      device_type: bookingContext.device_type,
+      user_agent: bookingContext.user_agent,
+    };
+
+    if (onboarding) body.onboarding = onboarding;
+    if (urlFeeMode) body.fee_mode = urlFeeMode;
+    if (urlCode) body.code = urlCode;
+
+    return body;
+  }
+
   // API calls
   async function handlePhoneSubmit() {
     dispatch({ type: 'PHONE_CHECK_START' });
     try {
-      const phone = countryCode.replace('+', '') + phoneDigits;
-      const body = { phone, date_time: `${selectedDate}T${selectedSlot}` };
-      if (urlFeeMode) body.fee_mode = urlFeeMode;
-      if (urlCode) body.code = urlCode;
+      const body = buildBookingPayload(`${selectedDate}T${selectedSlot}`);
       const data = await api.post('/book', body);
       if (data.status === 'needs_onboarding') dispatch({ type: 'PHONE_NEW' });
       else if (data.status === 'booked') dispatch({ type: 'BOOK_SUCCESS', appointment: { date: selectedDate, time: selectedSlot } });
@@ -501,11 +574,7 @@ export default function BookingFlow() {
   async function handleBook(onboarding = null) {
     dispatch({ type: 'BOOK_START' });
     try {
-      const phone = countryCode.replace('+', '') + phoneDigits;
-      const body = { phone, date_time: `${selectedDate}T${selectedSlot}` };
-      if (onboarding) body.onboarding = onboarding;
-      if (urlFeeMode) body.fee_mode = urlFeeMode;
-      if (urlCode) body.code = urlCode;
+      const body = buildBookingPayload(`${selectedDate}T${selectedSlot}`, onboarding);
       const data = await api.post('/book', body);
       if (data.status === 'needs_onboarding') dispatch({ type: 'BOOK_NEEDS_ONBOARDING' });
       else if (data.status === 'has_appointment') dispatch({
@@ -523,11 +592,9 @@ export default function BookingFlow() {
       const appt = flow.oldAppointment || flow.activeAppointment;
       if (!appt) throw new Error('No se encontró la cita original');
       if (!flow.rescheduleToken) throw new Error('La autorización para reagendar expiró. Vuelve a verificar tu teléfono.');
-      const phone = countryCode.replace('+', '') + phoneDigits;
       await api.post('/reschedule', {
-        phone,
+        ...buildBookingPayload(`${selectedDate}T${selectedSlot}`),
         old_appointment_id: appt.id,
-        date_time: `${selectedDate}T${selectedSlot}`,
         reschedule_token: flow.rescheduleToken,
       });
       dispatch({ type: 'RESCHEDULE_SUCCESS', appointment: { date: selectedDate, time: selectedSlot } });
@@ -563,7 +630,7 @@ export default function BookingFlow() {
                   <div className="timezone-group-label">{group.label}</div>
                   {group.zones.map(z => (
                     <div key={z.tz + z.label} className={`timezone-item ${selectedTz.tz === z.tz && selectedTz.label === z.label ? 'active' : ''}`}
-                      onClick={() => { setSelectedTz(z); setShowTzDropdown(false); setTzSearch(''); }}>
+                      onClick={() => { setHasUserSelectedTz(true); setSelectedTz(z); setShowTzDropdown(false); setTzSearch(''); }}>
                       <span>{z.flag}</span>
                       <span style={{ flex: 1 }}>{z.label}</span>
                       <span style={{ color: 'var(--gris-medio)', fontSize: 14 }}>{getCurrentTimeInTz(z.tz)}</span>
@@ -572,6 +639,50 @@ export default function BookingFlow() {
                 </div>
               ))}
             </div>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  function PhoneCountrySelector() {
+    return (
+      <div style={{ position: 'relative', marginBottom: 14 }}>
+        <span className="field-label" style={{ marginBottom: 10 }}>PREFIJO DE TU WHATSAPP</span>
+        <button
+          type="button"
+          className="country-selector"
+          style={{ width: '100%', justifyContent: 'space-between', height: 58, paddingInline: 16 }}
+          onClick={(e) => {
+            e.stopPropagation();
+            setShowPhoneCountryDropdown(!showPhoneCountryDropdown);
+          }}
+        >
+          <span style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <span>{selectedPhoneCountry.flag}</span>
+            <span>{selectedPhoneCountry.name}</span>
+          </span>
+          <span style={{ display: 'flex', alignItems: 'center', gap: 8, color: '#6F6F73', fontWeight: 600 }}>
+            {selectedPhoneCountry.code}
+            <ChevronDown size={14} />
+          </span>
+        </button>
+        {showPhoneCountryDropdown && (
+          <div className="country-dropdown" style={{ width: '100%' }} onClick={e => e.stopPropagation()}>
+            {COUNTRY_CODES.map(country => (
+              <div
+                key={country.code}
+                className="country-dropdown-item"
+                onClick={() => {
+                  setSelectedPhoneCountry(country);
+                  setShowPhoneCountryDropdown(false);
+                }}
+              >
+                <span>{country.flag}</span>
+                <span style={{ flex: 1 }}>{country.name}</span>
+                <span style={{ color: 'var(--gris-medio)', fontWeight: 600 }}>{country.code}</span>
+              </div>
+            ))}
           </div>
         )}
       </div>
@@ -600,10 +711,7 @@ export default function BookingFlow() {
     async function autoSubmitPhone(time) {
       dispatch({ type: 'PHONE_CHECK_START' });
       try {
-        const phone = countryCode.replace('+', '') + phoneDigits;
-        const body = { phone, date_time: `${selectedDate}T${time}` };
-        if (urlFeeMode) body.fee_mode = urlFeeMode;
-        if (urlCode) body.code = urlCode;
+        const body = buildBookingPayload(`${selectedDate}T${time}`);
         const data = await api.post('/book', body);
         if (data.status === 'needs_onboarding') dispatch({ type: 'PHONE_NEW' });
         else if (data.status === 'booked') dispatch({ type: 'BOOK_SUCCESS', appointment: { date: selectedDate, time } });
@@ -640,6 +748,17 @@ export default function BookingFlow() {
 
         {selectedDate && (
           <div className="card">
+            {showIpCountryWarning && (
+              <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 12 }}>
+                <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10, color: '#B34E35' }}>
+                  <AlertTriangle size={18} color="#B34E35" style={{ marginTop: 2, flexShrink: 0 }} />
+                  <div style={{ textAlign: 'left' }}>
+                    <div style={{ fontSize: 16, fontWeight: 700, color: '#B34E35' }}>Parece que no estás en Bolivia o tienes un VPN.</div>
+                    <div style={{ fontSize: 16, fontWeight: 700, color: '#B34E35' }}>Confirma en qué país estás.</div>
+                  </div>
+                </div>
+              </div>
+            )}
             <TimezoneSelector />
             <h2 style={{ fontSize: 24, fontWeight: 600, color: 'var(--negro)', marginBottom: 16, textAlign: 'center' }}>
               {formatDateES(selectedDate)}
@@ -716,6 +835,7 @@ export default function BookingFlow() {
             <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 16 }}>
               <img src="/whatsapp-outline.svg" alt="" aria-hidden="true" style={{ width: 42, height: 42, display: 'block' }} />
             </div>
+            <PhoneCountrySelector />
             <div className="phone-unified-field">
               <span style={{
                 fontWeight: 600, fontSize: 24,
@@ -734,7 +854,7 @@ export default function BookingFlow() {
                 placeholder="71234567" className="phone-unified-input" autoFocus maxLength={maxDigits} />
             </div>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16, marginTop: 6 }}>
-              <span style={{ fontSize: 17, color: 'var(--gris-medio)' }}>{currentCountry.name}</span>
+              <span style={{ fontSize: 17, color: 'var(--gris-medio)' }}>{selectedPhoneCountry.name}</span>
               <span className="phone-digit-hint" style={{ fontSize: 17, color: phoneComplete ? 'var(--turquesa)' : phoneDigits.length > 0 ? 'var(--gris-medio)' : 'transparent' }}>
                 {phoneDigits.length > 0 ? `${phoneDigits.length}/${expectedDigitsLabel} digitos` : ''}
               </span>
@@ -768,8 +888,9 @@ export default function BookingFlow() {
           first_name: firstName,
           last_name: lastName,
           age: ageNum,
-          city: isInternational ? 'Otro' : city,
-          country: isInternational ? selectedCountryName : 'Bolivia',
+          city: isBoliviaFeeFlow ? city : 'Otro',
+          country: locationCountry.name,
+          timezone: selectedTz?.tz || DEFAULT_TZ.tz,
           source,
         });
       } else {
@@ -839,7 +960,7 @@ export default function BookingFlow() {
                     ? <p style={{ fontSize: 16, color: 'var(--terracota)', marginTop: 6, fontWeight: 600 }}>Solo atiendo pacientes entre {minAge} y {maxAge} años</p>
                     : <p style={{ fontSize: 14, color: 'var(--gris-medio)', marginTop: 6 }}>Entre {minAge} y {maxAge} años</p>}
                 </div>
-                {isInternational ? (
+                {!isBoliviaFeeFlow ? (
                   <div>
                     <span className="field-label">PAÍS ELEGIDO</span>
                     <div
@@ -849,7 +970,7 @@ export default function BookingFlow() {
                         padding: '18px 20px',
                       }}
                     >
-                      <div style={{ fontSize: 22, fontWeight: 600, color: 'var(--text-primary)' }}>{selectedCountryName}</div>
+                      <div style={{ fontSize: 22, fontWeight: 600, color: 'var(--text-primary)' }}>{locationCountry.name}</div>
                     </div>
                   </div>
                 ) : (

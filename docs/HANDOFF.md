@@ -13,6 +13,8 @@ Read this first, then read `CLAUDE.md` and `LESSONS-LEARNED.md` if the task touc
 - Summary: normalized phone handling across admin, booking, WhatsApp, reminders, payment matching, and public tokens
 - UI follow-up: reschedule screen copy now injects the client name in the banner, "already booked" title, and trust message
 - CI follow-up: GitHub `Frontend Guard` was failing because `client/dist` was out of sync with source; local `lint` and `build` passed, but `git diff --exit-code -- client/dist` failed
+- OCR follow-up: destination-account validation was too permissive and could treat some invalid receipts as valid if a whitelisted account appeared anywhere in the OCR text
+- BNB follow-up: some BNB receipts expose a top `Cuenta:` block plus a lower destination block; OCR must prioritize `Nombre del destinatario` and `Se acreditó a la cuenta` instead of generic `Cuenta:`
 
 ## Current State
 
@@ -57,6 +59,10 @@ Read this first, then read `CLAUDE.md` and `LESSONS-LEARNED.md` if the task touc
   `npm run lint` passed with warnings only
   `npm run build` passed
   failure source was the committed `client/dist` being stale
+- OCR destination validation was tightened:
+  valid destination now requires a whitelisted destination account found in destination context, or a destination name that clearly matches Daniel
+- BNB parsing was tightened:
+  generic `cuenta` fallback no longer has priority over destination-specific labels
 
 ## Known Follow-Ups
 

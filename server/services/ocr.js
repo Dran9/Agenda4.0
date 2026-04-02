@@ -113,32 +113,20 @@ function parseBolivianReceipt(text) {
       .map(value => String(value || '').replace(/\D/g, ''))
       .filter(Boolean)
   );
+  const VALID_DESTINATION_NAME_PATTERNS = [
+    /daniel\s*mac\s*lean/i,
+    /oscar\s*daniel\s*mac\s*lean\s*estrada/i,
+    /mac\s*lean\s*estrada/i,
+  ];
 
   function normalizeAccount(value) {
     return String(value || '').replace(/\D/g, '');
   }
 
-  function findWhitelistedAccountInText() {
-    const candidates = new Set();
-
-    for (const line of lines) {
-      const inlineMatches = line.match(/\d[\d\s.-]{7,}\d/g) || [];
-      for (const match of inlineMatches) {
-        const normalized = normalizeAccount(match);
-        if (normalized.length >= 8) candidates.add(normalized);
-      }
-
-      const normalizedLine = normalizeAccount(line);
-      if (normalizedLine.length >= 8) candidates.add(normalizedLine);
-    }
-
-    for (const candidate of candidates) {
-      if (VALID_DESTINATION_ACCOUNTS.has(candidate)) {
-        return candidate;
-      }
-    }
-
-    return null;
+  function isValidDestinationName(value) {
+    const normalized = String(value || '').trim();
+    if (!normalized) return false;
+    return VALID_DESTINATION_NAME_PATTERNS.some((pattern) => pattern.test(normalized));
   }
 
   // ─── Amount (Bs, BOB) ───
@@ -321,26 +309,73 @@ function parseBolivianReceipt(text) {
     }
   }
 
+  // Pattern 3.5: BNB "Nombre del destinatario" on the same line or wrapped to the next one
+  if (!destName) {
+    const destNameLineIdx = lines.findIndex(l => /nombre\s+del\s+destinatario/i.test(l));
+    if (destNameLineIdx >= 0) {
+      const sameLineMatch = lines[destNameLineIdx].match(/nombre\s+del\s+destinatario[:\s]*([^\n]+)/i);
+      if (sameLineMatch?.[1]?.trim()) {
+        destName = sameLineMatch[1].trim();
+        if (destNameLineIdx + 1 < lines.length) {
+          const continuation = lines[destNameLineIdx + 1];
+          if (
+            /^[A-ZÁÉÍÓÚÑa-záéíóúñ\s.-]{3,}$/.test(continuation)
+            && !/banco|cuenta|monto|fecha|hora|referencia/i.test(continuation)
+            && !/^\d/.test(continuation)
+          ) {
+            destName = `${destName} ${continuation}`.replace(/\s+/g, ' ').trim();
+          }
+        }
+      } else if (destNameLineIdx + 1 < lines.length) {
+        const candidate = lines[destNameLineIdx + 1];
+        if (
+          /^[A-ZÁÉÍÓÚÑa-záéíóúñ\s.-]{3,}$/.test(candidate)
+          && !/banco|cuenta|monto|fecha|hora|referencia/i.test(candidate)
+          && !/^\d/.test(candidate)
+        ) {
+          destName = candidate.trim();
+          if (destNameLineIdx + 2 < lines.length) {
+            const continuation = lines[destNameLineIdx + 2];
+            if (
+              /^[A-ZÁÉÍÓÚÑa-záéíóúñ\s.-]{3,}$/.test(continuation)
+              && !/banco|cuenta|monto|fecha|hora|referencia/i.test(continuation)
+              && !/^\d/.test(continuation)
+            ) {
+              destName = `${destName} ${continuation}`.replace(/\s+/g, ' ').trim();
+            }
+          }
+        }
+      }
+    }
+  }
+
+  // Pattern 3.6: BNB "Se acreditó a la cuenta" destination line
+  if (!destAccount) {
+    const creditedLine = lines.find(l => /se\s+acredit[oó]\s+a\s+la\s+cuenta/i.test(l));
+    if (creditedLine) {
+      const accountMatch = creditedLine.match(/se\s+acredit[oó]\s+a\s+la\s+cuenta[:\s]*([\d\s.-]{6,})/i);
+      if (accountMatch) {
+        destAccount = normalizeAccount(accountMatch[1]);
+      }
+    }
+  }
+
   // Pattern 4: explicit account labels like "N° de cuenta"
   if (!destAccount) {
-    const accountMatch = fullText.match(/(?:n[°º]\s*de\s*cuenta|n[uú]mero\s*de\s*cuenta|cuenta)[:\s]*([\d\s.-]{6,})/i);
+    const accountMatch = fullText.match(
+      /(?:n[°º]\s*de\s*cuenta|n[uú]mero\s*de\s*cuenta|cuenta\s*(?:de\s+)?destino|a\s+la\s+cuenta|se\s+acredit[oó]\s+a\s+la\s+cuenta)[:\s]*([\d\s.-]{6,})/i
+    );
     if (accountMatch) {
       destAccount = normalizeAccount(accountMatch[1]);
     }
   }
 
-  // Pattern 5: columnar OCR may separate labels and values; if the valid account
-  // appears anywhere in the text, trust the explicit account match over names.
-  if (!destAccount || !VALID_DESTINATION_ACCOUNTS.has(destAccount)) {
-    const matchedAccount = findWhitelistedAccountInText();
-    if (matchedAccount) {
-      destAccount = matchedAccount;
-    }
-  }
-
   // ─── Destination verification ───
-  // Validate against explicit destination account, not recipient name.
-  const destVerified = VALID_DESTINATION_ACCOUNTS.has(destAccount || '');
+  // Destination is valid only when we extracted a whitelisted destination account
+  // from a destination-specific context, or when the destination name clearly matches Daniel.
+  const destAccountVerified = VALID_DESTINATION_ACCOUNTS.has(destAccount || '');
+  const destNameVerified = isValidDestinationName(destName);
+  const destVerified = destAccountVerified || destNameVerified;
 
   // ─── Reference / transaction code ───
   let reference = null;

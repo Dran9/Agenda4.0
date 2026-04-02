@@ -7,7 +7,7 @@ import {
 import {
   ArrowRight, ArrowLeft, ChevronDown, Calendar as CalendarIcon,
   Clock, CalendarClock, CalendarCheck, Check, Sun, Sunset,
-  Coffee, Globe, Search, RefreshCw, Heart, MessageSquareHeart, ShieldAlert, Info, Smartphone, SmilePlus, AlertTriangle,
+  Coffee, Globe, Search, RefreshCw, Heart, MessageSquareHeart, ShieldAlert, Info, Smartphone, SmilePlus,
   CalendarArrowUp, CircleArrowRight, CircleCheck, Clock4,
 } from 'lucide-react';
 
@@ -613,8 +613,8 @@ export default function BookingFlow() {
     return (
       <div style={{ width: '100%', marginBottom: 16 }}>
         <p style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, fontSize: 20, fontWeight: 600, color: '#3C3939', textAlign: 'center', marginBottom: 10 }}>
-          <Globe size={20} color="#3C3939" />
-          ¿En qué país estás?
+          <Globe size={20} color="#B34E35" />
+          ¿Desde qué país estás reservando?
         </p>
         <div style={{ display: 'flex', justifyContent: 'center' }}>
           <button type="button" className="timezone-selector" onClick={e => { e.stopPropagation(); setShowTzDropdown(!showTzDropdown); }}>
@@ -752,17 +752,6 @@ export default function BookingFlow() {
 
         {selectedDate && (
           <div className="card">
-            {showScreen1TimezoneConfirmation && (
-              <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 12 }}>
-                <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10, color: '#B34E35' }}>
-                  <AlertTriangle size={18} color="#B34E35" style={{ marginTop: 2, flexShrink: 0 }} />
-                  <div style={{ textAlign: 'left' }}>
-                    <div style={{ fontSize: 16, fontWeight: 700, color: '#B34E35' }}>Parece que no estás en Bolivia o tienes un VPN.</div>
-                    <div style={{ fontSize: 16, fontWeight: 700, color: '#B34E35' }}>Confirma en qué país estás.</div>
-                  </div>
-                </div>
-              </div>
-            )}
             {showScreen1TimezoneConfirmation && <TimezoneSelector />}
             <h2 style={{ fontSize: 24, fontWeight: 600, color: 'var(--negro)', marginBottom: 16, textAlign: 'center' }}>
               {formatDateES(selectedDate)}

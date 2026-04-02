@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Trash2, Search, BellRing, RotateCcw } from 'lucide-react';
+import { Trash2, Search, BellRing, RotateCcw, ArrowUpDown } from 'lucide-react';
 import AdminLayout from '../../components/AdminLayout';
 import { api } from '../../utils/api';
 import { useToast, Toast } from '../../hooks/useToast';
@@ -71,6 +71,16 @@ const STATUS_STYLES = {
 
 const STATUSES = ['Agendada', 'Confirmada', 'Completada', 'Reagendada', 'Cancelada', 'No-show'];
 const PAYMENT_STATUSES = ['Pendiente', 'Confirmado', 'Mismatch', 'Rechazado'];
+const SORT_OPTIONS = [
+  { value: 'date:asc', label: 'Fecha mas proxima' },
+  { value: 'date:desc', label: 'Fecha mas reciente' },
+  { value: 'name:asc', label: 'Nombre A-Z' },
+  { value: 'name:desc', label: 'Nombre Z-A' },
+  { value: 'created:desc', label: 'Registro reciente' },
+  { value: 'created:asc', label: 'Registro antiguo' },
+  { value: 'status:asc', label: 'Status A-Z' },
+  { value: 'status:desc', label: 'Status Z-A' },
+];
 
 function formatRegistro(dateStr) {
   if (!dateStr) return '—';
@@ -100,7 +110,7 @@ export default function Appointments() {
   const [appointments, setAppointments] = useState([]);
   const [loading, setLoading] = useState(true);
   const { toast, show: showToast } = useToast();
-  const [filters, setFilters] = useState({ status: '', from: '', to: '', search: '' });
+  const [filters, setFilters] = useState({ status: '', from: '', to: '', search: '', sort: 'date:desc' });
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
   const [selected, setSelected] = useState(new Set());
@@ -113,10 +123,13 @@ export default function Appointments() {
     setLoading(true);
     try {
       const params = new URLSearchParams({ page, limit: 50 });
+      const [sortBy, sortDir] = (filters.sort || 'date:desc').split(':');
       if (filters.status) params.set('status', filters.status);
       if (filters.from) params.set('from', filters.from);
       if (filters.to) params.set('to', filters.to);
       if (filters.search) params.set('search', filters.search);
+      params.set('sort_by', sortBy || 'date');
+      params.set('sort_dir', sortDir || 'desc');
 
       const data = await api.get(`/appointments?${params}`);
       setAppointments(data.appointments);
@@ -249,8 +262,34 @@ export default function Appointments() {
           <option value="">Todos los status</option>
           {STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
         </select>
-        <input type="date" value={filters.from} onChange={e => { setFilters(f => ({ ...f, from: e.target.value })); setPage(1); }} className="px-3 py-2 border border-gray-200 rounded-lg text-sm" />
-        <input type="date" value={filters.to} onChange={e => { setFilters(f => ({ ...f, to: e.target.value })); setPage(1); }} className="px-3 py-2 border border-gray-200 rounded-lg text-sm" />
+        <div className="flex flex-col gap-1">
+          <label className="text-[11px] font-medium uppercase tracking-[0.08em] text-gray-400">Desde</label>
+          <input
+            type="date"
+            value={filters.from}
+            onChange={e => { setFilters(f => ({ ...f, from: e.target.value })); setPage(1); }}
+            className="px-3 py-2 border border-gray-200 rounded-lg text-sm"
+          />
+        </div>
+        <div className="flex flex-col gap-1">
+          <label className="text-[11px] font-medium uppercase tracking-[0.08em] text-gray-400">Hasta</label>
+          <input
+            type="date"
+            value={filters.to}
+            onChange={e => { setFilters(f => ({ ...f, to: e.target.value })); setPage(1); }}
+            className="px-3 py-2 border border-gray-200 rounded-lg text-sm"
+          />
+        </div>
+        <div className="relative">
+          <ArrowUpDown size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+          <select
+            value={filters.sort}
+            onChange={e => { setFilters(f => ({ ...f, sort: e.target.value })); setPage(1); }}
+            className="pl-9 pr-8 py-2 border border-gray-200 rounded-lg text-sm bg-white min-w-[190px]"
+          >
+            {SORT_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+          </select>
+        </div>
 
         {selected.size > 0 && (
           <button

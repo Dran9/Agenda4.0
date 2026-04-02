@@ -37,9 +37,18 @@ async function deleteCalendarEventIfPresent(eventId) {
 // GET /api/appointments — list with filters (admin)
 router.get('/', authMiddleware, async (req, res) => {
   try {
-    const { from, to, status, search, page = 1, limit = 50 } = req.query;
+    const { from, to, status, search, page = 1, limit = 50, sort_by, sort_dir } = req.query;
     let where = 'a.tenant_id = ?';
     const params = [req.tenantId];
+    const sortKey = String(sort_by || 'date');
+    const sortDirection = String(sort_dir || 'desc').toLowerCase() === 'asc' ? 'ASC' : 'DESC';
+    const sortMap = {
+      date: `a.date_time ${sortDirection}, a.id DESC`,
+      name: `c.first_name ${sortDirection}, c.last_name ${sortDirection}, a.date_time DESC`,
+      created: `a.created_at ${sortDirection}, a.id DESC`,
+      status: `a.status ${sortDirection}, a.date_time DESC`,
+    };
+    const orderBy = sortMap[sortKey] || sortMap.date;
 
     if (from) { where += ' AND a.date_time >= ?'; params.push(from); }
     if (to) { where += ' AND a.date_time <= ?'; params.push(to + ' 23:59:59'); }
@@ -62,7 +71,7 @@ router.get('/', authMiddleware, async (req, res) => {
        JOIN clients c ON a.client_id = c.id
        ${PAYMENT_JOIN}
        WHERE ${where}
-       ORDER BY a.date_time DESC
+       ORDER BY ${orderBy}
        LIMIT ? OFFSET ?`,
       params
     );

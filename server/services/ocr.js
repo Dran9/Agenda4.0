@@ -439,6 +439,8 @@ function parseBolivianReceipt(text) {
     bank,
     destName: destName || null,
     destAccount: destAccount || null,
+    destNameVerified,
+    destAccountVerified,
     destVerified,
     raw_text: fullText,
   };

@@ -15,6 +15,8 @@ Read this first, then read `CLAUDE.md` and `LESSONS-LEARNED.md` if the task touc
 - CI follow-up: GitHub `Frontend Guard` was failing because `client/dist` was out of sync with source; local `lint` and `build` passed, but `git diff --exit-code -- client/dist` failed
 - OCR follow-up: destination-account validation was too permissive and could treat some invalid receipts as valid if a whitelisted account appeared anywhere in the OCR text
 - BNB follow-up: some BNB receipts expose a top `Cuenta:` block plus a lower destination block; OCR must prioritize `Nombre del destinatario` and `Se acreditó a la cuenta` instead of generic `Cuenta:`
+- Appointments UI follow-up: appointments toolbar now labels the date-range inputs clearly (`Desde`, `Hasta`) and supports sorting by date, name, created-at, and status
+- Receipt mismatch follow-up: WhatsApp mismatch replies now enumerate reasons as bullet points, not slash-separated text
 
 ## Current State
 
@@ -63,6 +65,8 @@ Read this first, then read `CLAUDE.md` and `LESSONS-LEARNED.md` if the task touc
   valid destination now requires a whitelisted destination account found in destination context, or a destination name that clearly matches Daniel
 - BNB parsing was tightened:
   generic `cuenta` fallback no longer has priority over destination-specific labels
+- Appointments list now supports backend-driven sorting through `sort_by` and `sort_dir` query params
+- Receipt mismatch detection now stores separate destination verification flags (`destNameVerified`, `destAccountVerified`) to avoid losing the `destinatario` reason
 
 ## Known Follow-Ups
 

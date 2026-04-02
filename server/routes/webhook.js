@@ -130,7 +130,7 @@ function buildMismatchNotes(problems) {
   return `Problemas: ${problems.map(formatMismatchProblem).join(', ')}`;
 }
 
-function buildMismatchReasonText(problems) {
+function buildMismatchReasonLines(problems) {
   return problems.map((problem) => {
     if (problem.type === 'fecha_pasada') {
       return 'La fecha del comprobante es anterior a la fecha de la sesión.';
@@ -142,18 +142,18 @@ function buildMismatchReasonText(problems) {
       return 'El destinatario no coincide claramente con la cuenta registrada para el pago.';
     }
     return 'No se pudo validar automáticamente el comprobante.';
-  }).join(' / ');
+  });
 }
 
 function buildMismatchWhatsappMessage(firstName, problems) {
   const saludo = formatWhatsappName(firstName);
-  const reason = buildMismatchReasonText(problems);
+  const reasonLines = buildMismatchReasonLines(problems);
 
   return [
     `Hola ${saludo}, gracias por enviar tu comprobante 😊`,
     '',
-    'No pude validarlo automáticamente por este motivo:',
-    `*${reason}*`,
+    `No pude validarlo automáticamente por ${problems.length === 1 ? 'este motivo' : 'estos motivos'}:`,
+    ...reasonLines.map((line) => `• ${line}`),
     '',
     'Por favor, revisa el comprobante y envíalo nuevamente.',
     '🤑 Si hubo un error de mi parte o consideras que la información sí es correcta, puedes escribirle a Daniel por aquí mismo.',
@@ -601,7 +601,10 @@ router.post('/', async (req, res) => {
                         const problems = [];
 
                         // 1. Destinatario: destination account must match one of Daniel's valid accounts
-                        if (!ocrResult.destVerified) {
+                        const recipientMismatch = ocrResult.destVerified === false
+                          || (ocrResult.destName && ocrResult.destNameVerified === false)
+                          || (ocrResult.destAccount && ocrResult.destAccountVerified === false);
+                        if (recipientMismatch) {
                           problems.push({ type: 'destinatario' });
                         }
 
@@ -727,6 +730,8 @@ router.post('/', async (req, res) => {
               ocr_date: ocrResult.date || null,
               ocr_reference: ocrResult.reference || null,
               ocr_dest_name: ocrResult.destName || null,
+              ocr_dest_account_verified: ocrResult.destAccountVerified || false,
+              ocr_dest_name_verified: ocrResult.destNameVerified || false,
               ocr_dest_verified: ocrResult.destVerified || false,
               ocr_bank: ocrResult.bank || null,
             } : {});

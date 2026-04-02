@@ -299,13 +299,37 @@ export default function BookingFlow() {
   // Auto-detect timezone by IP (country code derived from timezone selector)
   useEffect(() => {
     if (parsedPrefilledPhone?.timezone) return;
-    fetch('https://ipapi.co/json/')
-      .then(r => r.json())
-      .then(data => {
-        const detectedTz = detectTimezoneFromIP(data);
-        if (detectedTz) setSelectedTz(detectedTz);
-      })
-      .catch(() => {});
+    let cancelled = false;
+
+    const runLookup = () => {
+      fetch('https://ipapi.co/json/')
+        .then(r => r.json())
+        .then(data => {
+          if (cancelled) return;
+          const detectedTz = detectTimezoneFromIP(data);
+          if (detectedTz) setSelectedTz(detectedTz);
+        })
+        .catch(() => {});
+    };
+
+    let idleId = null;
+    let timeoutId = null;
+
+    if (typeof window !== 'undefined' && 'requestIdleCallback' in window) {
+      idleId = window.requestIdleCallback(runLookup, { timeout: 1500 });
+    } else {
+      timeoutId = window.setTimeout(runLookup, 800);
+    }
+
+    return () => {
+      cancelled = true;
+      if (idleId != null && typeof window !== 'undefined' && 'cancelIdleCallback' in window) {
+        window.cancelIdleCallback(idleId);
+      }
+      if (timeoutId != null) {
+        window.clearTimeout(timeoutId);
+      }
+    };
   }, [parsedPrefilledPhone]);
 
   // Pre-fetch current month's available dates
@@ -349,27 +373,68 @@ export default function BookingFlow() {
     if (!config) return;
     const today = new Date();
     const dates = getDatesForMonth(today.getFullYear(), today.getMonth(), config);
-    // Also prefetch next month if window extends into it
     const nextMonth = new Date(today.getFullYear(), today.getMonth() + 1, 1);
     const nextDates = getDatesForMonth(nextMonth.getFullYear(), nextMonth.getMonth(), config);
     const allDates = [...dates, ...nextDates];
-    Promise.all(
-      allDates.map(date =>
-        api.get(`/slots?date=${date}`)
-          .then(data => ({ date, slots: data.slots || [] }))
-          .catch(() => ({ date, slots: [] }))
-      )
-    ).then(results => {
-      const cache = new Map();
-      results.forEach(r => cache.set(r.date, r.slots));
-      setSlotsCache(cache);
+    const initialDate = selectedDate || allDates[0];
+    if (!initialDate) {
       setPrefetchDone(true);
-      if (allDates.length > 0) {
-        setSelectedDate(allDates[0]);
-        setSlots(cache.get(allDates[0]) || []);
-      }
-    });
-  }, [config]);
+      return;
+    }
+
+    let cancelled = false;
+    const initialMonthDates = dates.includes(initialDate) ? dates : nextDates;
+    const remainingDates = initialMonthDates.filter(date => date !== initialDate);
+
+    setSelectedDate(prev => prev || initialDate);
+    setSlotsLoading(true);
+
+    api.get(`/slots?date=${initialDate}`)
+      .then((data) => {
+        if (cancelled) return;
+        const initialSlots = data.slots || [];
+        setSlots(initialSlots);
+        setSlotsCache(prev => {
+          const next = new Map(prev);
+          next.set(initialDate, initialSlots);
+          return next;
+        });
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setSlots([]);
+        setSlotsCache(prev => {
+          const next = new Map(prev);
+          next.set(initialDate, []);
+          return next;
+        });
+      })
+      .finally(() => {
+        if (cancelled) return;
+        setSlotsLoading(false);
+        setPrefetchDone(true);
+        if (remainingDates.length > 0) {
+          Promise.all(
+            remainingDates.map(date =>
+              api.get(`/slots?date=${date}`)
+                .then(data => ({ date, slots: data.slots || [] }))
+                .catch(() => ({ date, slots: [] }))
+            )
+          ).then(results => {
+            if (cancelled) return;
+            setSlotsCache(prev => {
+              const next = new Map(prev);
+              results.forEach(r => next.set(r.date, r.slots));
+              return next;
+            });
+          });
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [config, getDatesForMonth]);
 
   const handleMonthChange = useCallback((year, month) => {
     if (!config) return;

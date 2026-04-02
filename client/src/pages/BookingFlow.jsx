@@ -1,4 +1,6 @@
 import { useState, useEffect, useCallback, useMemo, useReducer } from 'react';
+import { parsePhoneNumberFromString, validatePhoneNumberLength } from 'libphonenumber-js/core';
+import phoneMetadata from 'libphonenumber-js/metadata.max.json';
 import Calendar from '../components/Calendar';
 import { api } from '../utils/api';
 import {
@@ -12,23 +14,23 @@ import {
 } from 'lucide-react';
 
 const COUNTRY_CODES = [
-  { code: '+591', flag: '\u{1F1E7}\u{1F1F4}', name: 'Bolivia', digits: 8 },
-  { code: '+54', flag: '\u{1F1E6}\u{1F1F7}', name: 'Argentina', digits: 10 },
-  { code: '+56', flag: '\u{1F1E8}\u{1F1F1}', name: 'Chile', digits: 9 },
-  { code: '+57', flag: '\u{1F1E8}\u{1F1F4}', name: 'Colombia', digits: 10 },
-  { code: '+51', flag: '\u{1F1F5}\u{1F1EA}', name: 'Perú', digits: 9 },
-  { code: '+593', flag: '\u{1F1EA}\u{1F1E8}', name: 'Ecuador', digits: 9 },
-  { code: '+52', flag: '\u{1F1F2}\u{1F1FD}', name: 'México', digits: 10 },
-  { code: '+34', flag: '\u{1F1EA}\u{1F1F8}', name: 'España', digits: 9 },
-  { code: '+1', flag: '\u{1F1FA}\u{1F1F8}', name: 'USA', digits: 10 },
-  { code: '+55', flag: '\u{1F1E7}\u{1F1F7}', name: 'Brasil', digits: 11 },
-  { code: '+595', flag: '\u{1F1F5}\u{1F1FE}', name: 'Paraguay', digits: 9 },
-  { code: '+598', flag: '\u{1F1FA}\u{1F1FE}', name: 'Uruguay', digits: 8 },
-  { code: '+58', flag: '\u{1F1FB}\u{1F1EA}', name: 'Venezuela', digits: 10 },
-  { code: '+33', flag: '\u{1F1EB}\u{1F1F7}', name: 'Francia', digits: 9 },
-  { code: '+49', flag: '\u{1F1E9}\u{1F1EA}', name: 'Alemania', digits: 11 },
-  { code: '+39', flag: '\u{1F1EE}\u{1F1F9}', name: 'Italia', digits: 10 },
-  { code: '+44', flag: '\u{1F1EC}\u{1F1E7}', name: 'Reino Unido', digits: 10 },
+  { code: '+591', flag: '\u{1F1E7}\u{1F1F4}', name: 'Bolivia', iso2: 'BO' },
+  { code: '+54', flag: '\u{1F1E6}\u{1F1F7}', name: 'Argentina', iso2: 'AR' },
+  { code: '+56', flag: '\u{1F1E8}\u{1F1F1}', name: 'Chile', iso2: 'CL' },
+  { code: '+57', flag: '\u{1F1E8}\u{1F1F4}', name: 'Colombia', iso2: 'CO' },
+  { code: '+51', flag: '\u{1F1F5}\u{1F1EA}', name: 'Perú', iso2: 'PE' },
+  { code: '+593', flag: '\u{1F1EA}\u{1F1E8}', name: 'Ecuador', iso2: 'EC' },
+  { code: '+52', flag: '\u{1F1F2}\u{1F1FD}', name: 'México', iso2: 'MX' },
+  { code: '+34', flag: '\u{1F1EA}\u{1F1F8}', name: 'España', iso2: 'ES' },
+  { code: '+1', flag: '\u{1F1FA}\u{1F1F8}', name: 'USA', iso2: 'US' },
+  { code: '+55', flag: '\u{1F1E7}\u{1F1F7}', name: 'Brasil', iso2: 'BR' },
+  { code: '+595', flag: '\u{1F1F5}\u{1F1FE}', name: 'Paraguay', iso2: 'PY' },
+  { code: '+598', flag: '\u{1F1FA}\u{1F1FE}', name: 'Uruguay', iso2: 'UY' },
+  { code: '+58', flag: '\u{1F1FB}\u{1F1EA}', name: 'Venezuela', iso2: 'VE' },
+  { code: '+33', flag: '\u{1F1EB}\u{1F1F7}', name: 'Francia', iso2: 'FR' },
+  { code: '+49', flag: '\u{1F1E9}\u{1F1EA}', name: 'Alemania', iso2: 'DE' },
+  { code: '+39', flag: '\u{1F1EE}\u{1F1F9}', name: 'Italia', iso2: 'IT' },
+  { code: '+44', flag: '\u{1F1EC}\u{1F1E7}', name: 'Reino Unido', iso2: 'GB' },
 ];
 
 const CITIES = ['Cochabamba', 'Santa Cruz', 'La Paz', 'Sucre', 'Otro'];
@@ -66,12 +68,12 @@ function parsePrefilledPhone(rawValue) {
   const digits = String(rawValue || '').replace(/\D/g, '');
   if (!digits) return null;
 
-  for (const option of PHONE_PREFIX_OPTIONS) {
-    if (!digits.startsWith(option.digitsOnly)) continue;
-    const localDigits = digits.slice(option.digitsOnly.length);
-    if (localDigits.length === option.digits) {
+  const parsed = parsePhoneNumberFromString(`+${digits}`, undefined, phoneMetadata);
+  if (parsed?.countryCallingCode) {
+    const option = PHONE_PREFIX_OPTIONS.find((candidate) => candidate.digitsOnly === parsed.countryCallingCode);
+    if (option) {
       return {
-        localDigits,
+        localDigits: parsed.nationalNumber || digits.slice(option.digitsOnly.length),
         timezone: PHONE_CODE_TO_TZ[option.digitsOnly] || DEFAULT_TZ,
       };
     }
@@ -80,6 +82,23 @@ function parsePrefilledPhone(rawValue) {
   return {
     localDigits: digits,
     timezone: null,
+  };
+}
+
+function getExpectedPhoneLengths(iso2) {
+  const countryMetadata = phoneMetadata?.countries?.[iso2];
+  if (!countryMetadata) return { min: 0, max: 15 };
+
+  const generalLengths = Array.isArray(countryMetadata[3]) ? countryMetadata[3] : [];
+  const typeMetadata = Array.isArray(countryMetadata[11]) ? countryMetadata[11] : [];
+  const mobileLengths = Array.isArray(typeMetadata[1]?.[1]) ? typeMetadata[1][1] : [];
+  const lengths = mobileLengths.length ? mobileLengths : generalLengths;
+
+  if (!lengths.length) return { min: 0, max: 15 };
+
+  return {
+    min: Math.min(...lengths),
+    max: Math.max(...lengths),
   };
 }
 
@@ -281,8 +300,26 @@ export default function BookingFlow() {
   const currentCountry = COUNTRY_CODES.find(c => c.code === countryCode) || COUNTRY_CODES[0];
   const selectedCountryName = currentCountry.name === 'USA' ? 'Estados Unidos' : currentCountry.name;
   const phoneDigits = phoneNumber.replace(/\D/g, '');
-  const expectedDigits = currentCountry.digits;
-  const phoneComplete = phoneDigits.length === expectedDigits;
+  const expectedPhoneLengths = useMemo(() => getExpectedPhoneLengths(currentCountry.iso2), [currentCountry.iso2]);
+  const phoneLengthStatus = useMemo(() => {
+    if (!phoneDigits) return null;
+    return validatePhoneNumberLength(phoneDigits, currentCountry.iso2, phoneMetadata) || null;
+  }, [phoneDigits, currentCountry.iso2]);
+  const parsedNationalPhone = useMemo(() => (
+    phoneDigits ? parsePhoneNumberFromString(phoneDigits, currentCountry.iso2, phoneMetadata) : null
+  ), [phoneDigits, currentCountry.iso2]);
+  const phoneComplete = !!phoneDigits && !phoneLengthStatus && !!parsedNationalPhone?.isValid();
+  const phoneHint = useMemo(() => {
+    if (!phoneDigits) return '';
+    if (phoneComplete) return 'Numero valido';
+    if (phoneLengthStatus === 'TOO_SHORT') return 'Faltan digitos';
+    if (phoneLengthStatus === 'TOO_LONG') return 'Demasiados digitos';
+    if (phoneLengthStatus === 'INVALID_LENGTH') return 'Longitud no valida';
+    return 'Revisa este numero';
+  }, [phoneDigits, phoneComplete, phoneLengthStatus]);
+  const expectedDigitsLabel = expectedPhoneLengths.min === expectedPhoneLengths.max
+    ? `${expectedPhoneLengths.max}`
+    : `${expectedPhoneLengths.min}-${expectedPhoneLengths.max}`;
 
   // Pre-fill phone from URL param (?t= or ?r=)
   useEffect(() => {
@@ -658,13 +695,18 @@ export default function BookingFlow() {
                 {countryCode}
               </span>
               <input type="tel" value={phoneNumber}
-                onChange={e => { const val = e.target.value.replace(/\D/g, ''); if (val.length <= expectedDigits) setPhoneNumber(val); }}
-                placeholder="71234567" className="phone-unified-input" autoFocus maxLength={expectedDigits} />
+                onChange={e => {
+                  const val = e.target.value.replace(/\D/g, '');
+                  if (!val) { setPhoneNumber(''); return; }
+                  if (val.length > expectedPhoneLengths.max) return;
+                  setPhoneNumber(val);
+                }}
+                placeholder="71234567" className="phone-unified-input" autoFocus maxLength={expectedPhoneLengths.max} />
             </div>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16, marginTop: 6 }}>
               <span style={{ fontSize: 17, color: 'var(--gris-medio)' }}>{currentCountry.name}</span>
               <span className="phone-digit-hint" style={{ fontSize: 17, color: phoneComplete ? 'var(--turquesa)' : phoneDigits.length > 0 ? 'var(--gris-medio)' : 'transparent' }}>
-                {phoneDigits.length}/{expectedDigits} dígitos
+                {phoneDigits.length > 0 ? `${phoneDigits.length}/${expectedDigitsLabel} digitos` : phoneHint}
               </span>
             </div>
             {flow.error && <p style={{ color: 'var(--terracota)', fontSize: 16, marginBottom: 12 }}>{flow.error}</p>}

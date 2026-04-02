@@ -4,6 +4,7 @@ const { pool } = require('../db');
 const { getOperationalContext, classifyIncomingMessage, buildClassificationMetadata } = require('../services/messageContext');
 const { buildCalendarSummary, hasCalendarPaymentMarker, stripCalendarMarkers } = require('../services/calendarSummary');
 const { sendServerError } = require('../utils/httpErrors');
+const { normalizePhone, normalizedPhoneSql } = require('../utils/phone');
 
 const router = Router();
 const CALENDAR_ID = () => process.env.CALENDAR_ID || process.env.GOOGLE_CALENDAR_ID || 'danielmacleann@gmail.com';
@@ -196,12 +197,13 @@ router.post('/', async (req, res) => {
         if (Array.isArray(value.statuses) && value.statuses.length > 0) {
           for (const statusItem of value.statuses) {
             const waStatus = statusItem.status || 'unknown';
-            const recipientPhone = statusItem.recipient_id || null;
+            const recipientPhone = statusItem.recipient_id ? normalizePhone(statusItem.recipient_id) : null;
             let clientId = null;
 
             if (recipientPhone) {
               const [clients] = await pool.query(
-                'SELECT id FROM clients WHERE phone = ? AND tenant_id = ? LIMIT 1',
+                `SELECT id FROM clients
+                 WHERE ${normalizedPhoneSql('phone')} = ? AND tenant_id = ? LIMIT 1`,
                 [recipientPhone, tenantId]
               );
               clientId = clients[0]?.id || null;
@@ -237,7 +239,7 @@ router.post('/', async (req, res) => {
         if (!value.messages) continue;
 
         for (const msg of value.messages) {
-          const phone = msg.from;
+          const phone = normalizePhone(msg.from);
           const tenantId = 1; // Default tenant for now
 
           // Mark as read immediately (blue checkmarks ✓✓)
@@ -255,7 +257,8 @@ router.post('/', async (req, res) => {
 
           // Resolve client
           const [clients] = await pool.query(
-            'SELECT id, first_name FROM clients WHERE phone = ? AND tenant_id = ?',
+            `SELECT id, first_name FROM clients
+             WHERE ${normalizedPhoneSql('phone')} = ? AND tenant_id = ? LIMIT 1`,
             [phone, tenantId]
           );
           const clientId = clients[0]?.id || null;
@@ -528,7 +531,7 @@ router.post('/', async (req, res) => {
                       // Legacy fallback: if the classifier didn't mark this as payment, do one last check
                       const [recentCtx] = await pool.query(
                         `SELECT content, direction, message_type FROM wa_conversations
-                         WHERE client_phone = ? AND tenant_id = ?
+                         WHERE ${normalizedPhoneSql('client_phone')} = ? AND tenant_id = ?
                            AND created_at >= DATE_SUB(NOW(), INTERVAL 60 MINUTE)
                          ORDER BY created_at DESC LIMIT 10`,
                         [phone, tenantId]
@@ -758,7 +761,13 @@ router.get('/conversations', authMiddleware, async (req, res) => {
     let where = 'w.tenant_id = ?';
     const params = [req.tenantId];
 
-    if (phone) { where += ' AND w.client_phone LIKE ?'; params.push(`%${phone}%`); }
+    if (phone) {
+      const canonicalPhone = normalizePhone(phone);
+      if (canonicalPhone) {
+        where += ` AND ${normalizedPhoneSql('w.client_phone')} LIKE ?`;
+        params.push(`%${canonicalPhone}%`);
+      }
+    }
     if (direction) { where += ' AND w.direction = ?'; params.push(direction); }
     if (type) { where += ' AND w.message_type = ?'; params.push(type); }
 
@@ -843,7 +852,7 @@ router.get('/debug-check/:phone', authMiddleware, async (req, res) => {
   try {
     const { updateEventSummary, listEvents } = require('../services/calendar');
     const calendarId = CALENDAR_ID();
-    const phone = req.params.phone;
+    const phone = normalizePhone(req.params.phone);
     const dryRun = req.query.dry !== '0'; // default: dry run (don't actually update)
 
     // Search from start of today to 7 days ahead

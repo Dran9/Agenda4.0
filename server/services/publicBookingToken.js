@@ -1,4 +1,5 @@
 const jwt = require('jsonwebtoken');
+const { normalizePhone } = require('../utils/phone');
 
 const RESCHEDULE_PURPOSE = 'public_reschedule';
 const RESCHEDULE_EXPIRES_IN = '2h';
@@ -12,6 +13,7 @@ function getPublicFlowSecret() {
 function createPublicRescheduleToken({ tenantId, clientId, appointmentId, phone }) {
   const secret = getPublicFlowSecret();
   if (!secret) throw new Error('No hay secreto configurado para proteger la reagenda pública');
+  const canonicalPhone = normalizePhone(phone);
 
   return jwt.sign(
     {
@@ -19,7 +21,7 @@ function createPublicRescheduleToken({ tenantId, clientId, appointmentId, phone 
       tenantId,
       clientId,
       appointmentId,
-      phone: String(phone),
+      phone: canonicalPhone,
     },
     secret,
     { expiresIn: RESCHEDULE_EXPIRES_IN }
@@ -40,12 +42,13 @@ function verifyPublicRescheduleToken(token) {
 function createPublicFeeToken({ tenantId, phone, feeMode = 'pe' }) {
   const secret = getPublicFlowSecret();
   if (!secret) throw new Error('No hay secreto configurado para proteger el precio especial');
+  const canonicalPhone = normalizePhone(phone);
 
   return jwt.sign(
     {
       purpose: FEE_PURPOSE,
       tenantId,
-      phone: String(phone),
+      phone: canonicalPhone,
       feeMode,
     },
     secret,

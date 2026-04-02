@@ -1,4 +1,5 @@
 const { pool } = require('../db');
+const { normalizePhone, normalizedPhoneSql } = require('../utils/phone');
 
 const BOOKING_TERMS = [
   'agendar', 'agenda', 'cita', 'sesion', 'reagendar', 'reagenda', 'reprogramar',
@@ -25,6 +26,7 @@ function includesAny(text, terms) {
 }
 
 async function getOperationalContext({ tenantId, phone, clientId }) {
+  const canonicalPhone = normalizePhone(phone);
   const context = {
     clientKnown: !!clientId,
     hasFutureAppointment: false,
@@ -58,11 +60,11 @@ async function getOperationalContext({ tenantId, phone, clientId }) {
   const [recentMessages] = await pool.query(
     `SELECT direction, message_type, content
      FROM wa_conversations
-     WHERE tenant_id = ? AND client_phone = ?
+     WHERE tenant_id = ? AND ${normalizedPhoneSql('client_phone')} = ?
        AND created_at >= DATE_SUB(NOW(), INTERVAL 24 HOUR)
      ORDER BY created_at DESC
      LIMIT 20`,
-    [tenantId, phone]
+    [tenantId, canonicalPhone]
   );
 
   const recentOutboundOperational = recentMessages.filter(

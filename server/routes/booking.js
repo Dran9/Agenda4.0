@@ -12,6 +12,7 @@ const { checkClientByPhone, createClient, createBooking, rescheduleAppointment }
 const { verifyPublicRescheduleToken, verifyPublicFeeToken } = require('../services/publicBookingToken');
 const { isTrustedDevMode } = require('../utils/devmode');
 const { sendServerError } = require('../utils/httpErrors');
+const { normalizePhone } = require('../utils/phone');
 
 const router = Router();
 
@@ -68,6 +69,7 @@ function sanitizePublicClientStatus(result) {
 
 async function resolvePublicFeeOverride({ tenantId, phone, feeMode, code }) {
   if (!feeMode) return null;
+  const canonicalPhone = normalizePhone(phone);
 
   if (feeMode !== 'pe') {
     const err = new Error('Modo de arancel público inválido');
@@ -94,7 +96,7 @@ async function resolvePublicFeeOverride({ tenantId, phone, feeMode, code }) {
 
   if (
     String(decoded.tenantId) !== String(tenantId) ||
-    String(decoded.phone) !== String(phone) ||
+    normalizePhone(decoded.phone) !== canonicalPhone ||
     String(decoded.feeMode) !== String(feeMode)
   ) {
     const err = new Error('Token de precio especial no coincide con la solicitud');
@@ -266,7 +268,7 @@ router.post('/reschedule', bookingLimiter, validate(publicRescheduleSchema), asy
     if (
       String(decoded.tenantId) !== String(tenantId) ||
       String(decoded.appointmentId) !== String(old_appointment_id) ||
-      String(decoded.phone) !== String(phone)
+      normalizePhone(decoded.phone) !== normalizePhone(phone)
     ) {
       return res.status(403).json({ error: 'No autorizado para reagendar esta cita' });
     }

@@ -2,6 +2,7 @@ const { pool, withTransaction, withAdvisoryLock } = require('../db');
 const { listEvents, createEvent, deleteEvent } = require('./calendar');
 const { getBusyRangesForDate } = require('./calendarBusy');
 const { createPublicRescheduleToken } = require('./publicBookingToken');
+const { normalizePhone, normalizedPhoneSql } = require('../utils/phone');
 
 const CALENDAR_ID = () => process.env.CALENDAR_ID || 'danielmacleann@gmail.com';
 
@@ -30,22 +31,28 @@ function normalizeBookingContext(input = {}) {
 // ─── Check client status by phone ────────────────────────────────
 async function checkClientByPhone(phone, tenantId, options = {}) {
   const { reactivateDeleted = false } = options;
+  const canonicalPhone = normalizePhone(phone);
+
   // First check active clients
   let [clients] = await pool.query(
-    'SELECT * FROM clients WHERE phone = ? AND tenant_id = ? AND deleted_at IS NULL',
-    [phone, tenantId]
+    `SELECT * FROM clients
+     WHERE ${normalizedPhoneSql('phone')} = ? AND tenant_id = ? AND deleted_at IS NULL
+     LIMIT 1`,
+    [canonicalPhone, tenantId]
   );
 
   // If not found, optionally reactivate a soft-deleted client during real booking flows
   if (clients.length === 0 && reactivateDeleted) {
     const [deleted] = await pool.query(
-      'SELECT * FROM clients WHERE phone = ? AND tenant_id = ? AND deleted_at IS NOT NULL',
-      [phone, tenantId]
+      `SELECT * FROM clients
+       WHERE ${normalizedPhoneSql('phone')} = ? AND tenant_id = ? AND deleted_at IS NOT NULL
+       LIMIT 1`,
+      [canonicalPhone, tenantId]
     );
     if (deleted.length > 0) {
-      await pool.query('UPDATE clients SET deleted_at = NULL WHERE id = ?', [deleted[0].id]);
-      console.log(`[booking] Reactivated soft-deleted client: ${deleted[0].first_name} (${phone})`);
-      clients = [{ ...deleted[0], deleted_at: null }];
+      await pool.query('UPDATE clients SET phone = ?, deleted_at = NULL WHERE id = ?', [canonicalPhone, deleted[0].id]);
+      console.log(`[booking] Reactivated soft-deleted client: ${deleted[0].first_name} (${canonicalPhone})`);
+      clients = [{ ...deleted[0], phone: canonicalPhone, deleted_at: null }];
     }
   }
 
@@ -85,6 +92,7 @@ async function checkClientByPhone(phone, tenantId, options = {}) {
 // ─── Create client from onboarding data ──────────────────────────
 async function createClient(phone, onboarding, tenantId, conn, feeOverride) {
   const db = conn || pool;
+  const canonicalPhone = normalizePhone(phone);
   const { first_name, last_name, age, city, country, source, timezone } = onboarding;
 
   const [cfgRows] = await db.query(
@@ -101,7 +109,7 @@ async function createClient(phone, onboarding, tenantId, conn, feeOverride) {
     const [result] = await db.query(
       `INSERT INTO clients (tenant_id, phone, first_name, last_name, age, city, country, timezone, source, fee)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [tenantId, phone, first_name, last_name, age || null, city || 'Otro', country || 'Bolivia', timezone || 'America/La_Paz', source || 'Otro', fee]
+      [tenantId, canonicalPhone, first_name, last_name, age || null, city || 'Otro', country || 'Bolivia', timezone || 'America/La_Paz', source || 'Otro', fee]
     );
     const [clients] = await db.query('SELECT * FROM clients WHERE id = ?', [result.insertId]);
     newClient = clients[0];
@@ -110,14 +118,15 @@ async function createClient(phone, onboarding, tenantId, conn, feeOverride) {
       // Reactivate soft-deleted client and update their info
       await db.query(
         `UPDATE clients SET deleted_at = NULL, first_name = ?, last_name = ?, age = ?,
-         city = ?, country = ?, timezone = ?, source = ?, fee = ? WHERE phone = ? AND tenant_id = ?`,
-        [first_name, last_name, age || null, city || 'Otro', country || 'Bolivia', timezone || 'America/La_Paz', source || 'Otro', fee, phone, tenantId]
+         city = ?, country = ?, timezone = ?, source = ?, fee = ? WHERE ${normalizedPhoneSql('phone')} = ? AND tenant_id = ?`,
+        [first_name, last_name, age || null, city || 'Otro', country || 'Bolivia', timezone || 'America/La_Paz', source || 'Otro', fee, canonicalPhone, tenantId]
       );
       const [clients] = await db.query(
-        'SELECT * FROM clients WHERE phone = ? AND tenant_id = ?', [phone, tenantId]
+        `SELECT * FROM clients WHERE ${normalizedPhoneSql('phone')} = ? AND tenant_id = ? LIMIT 1`,
+        [canonicalPhone, tenantId]
       );
       newClient = clients[0];
-      console.log(`[booking] Reactivated existing client: ${first_name} (${phone})`);
+      console.log(`[booking] Reactivated existing client: ${first_name} (${canonicalPhone})`);
     } else {
       throw err;
     }
@@ -129,7 +138,7 @@ async function createClient(phone, onboarding, tenantId, conn, feeOverride) {
     createContact({
       firstName: first_name,
       lastName: last_name,
-      phone: phone.startsWith('+') ? phone : `+${phone}`,
+      phone: `+${canonicalPhone}`,
       city: city || 'Otro',
     }).catch(err => console.error('[contacts] Create failed (non-fatal):', err.message));
   } catch (err) {

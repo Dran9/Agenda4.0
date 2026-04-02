@@ -23,6 +23,10 @@ const TIMEZONES = [
   'Europe/Madrid', 'UTC',
 ];
 
+function normalizePhoneInput(value) {
+  return String(value || '').replace(/\D/g, '');
+}
+
 function statusStyle(color) {
   return {
     backgroundColor: color + '20',
@@ -173,7 +177,12 @@ export default function Clients() {
   const filtered = clients.filter(c => {
     if (!search) return true;
     const s = search.toLowerCase();
-    return c.first_name?.toLowerCase().includes(s) || c.last_name?.toLowerCase().includes(s) || c.phone?.includes(s) || c.city?.toLowerCase().includes(s);
+    const phoneSearch = normalizePhoneInput(search);
+    return c.first_name?.toLowerCase().includes(s)
+      || c.last_name?.toLowerCase().includes(s)
+      || c.phone?.includes(s)
+      || (phoneSearch && normalizePhoneInput(c.phone).includes(phoneSearch))
+      || c.city?.toLowerCase().includes(s);
   });
 
   return (
@@ -425,7 +434,7 @@ function CreateClientModal({ onClose, onCreate, saving, sources }) {
               <input value={form.last_name} onChange={e => set('last_name', e.target.value)} required className="input" />
             </Field>
             <Field label="Teléfono" required>
-              <input value={form.phone} onChange={e => set('phone', e.target.value)} required placeholder="59172034151" className="input" />
+              <input value={form.phone} onChange={e => set('phone', normalizePhoneInput(e.target.value))} required placeholder="59172034151" className="input" />
             </Field>
             <Field label="Edad">
               <input type="number" value={form.age} onChange={e => set('age', e.target.value)} className="input" />
@@ -508,7 +517,7 @@ function EditClientModal({ client, onClose, onSave, sources, statuses, showToast
               <input value={form.last_name || ''} onChange={e => set('last_name', e.target.value)} className="input" />
             </Field>
             <Field label="Teléfono">
-              <input value={form.phone || ''} onChange={e => set('phone', e.target.value)} className="input" />
+              <input value={form.phone || ''} onChange={e => set('phone', normalizePhoneInput(e.target.value))} className="input" />
             </Field>
             <Field label="Edad">
               <input type="number" value={form.age || ''} onChange={e => set('age', parseInt(e.target.value) || null)} className="input" />

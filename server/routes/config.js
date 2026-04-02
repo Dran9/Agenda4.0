@@ -6,13 +6,10 @@ const { saveFile, getFile, listFiles } = require('../services/storage');
 const { getSchedulerRuntime, refreshConfigSchedulers } = require('../cron/scheduler');
 const { createPublicFeeToken } = require('../services/publicBookingToken');
 const { sendServerError } = require('../utils/httpErrors');
+const { normalizePhone } = require('../utils/phone');
 
 const router = Router();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024 } });
-
-function normalizePhone(value) {
-  return String(value || '').replace(/\D/g, '');
-}
 
 function buildTenantBaseUrl(req, domain) {
   const trimmed = String(domain || '').trim().replace(/\/+$/, '');

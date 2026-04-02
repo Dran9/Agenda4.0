@@ -5,6 +5,7 @@ const { validate, clientSchema } = require('../middleware/validate');
 const { calculateRetentionStatus } = require('../services/retention');
 const { deleteEvent } = require('../services/calendar');
 const { sendServerError } = require('../utils/httpErrors');
+const { normalizePhone, hasPhoneDigits, normalizedPhoneSql } = require('../utils/phone');
 
 const router = Router();
 const CALENDAR_ID = () => process.env.CALENDAR_ID || 'danielmacleann@gmail.com';
@@ -129,16 +130,19 @@ router.get('/:id', authMiddleware, async (req, res) => {
 router.post('/', authMiddleware, validate(clientSchema), async (req, res) => {
   try {
     const data = req.validated;
+    const phone = normalizePhone(data.phone);
     const [existing] = await pool.query(
-      'SELECT id FROM clients WHERE phone = ? AND tenant_id = ? AND deleted_at IS NULL',
-      [data.phone, req.tenantId]
+      `SELECT id FROM clients
+       WHERE ${normalizedPhoneSql('phone')} = ? AND tenant_id = ? AND deleted_at IS NULL
+       LIMIT 1`,
+      [phone, req.tenantId]
     );
     if (existing.length > 0) return res.json({ client_id: existing[0].id, existing: true });
 
     const [result] = await pool.query(
       `INSERT INTO clients (tenant_id, phone, first_name, last_name, age, city, country, timezone, modality, frequency, source, referred_by, fee, payment_method, rating, diagnosis, notes)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [req.tenantId, data.phone, data.first_name, data.last_name, data.age || null,
+      [req.tenantId, phone, data.first_name, data.last_name, data.age || null,
        data.city || 'Cochabamba', data.country || 'Bolivia', data.timezone || 'America/La_Paz',
        data.modality || 'Presencial', data.frequency || 'Semanal', data.source || 'Otro',
        data.referred_by || null, data.fee || 250, data.payment_method || 'QR', data.rating || 0,
@@ -166,6 +170,23 @@ router.put('/:id', authMiddleware, async (req, res) => {
       if (req.body[key] !== undefined) updates[key] = req.body[key];
     }
     if (Object.keys(updates).length === 0) return res.status(400).json({ error: 'No hay campos para actualizar' });
+
+    if (updates.phone !== undefined) {
+      const normalized = normalizePhone(updates.phone);
+      if (!hasPhoneDigits(normalized)) {
+        return res.status(400).json({ error: 'Telefono invalido' });
+      }
+      const [existing] = await pool.query(
+        `SELECT id FROM clients
+         WHERE ${normalizedPhoneSql('phone')} = ? AND tenant_id = ? AND deleted_at IS NULL AND id <> ?
+         LIMIT 1`,
+        [normalized, req.tenantId, req.params.id]
+      );
+      if (existing.length > 0) {
+        return res.status(409).json({ error: 'Ya existe un cliente con ese telefono' });
+      }
+      updates.phone = normalized;
+    }
 
     const setClauses = Object.keys(updates).map(k => `${k} = ?`).join(', ');
     const values = [...Object.values(updates), req.params.id, req.tenantId];

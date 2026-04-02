@@ -1,6 +1,7 @@
 const { pool } = require('../db');
 const { listEvents } = require('./calendar');
 const { sendConfirmationTemplate, sendPaymentReminderTemplate } = require('./whatsapp');
+const { normalizePhone, normalizedPhoneSql } = require('../utils/phone');
 
 function pad(d) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
@@ -65,7 +66,8 @@ async function sendAppointmentReminder(appt, eventId) {
 async function checkAndSendReminders({ date, tenantId, force = false, appointmentId = null, clientId = null, phone = null } = {}) {
   try {
     const calendarId = process.env.CALENDAR_ID || 'danielmacleann@gmail.com';
-    const targeted = !!(appointmentId || clientId || phone);
+    const canonicalPhone = phone ? normalizePhone(phone) : null;
+    const targeted = !!(appointmentId || clientId || canonicalPhone);
 
     // Determine target day in La Paz
     let targetDay;
@@ -118,12 +120,12 @@ async function checkAndSendReminders({ date, tenantId, force = false, appointmen
       if (appts.length === 0) {
         const phoneMatch = summary.match(/-\s*(\d{10,15})\s*$/);
         if (phoneMatch) {
-          const phone = phoneMatch[1];
+          const phone = normalizePhone(phoneMatch[1]);
           const tenantFilterFb = tenantId ? 'AND c.tenant_id = ?' : '';
           const paramsFb = tenantId ? [phone, tenantId] : [phone];
           [appts] = await pool.query(
             `SELECT c.id AS client_id, c.phone, c.first_name, c.tenant_id FROM clients c
-             WHERE c.phone = ? ${tenantFilterFb}`,
+             WHERE ${normalizedPhoneSql('c.phone')} = ? ${tenantFilterFb}`,
             paramsFb
           );
           // Wrap as pseudo-appointment for sending
@@ -152,7 +154,7 @@ async function checkAndSendReminders({ date, tenantId, force = false, appointmen
 
       if (appointmentId && String(appt.id) !== String(appointmentId)) continue;
       if (clientId && String(appt.client_id) !== String(clientId)) continue;
-      if (phone && String(appt.phone) !== String(phone)) continue;
+      if (canonicalPhone && normalizePhone(appt.phone) !== canonicalPhone) continue;
       if (targeted) {
         targetFound = true;
       }

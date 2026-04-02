@@ -7,6 +7,7 @@ const { updateEventSummary, getOAuthClient } = require('../services/calendar');
 const { buildCalendarSummary } = require('../services/calendarSummary');
 const { google } = require('googleapis');
 const { sendServerError } = require('../utils/httpErrors');
+const { normalizePhone, normalizedPhoneSql } = require('../utils/phone');
 
 const router = Router();
 
@@ -187,7 +188,8 @@ router.get('/:id/receipt', authMiddleware, async (req, res) => {
 // POST /api/payments/match-receipt — upload receipt + match by phone (primary) or amount (fallback)
 router.post('/match-receipt', authMiddleware, async (req, res) => {
   try {
-    const { image, phone } = req.body; // phone is the WhatsApp sender number
+    const { image } = req.body;
+    const phone = normalizePhone(req.body?.phone); // phone is the WhatsApp sender number
     if (!image) return res.status(400).json({ error: 'No image provided' });
 
     const base64Data = image.replace(/^data:[^;]+;base64,/, '');
@@ -211,7 +213,7 @@ router.post('/match-receipt', authMiddleware, async (req, res) => {
          FROM payments p
          JOIN clients c ON p.client_id = c.id
          LEFT JOIN appointments a ON p.appointment_id = a.id
-         WHERE p.tenant_id = ? AND p.status = 'Pendiente' AND c.phone = ?
+         WHERE p.tenant_id = ? AND p.status = 'Pendiente' AND ${normalizedPhoneSql('c.phone')} = ?
          ORDER BY a.date_time ASC LIMIT 5`,
         [req.tenantId, phone]
       );

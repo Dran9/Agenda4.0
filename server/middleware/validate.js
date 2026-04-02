@@ -1,4 +1,11 @@
 const { z } = require('zod');
+const { normalizePhone } = require('../utils/phone');
+
+const phoneSchema = z.string()
+  .transform(normalizePhone)
+  .refine(value => value.length >= 8 && value.length <= 20, {
+    message: 'Telefono invalido',
+  });
 
 // Schemas
 const onboardingSchema = z.object({
@@ -23,7 +30,7 @@ const bookingContextSchema = {
 };
 
 const publicBookingSchema = z.object({
-  phone: z.string().min(8).max(20),
+  phone: phoneSchema,
   date_time: z.string().regex(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/),
   fee_mode: z.enum(['pe']).optional(),
   code: z.string().max(1000).optional(),
@@ -38,7 +45,7 @@ const adminBookingSchema = z.object({
 });
 
 const publicRescheduleSchema = z.object({
-  phone: z.string().min(8).max(20),
+  phone: phoneSchema,
   old_appointment_id: z.number().int().positive(),
   date_time: z.string().regex(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/),
   reschedule_token: z.string().min(1).max(1000),
@@ -52,7 +59,7 @@ const adminRescheduleSchema = z.object({
 });
 
 const clientSchema = z.object({
-  phone: z.string().min(8).max(20),
+  phone: phoneSchema,
   first_name: z.string().min(1).max(100),
   last_name: z.string().min(1).max(100),
   age: z.number().int().min(1).max(120).optional(),

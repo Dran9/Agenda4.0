@@ -8,7 +8,7 @@ import {
   ArrowRight, ArrowLeft, ChevronDown, Calendar as CalendarIcon,
   Clock, CalendarClock, CalendarCheck, Check, Sun, Sunset,
   Coffee, Globe, Search, RefreshCw, Heart, MessageSquareHeart, ShieldAlert, Info, Smartphone, SmilePlus,
-  CalendarArrowUp, CircleArrowRight, Clock4, CircleCheck, CircleX,
+  CalendarArrowUp, CircleArrowRight, Clock4,
 } from 'lucide-react';
 
 const COUNTRY_CODES = [
@@ -33,7 +33,6 @@ const COUNTRY_CODES = [
 
 const CITIES = ['Cochabamba', 'Santa Cruz', 'La Paz', 'Sucre', 'Otro'];
 const SOURCES = ['Referencia de amigos', 'Redes sociales', 'Otro'];
-
 const DAY_NAMES_ES = ['domingo', 'lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado'];
 const MONTH_NAMES_ES = ['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
 const PHONE_PREFIX_OPTIONS = COUNTRY_CODES
@@ -256,7 +255,6 @@ export default function BookingFlow() {
   const [lastName, setLastName] = useState('');
   const [age, setAge] = useState('');
   const [city, setCity] = useState('Cochabamba');
-  const [country, setCountry] = useState('Bolivia');
   const [source, setSource] = useState('');
 
   // Calendar/slots
@@ -378,7 +376,6 @@ export default function BookingFlow() {
   }, [config, getDatesForMonth, prefetchDates]);
 
   useEffect(() => { setIsInternational(countryCode !== '+591'); }, [countryCode]);
-  useEffect(() => { setCountry(selectedCountryName || 'Bolivia'); }, [selectedCountryName]);
 
   useEffect(() => {
     if (!showTzDropdown) return;
@@ -695,7 +692,14 @@ export default function BookingFlow() {
 
     function handleConfirm() {
       if (flow.showOnboarding) {
-        handleBook({ first_name: firstName, last_name: lastName, age: ageNum, city: isInternational ? 'Otro' : city, country: isInternational ? country : 'Bolivia', source });
+        handleBook({
+          first_name: firstName,
+          last_name: lastName,
+          age: ageNum,
+          city: isInternational ? 'Otro' : city,
+          country: isInternational ? selectedCountryName : 'Bolivia',
+          source,
+        });
       } else {
         handleBook();
       }
@@ -765,26 +769,15 @@ export default function BookingFlow() {
                 </div>
                 {isInternational ? (
                   <div>
-                    <span className="field-label">PAÍS</span>
+                    <span className="field-label">PAÍS ELEGIDO</span>
                     <div
                       style={{
-                        minHeight: 54,
-                        borderRadius: 12,
+                        borderRadius: 20,
                         background: 'var(--bg-input)',
-                        padding: '0 18px',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'space-between',
-                        gap: 12,
+                        padding: '18px 20px',
                       }}
                     >
-                      <div>
-                        <div style={{ fontSize: 22, fontWeight: 600, color: 'var(--text-primary)' }}>{country}</div>
-                        <div style={{ fontSize: 13, color: 'var(--gris-medio)', marginTop: 2 }}>
-                          Se toma del prefijo de WhatsApp que elegiste en la pantalla anterior.
-                        </div>
-                      </div>
-                      <div style={{ fontSize: 12, fontWeight: 600, color: '#4E769B', whiteSpace: 'nowrap' }}>{countryCode}</div>
+                      <div style={{ fontSize: 22, fontWeight: 600, color: 'var(--text-primary)' }}>{selectedCountryName}</div>
                     </div>
                   </div>
                 ) : (
@@ -818,7 +811,13 @@ export default function BookingFlow() {
         <button type="button" onClick={handleConfirm} disabled={flow.loading || (flow.showOnboarding && (!firstName || !lastName || !age || !source || ageOutOfRange))} className="btn-primary" style={{ marginBottom: 12 }}>
           <Check size={18} />{flow.loading ? 'Confirmando...' : 'Confirmar cita'}
         </button>
-        <button type="button" onClick={() => dispatch({ type: 'GO_BACK', screen: 2 })} className="btn-secondary"><ArrowLeft size={18} />Volver</button>
+        <button
+          type="button"
+          onClick={() => dispatch({ type: 'GO_BACK', screen: 2 })}
+          className="btn-secondary"
+        >
+          <ArrowLeft size={18} />Volver
+        </button>
         <ProgressDots current={3} />
       </Layout>
     );

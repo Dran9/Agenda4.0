@@ -612,10 +612,14 @@ export default function BookingFlow() {
       : TIMEZONE_GROUPS;
     return (
       <div style={{ width: '100%', marginBottom: 16 }}>
-        <p style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, fontSize: 20, fontWeight: 600, color: '#3C3939', textAlign: 'center', marginBottom: 10 }}>
-          <Globe size={20} color="#B34E35" />
-          ¿Desde qué país estás reservando?
-        </p>
+        <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 10 }}>
+          <div style={{ display: 'inline-flex', alignItems: 'flex-start', gap: 10, maxWidth: 'min(100%, 340px)' }}>
+            <Globe size={20} color="#B34E35" style={{ flexShrink: 0, marginTop: 3 }} />
+            <span style={{ fontSize: 20, fontWeight: 600, color: '#3C3939', lineHeight: 1.2, textAlign: 'left' }}>
+              ¿Desde qué país estás reservando?
+            </span>
+          </div>
+        </div>
         <div style={{ display: 'flex', justifyContent: 'center' }}>
           <button type="button" className="timezone-selector" onClick={e => { e.stopPropagation(); setShowTzDropdown(!showTzDropdown); }}>
             <span>{selectedTz.flag} {selectedTz.label} ({getCurrentTimeInTz(selectedTz.tz)})</span>

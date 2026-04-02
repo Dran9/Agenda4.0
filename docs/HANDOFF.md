@@ -12,6 +12,7 @@ Read this first, then read `CLAUDE.md` and `LESSONS-LEARNED.md` if the task touc
 - Commit: `0cf7e02`
 - Summary: normalized phone handling across admin, booking, WhatsApp, reminders, payment matching, and public tokens
 - UI follow-up: reschedule screen copy now injects the client name in the banner, "already booked" title, and trust message
+- CI follow-up: GitHub `Frontend Guard` was failing because `client/dist` was out of sync with source; local `lint` and `build` passed, but `git diff --exit-code -- client/dist` failed
 
 ## Current State
 
@@ -52,6 +53,10 @@ Read this first, then read `CLAUDE.md` and `LESSONS-LEARNED.md` if the task touc
 - Backend syntax check passed with `node --check` on all touched server files
 - No real client build was available from root `package.json`
   current `build` script is a no-op placeholder
+- Frontend guard diagnosis:
+  `npm run lint` passed with warnings only
+  `npm run build` passed
+  failure source was the committed `client/dist` being stale
 
 ## Known Follow-Ups
 

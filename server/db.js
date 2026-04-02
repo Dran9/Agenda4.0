@@ -159,7 +159,7 @@ async function initializeDatabase() {
         qr_url_provincia VARCHAR(500),
         qr_url_especial VARCHAR(500),
         qr_url_generico VARCHAR(500),
-        rate_limit_booking INT DEFAULT 3,
+        rate_limit_booking INT DEFAULT 6,
         rate_limit_window INT DEFAULT 15,
         custom_statuses JSON,
         custom_sources JSON,

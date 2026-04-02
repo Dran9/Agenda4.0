@@ -1032,71 +1032,114 @@ export default function Config() {
 
       case 'operations':
         return (
-          <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
-            <h3 className="text-lg font-semibold mb-1">Parámetros generales</h3>
-            <p className="text-sm text-gray-400 mb-5">Configuración de la sesión y ventana de agendamiento.</p>
+          <div className="space-y-4">
+            <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
+              <h3 className="text-lg font-semibold mb-1">Parámetros generales</h3>
+              <p className="text-sm text-gray-400 mb-5">Configuración de la sesión y ventana de agendamiento.</p>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-xs text-gray-500 mb-1">Duración de sesión</label>
-                <select
-                  value={config?.appointment_duration || 60}
-                  onChange={e => setConfig(c => ({ ...c, appointment_duration: parseInt(e.target.value) }))}
-                  className="w-full px-3 py-2.5 border border-gray-200 rounded-lg text-sm bg-white"
-                >
-                  <option value={45}>45 min</option>
-                  <option value={60}>60 min</option>
-                  <option value={90}>90 min</option>
-                </select>
-              </div>
-              <div>
-                <label className="block text-xs text-gray-500 mb-1">Ventana de agendamiento</label>
-                <div className="flex items-center gap-2">
-                  <input
-                    type="number"
-                    min={1}
-                    max={120}
-                    value={config?.window_days || 10}
-                    onChange={e => setConfig(c => ({ ...c, window_days: parseInt(e.target.value) || 10 }))}
-                    className="w-20 px-3 py-2.5 border border-gray-200 rounded-lg text-sm"
-                  />
-                  <span className="text-sm text-gray-400">días</span>
-                </div>
-              </div>
-              <div className="md:col-span-2 flex flex-col gap-3 lg:flex-row">
-                <div className="flex-1">
-                  <label className="block text-xs text-gray-500 mb-1">Buffer mínimo</label>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs text-gray-500 mb-1">Duración de sesión</label>
                   <select
-                    value={config?.buffer_hours || 3}
-                    onChange={e => setConfig(c => ({ ...c, buffer_hours: parseInt(e.target.value) }))}
+                    value={config?.appointment_duration || 60}
+                    onChange={e => setConfig(c => ({ ...c, appointment_duration: parseInt(e.target.value) }))}
                     className="w-full px-3 py-2.5 border border-gray-200 rounded-lg text-sm bg-white"
                   >
-                    <option value={1}>1 hora</option>
-                    <option value={2}>2 horas</option>
-                    <option value={3}>3 horas</option>
-                    <option value={6}>6 horas</option>
-                    <option value={24}>24 horas</option>
+                    <option value={45}>45 min</option>
+                    <option value={60}>60 min</option>
+                    <option value={90}>90 min</option>
                   </select>
                 </div>
-                <div className="flex-1">
-                  <label className="block text-xs text-gray-500 mb-1">Edad mínima</label>
-                  <input
-                    type="number"
-                    value={config?.min_age || 12}
-                    onChange={e => setConfig(c => ({ ...c, min_age: parseInt(e.target.value) }))}
-                    className="w-full px-3 py-2.5 border border-gray-200 rounded-lg text-sm"
-                  />
+                <div>
+                  <label className="block text-xs text-gray-500 mb-1">Ventana de agendamiento</label>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="number"
+                      min={1}
+                      max={120}
+                      value={config?.window_days || 10}
+                      onChange={e => setConfig(c => ({ ...c, window_days: parseInt(e.target.value) || 10 }))}
+                      className="w-20 px-3 py-2.5 border border-gray-200 rounded-lg text-sm"
+                    />
+                    <span className="text-sm text-gray-400">días</span>
+                  </div>
                 </div>
-                <div className="flex-1">
-                  <label className="block text-xs text-gray-500 mb-1">Edad máxima</label>
-                  <input
-                    type="number"
-                    value={config?.max_age || 100}
-                    onChange={e => setConfig(c => ({ ...c, max_age: parseInt(e.target.value) }))}
-                    className="w-full px-3 py-2.5 border border-gray-200 rounded-lg text-sm"
-                  />
+                <div className="md:col-span-2 flex flex-col gap-3 lg:flex-row">
+                  <div className="flex-1">
+                    <label className="block text-xs text-gray-500 mb-1">Buffer mínimo</label>
+                    <select
+                      value={config?.buffer_hours || 3}
+                      onChange={e => setConfig(c => ({ ...c, buffer_hours: parseInt(e.target.value) }))}
+                      className="w-full px-3 py-2.5 border border-gray-200 rounded-lg text-sm bg-white"
+                    >
+                      <option value={1}>1 hora</option>
+                      <option value={2}>2 horas</option>
+                      <option value={3}>3 horas</option>
+                      <option value={6}>6 horas</option>
+                      <option value={24}>24 horas</option>
+                    </select>
+                  </div>
+                  <div className="flex-1">
+                    <label className="block text-xs text-gray-500 mb-1">Edad mínima</label>
+                    <input
+                      type="number"
+                      value={config?.min_age || 12}
+                      onChange={e => setConfig(c => ({ ...c, min_age: parseInt(e.target.value) }))}
+                      className="w-full px-3 py-2.5 border border-gray-200 rounded-lg text-sm"
+                    />
+                  </div>
+                  <div className="flex-1">
+                    <label className="block text-xs text-gray-500 mb-1">Edad máxima</label>
+                    <input
+                      type="number"
+                      value={config?.max_age || 100}
+                      onChange={e => setConfig(c => ({ ...c, max_age: parseInt(e.target.value) }))}
+                      className="w-full px-3 py-2.5 border border-gray-200 rounded-lg text-sm"
+                    />
+                  </div>
                 </div>
               </div>
+            </div>
+
+            <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
+              <h3 className="text-lg font-semibold mb-1">Límite público de intentos</h3>
+              <p className="text-sm text-gray-400 mb-5">Controla cuántas verificaciones o reprogramaciones públicas puede intentar una misma IP antes del bloqueo temporal.</p>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs text-gray-500 mb-1">Intentos permitidos</label>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="number"
+                      min={1}
+                      max={20}
+                      value={config?.rate_limit_booking || 6}
+                      onChange={e => setConfig(c => ({ ...c, rate_limit_booking: parseInt(e.target.value, 10) || 6 }))}
+                      className="w-20 px-3 py-2.5 border border-gray-200 rounded-lg text-sm"
+                    />
+                    <span className="text-sm text-gray-400">por IP</span>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs text-gray-500 mb-1">Tiempo de bloqueo</label>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="number"
+                      min={1}
+                      max={120}
+                      value={config?.rate_limit_window || 15}
+                      onChange={e => setConfig(c => ({ ...c, rate_limit_window: parseInt(e.target.value, 10) || 15 }))}
+                      className="w-20 px-3 py-2.5 border border-gray-200 rounded-lg text-sm"
+                    />
+                    <span className="text-sm text-gray-400">minutos</span>
+                  </div>
+                </div>
+              </div>
+
+              <p className="mt-4 text-xs text-gray-400">
+                Esto afecta la verificación del teléfono antes de reservar y la reagenda pública. Si haces muchas pruebas desde la misma red, conviene subirlo temporalmente.
+              </p>
             </div>
           </div>
         );

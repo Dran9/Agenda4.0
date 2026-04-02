@@ -26,7 +26,7 @@ async function getBookingRateLimitConfig(tenantId) {
   );
   const cfg = rows[0] || {};
   return {
-    max: Math.max(1, parseInt(cfg.rate_limit_booking, 10) || 3),
+    max: Math.max(1, parseInt(cfg.rate_limit_booking, 10) || 6),
     windowMs: Math.max(1, parseInt(cfg.rate_limit_window, 10) || 15) * 60 * 1000,
   };
 }

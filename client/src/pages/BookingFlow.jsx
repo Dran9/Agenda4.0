@@ -740,7 +740,7 @@ export default function BookingFlow() {
         {(flow.rescheduleMode || urlReschedule) && (
           <div style={{ background: 'var(--dorado)', textAlign: 'center', padding: '10px 16px', borderRadius: 12, marginBottom: 12, fontSize: 18, fontWeight: 600, color: 'var(--negro)' }}>
             {flow.clientName
-              ? `${flow.clientName}, vamos a reprogramar tu cita`
+              ? `${flow.clientName} vamos a reprogramar tu cita`
               : 'Vamos a reprogramar tu cita'}
           </div>
         )}
@@ -1032,7 +1032,7 @@ export default function BookingFlow() {
             : (displayName ? `${displayName}, tu cita está confirmada` : 'Tu cita está confirmada')}
         </h1>
         <p style={{ fontSize: 24, fontWeight: 600, color: 'var(--turquesa)', textAlign: 'center', marginBottom: 24, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
-          <Heart size={20} color="var(--turquesa)" fill="var(--turquesa)" strokeWidth={2.5} /> Gracias por tu confianza
+          <Heart size={20} color="var(--turquesa)" fill="var(--turquesa)" strokeWidth={2.5} /> {displayName ? `Gracias por tu confianza ${displayName}` : 'Gracias por tu confianza'}
         </p>
         {flow.bookedAppointment && (
           <div className="card" style={{ marginBottom: 16 }}>
@@ -1087,7 +1087,7 @@ export default function BookingFlow() {
 
         {/* Título */}
         <h1 style={{ fontSize: 26, fontWeight: 600, textAlign: 'center', color: '#B34E35', marginBottom: 10 }}>
-          {flow.clientName ? `${flow.clientName}, ya tienes una cita agendada.` : 'Ya tienes una cita agendada.'}
+          {flow.clientName ? `${flow.clientName}, ya tienes esta cita agendada:` : 'Ya tienes esta cita agendada:'}
         </h1>
 
         {/* Sub-encabezado */}

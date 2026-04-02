@@ -1,0 +1,84 @@
+# HANDOFF
+
+## Purpose
+
+Short operational snapshot for future chats.
+Read this first, then read `CLAUDE.md` and `LESSONS-LEARNED.md` if the task touches behavior or production safety.
+
+## Last Updated
+
+- Date: 2026-04-02
+- Branch: `main`
+- Commit: `0cf7e02`
+- Summary: normalized phone handling across admin, booking, WhatsApp, reminders, payment matching, and public tokens
+- UI follow-up: reschedule screen copy now injects the client name in the banner, "already booked" title, and trust message
+
+## Current State
+
+- Canonical phone rule:
+  store and compare phones as digits only, with country code, no `+`, no spaces, no separators
+- Input handling now normalizes phone values before validation or comparison
+- Admin client forms now strip non-digits while typing
+- Public booking and reschedule flows now compare normalized phone values
+- WhatsApp webhook client resolution now matches by normalized phone
+- Payment receipt matching now matches by normalized phone
+- Reminder matching fallback now matches by normalized phone
+
+## Files Changed In Latest Work
+
+- `server/utils/phone.js`
+- `server/middleware/validate.js`
+- `server/routes/clients.js`
+- `server/services/booking.js`
+- `server/routes/config.js`
+- `server/services/publicBookingToken.js`
+- `server/routes/booking.js`
+- `server/routes/webhook.js`
+- `server/routes/payments.js`
+- `server/services/reminder.js`
+- `server/services/messageContext.js`
+- `client/src/pages/Admin/Clients.jsx`
+
+## Important Decisions
+
+- We did not run any aggressive migration over old client data
+- We did not merge existing clients automatically
+- The current fix is forward-safe: new writes and comparisons should use canonical phone format
+- Untracked mockup files were intentionally not committed:
+  `Skills/`, `ocr-sample.png`, `ocr-sample-2.png`
+
+## Validation Done
+
+- Backend syntax check passed with `node --check` on all touched server files
+- No real client build was available from root `package.json`
+  current `build` script is a no-op placeholder
+
+## Known Follow-Ups
+
+- Optional: normalize legacy phone values already stored in DB
+- Optional: add DB-level migration to rewrite old formatted phones to canonical format
+- Optional: add automated tests for phone normalization across booking, clients, and webhook flows
+- Optional: add unique enforcement strategy for legacy environments if old data becomes real instead of mockup
+- Optional: if desired, standardize punctuation in personalized UI copy across the rest of `BookingFlow.jsx`
+
+## Useful Commands
+
+- Current status:
+  `git -C "/Users/dran/Documents/Codex openai/agenda4.0" status --short`
+- Latest commit:
+  `git -C "/Users/dran/Documents/Codex openai/agenda4.0" log -1 --oneline`
+- Run server:
+  `npm start`
+- Dev mode:
+  `npm run dev`
+
+## Update Rule
+
+When finishing an important task, update this file with:
+
+- date
+- branch
+- latest commit
+- what changed
+- what was intentionally not changed
+- what remains risky or pending

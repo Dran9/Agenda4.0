@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Copy, Plus, Trash2, X } from 'lucide-react';
+import { useSearchParams } from 'react-router-dom';
 import AdminLayout from '../../components/AdminLayout';
 import { api } from '../../utils/api';
 import { useToast, Toast } from '../../hooks/useToast.jsx';
@@ -165,11 +166,11 @@ function blocksToHours(blocks, duration = 60) {
 }
 
 export default function Config() {
+  const [searchParams] = useSearchParams();
   const [config, setConfig] = useState(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const { toast, show: showToast } = useToast();
-  const [activeSection, setActiveSection] = useState('availability');
   const [availability, setAvailability] = useState({});
   const [copyPopoverDay, setCopyPopoverDay] = useState(null);
   const [copyTo, setCopyTo] = useState({});
@@ -430,6 +431,10 @@ export default function Config() {
   }
 
   const enabledDaysCount = DAYS.filter(day => availability[day.key]?.enabled).length;
+  const requestedSection = searchParams.get('section');
+  const activeSection = SETTINGS_SECTIONS.some(section => section.key === requestedSection)
+    ? requestedSection
+    : SETTINGS_SECTIONS[0].key;
   const activeSectionMeta = SETTINGS_SECTIONS.find(section => section.key === activeSection) || SETTINGS_SECTIONS[0];
   const activeSectionIndex = SETTINGS_SECTIONS.findIndex(section => section.key === activeSection) + 1;
   const sectionItems = [
@@ -445,6 +450,12 @@ export default function Config() {
       detail: `Semanal en riesgo desde ${config?._retentionRules?.Semanal?.risk_days || DEFAULT_RETENTION_RULES.Semanal.risk_days} días`,
     },
   ];
+  const sidebarSubItems = sectionItems.map(section => ({
+    label: section.label,
+    detail: section.detail,
+    to: `/admin/config?section=${section.key}`,
+    active: section.key === activeSection,
+  }));
   const overviewItems = [
     {
       label: 'Calendario',
@@ -1174,9 +1185,9 @@ export default function Config() {
   }
 
   return (
-    <AdminLayout title="Configuración">
+    <AdminLayout title="Configuración" sidebarSubItems={sidebarSubItems}>
       <Toast toast={toast} />
-      <div className="max-w-7xl space-y-6 pb-28">
+      <div className="max-w-6xl space-y-6 pb-28">
         <div className="rounded-[30px] border border-slate-200 bg-white p-6 shadow-[0_18px_40px_rgba(15,23,42,0.06)] lg:p-8">
           <div className="flex flex-col gap-6 xl:flex-row xl:items-start xl:justify-between">
             <div className="max-w-2xl">
@@ -1201,54 +1212,23 @@ export default function Config() {
           </div>
         </div>
 
-        <div className="flex flex-col gap-4 xl:flex-row xl:items-start">
-          <aside className="xl:sticky xl:top-6 xl:w-[280px] xl:flex-shrink-0">
-            <div className="rounded-[28px] border border-slate-200 bg-white p-3 shadow-[0_14px_34px_rgba(15,23,42,0.05)]">
-              <div className="px-3 pt-3 pb-2">
-                <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">Secciones</div>
-                <div className="mt-1 text-sm text-slate-500">Mueve el foco sin perder cambios.</div>
+        <div className="space-y-5">
+          <div className="rounded-[28px] border border-slate-200 bg-white p-6 shadow-[0_14px_34px_rgba(15,23,42,0.05)]">
+            <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">
+              Sección {activeSectionIndex} de {SETTINGS_SECTIONS.length}
+            </div>
+            <div className="mt-3 flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+              <div>
+                <h3 className="text-2xl font-semibold tracking-tight text-slate-950">{activeSectionMeta.title}</h3>
+                <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-500">{activeSectionMeta.description}</p>
               </div>
-              <div className="flex gap-2 overflow-x-auto px-1 pb-1 pt-2 xl:flex-col xl:overflow-visible">
-                {sectionItems.map(section => {
-                  const active = section.key === activeSection;
-                  return (
-                    <button
-                      key={section.key}
-                      type="button"
-                      onClick={() => setActiveSection(section.key)}
-                      className={`min-w-[190px] rounded-[22px] border px-4 py-3 text-left transition xl:min-w-0 ${
-                        active
-                          ? 'border-[#4E769B] bg-[#4E769B] text-white shadow-[0_16px_30px_rgba(78,118,155,0.28)]'
-                          : 'border-slate-200 bg-white text-slate-700 hover:border-[#CFE8E9] hover:bg-slate-50'
-                      }`}
-                    >
-                      <div className="text-sm font-semibold tracking-tight">{section.label}</div>
-                      <div className={`mt-1 text-xs ${active ? 'text-white/75' : 'text-slate-400'}`}>{section.detail}</div>
-                    </button>
-                  );
-                })}
+              <div className="rounded-full bg-slate-100 px-3 py-1.5 text-sm text-slate-600">
+                {sectionItems.find(section => section.key === activeSection)?.detail}
               </div>
             </div>
-          </aside>
-
-          <div className="min-w-0 flex-1 space-y-5">
-            <div className="rounded-[28px] border border-slate-200 bg-white p-6 shadow-[0_14px_34px_rgba(15,23,42,0.05)]">
-              <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">
-                Sección {activeSectionIndex} de {SETTINGS_SECTIONS.length}
-              </div>
-              <div className="mt-3 flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
-                <div>
-                  <h3 className="text-2xl font-semibold tracking-tight text-slate-950">{activeSectionMeta.title}</h3>
-                  <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-500">{activeSectionMeta.description}</p>
-                </div>
-                <div className="rounded-full bg-slate-100 px-3 py-1.5 text-sm text-slate-600">
-                  {sectionItems.find(section => section.key === activeSection)?.detail}
-                </div>
-              </div>
-            </div>
-
-            {renderActiveSection()}
           </div>
+
+          {renderActiveSection()}
         </div>
 
         <div className="sticky bottom-4 z-20">

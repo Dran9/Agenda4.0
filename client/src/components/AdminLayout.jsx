@@ -12,7 +12,7 @@ const NAV_ITEMS = [
   { path: '/admin/config', label: 'Ajustes', icon: Settings },
 ];
 
-export default function AdminLayout({ children, title }) {
+export default function AdminLayout({ children, title, sidebarSubItems = [] }) {
   const location = useLocation();
   const navigate = useNavigate();
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -45,19 +45,48 @@ export default function AdminLayout({ children, title }) {
           {NAV_ITEMS.map(item => {
             const Icon = item.icon;
             const active = location.pathname === item.path;
+            const isSettings = item.path === '/admin/config';
             return (
-              <Link
-                key={item.path}
-                to={item.path}
-                onClick={() => setSidebarOpen(false)}
-                className={`
-                  flex items-center gap-3 px-4 py-3 rounded-2xl text-sm font-medium transition-colors
-                  ${active ? 'bg-[#4E769B] text-white shadow-[0_14px_32px_rgba(78,118,155,0.32)]' : 'text-slate-600 hover:bg-[#CFE8E9] hover:text-slate-900'}
-                `}
-              >
-                <Icon size={18} />
-                {item.label}
-              </Link>
+              <div key={item.path}>
+                <Link
+                  to={item.path}
+                  onClick={() => setSidebarOpen(false)}
+                  className={`
+                    flex items-center gap-3 px-4 py-3 rounded-2xl text-sm font-medium transition-colors
+                    ${active ? 'bg-[#4E769B] text-white shadow-[0_14px_32px_rgba(78,118,155,0.32)]' : 'text-slate-600 hover:bg-[#CFE8E9] hover:text-slate-900'}
+                  `}
+                >
+                  <Icon size={18} />
+                  {item.label}
+                </Link>
+
+                {isSettings && sidebarSubItems.length > 0 && (
+                  <div className="mt-2 ml-6 space-y-1 border-l border-slate-200 pl-3">
+                    {sidebarSubItems.map(subItem => {
+                      const subActive = active && subItem.active;
+                      return (
+                        <Link
+                          key={subItem.to}
+                          to={subItem.to}
+                          onClick={() => setSidebarOpen(false)}
+                          className={`block rounded-xl px-3 py-2 transition-colors ${
+                            subActive
+                              ? 'bg-[#CFE8E9] text-slate-900'
+                              : 'text-slate-500 hover:bg-slate-50 hover:text-slate-900'
+                          }`}
+                        >
+                          <div className="text-[13px] font-semibold tracking-tight">{subItem.label}</div>
+                          {subItem.detail ? (
+                            <div className={`mt-0.5 text-[11px] leading-4 ${subActive ? 'text-slate-700' : 'text-slate-400'}`}>
+                              {subItem.detail}
+                            </div>
+                          ) : null}
+                        </Link>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
             );
           })}
         </nav>

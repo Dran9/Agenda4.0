@@ -452,32 +452,9 @@ export default function Config() {
   ];
   const sidebarSubItems = sectionItems.map(section => ({
     label: section.label,
-    detail: section.detail,
     to: `/admin/config?section=${section.key}`,
     active: section.key === activeSection,
   }));
-  const overviewItems = [
-    {
-      label: 'Calendario',
-      value: `${enabledDaysCount} días`,
-      helper: enabledDaysCount > 0 ? 'visibles al público' : 'sin disponibilidad',
-    },
-    {
-      label: 'Base Bolivia',
-      value: `Bs ${config?.default_fee || 250}`,
-      helper: 'provincia',
-    },
-    {
-      label: 'Precio especial',
-      value: `Bs ${config?.special_fee || 150}`,
-      helper: 'con link firmado',
-    },
-    {
-      label: 'Automatizaciones',
-      value: config?.reminder_enabled || config?.payment_reminder_enabled ? 'Activas' : 'Pausadas',
-      helper: config?.payment_reminder_enabled ? 'citas y pagos' : 'solo manual',
-    },
-  ];
 
   function renderActiveSection() {
     switch (activeSection) {
@@ -1188,30 +1165,6 @@ export default function Config() {
     <AdminLayout title="Configuración" sidebarSubItems={sidebarSubItems}>
       <Toast toast={toast} />
       <div className="max-w-6xl space-y-6 pb-28">
-        <div className="rounded-[30px] border border-slate-200 bg-white p-6 shadow-[0_18px_40px_rgba(15,23,42,0.06)] lg:p-8">
-          <div className="flex flex-col gap-6 xl:flex-row xl:items-start xl:justify-between">
-            <div className="max-w-2xl">
-              <div className="inline-flex rounded-full bg-[#CFE8E9] px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.24em] text-[#4E769B]">
-                Panel modular
-              </div>
-              <h3 className="mt-3 text-2xl font-semibold tracking-tight text-slate-950">Ajustes más claros, una decisión por vez</h3>
-              <p className="mt-2 text-sm leading-6 text-slate-500">
-                Separamos calendario, precios, automatizaciones, operación y retención en módulos. Así no se pierde el contexto ni el botón de guardar.
-              </p>
-            </div>
-
-            <div className="grid grid-cols-2 gap-3 xl:w-[420px]">
-              {overviewItems.map(item => (
-                <div key={item.label} className="rounded-[22px] border border-slate-200 bg-slate-50/80 px-4 py-4">
-                  <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">{item.label}</div>
-                  <div className="mt-2 text-xl font-semibold tracking-tight text-slate-900">{item.value}</div>
-                  <div className="mt-1 text-sm text-slate-500">{item.helper}</div>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-
         <div className="space-y-5">
           <div className="rounded-[28px] border border-slate-200 bg-white p-6 shadow-[0_14px_34px_rgba(15,23,42,0.05)]">
             <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">

@@ -75,12 +75,7 @@ export default function AdminLayout({ children, title, sidebarSubItems = [] }) {
                               : 'text-slate-500 hover:bg-slate-50 hover:text-slate-900'
                           }`}
                         >
-                          <div className="text-[13px] font-semibold tracking-tight">{subItem.label}</div>
-                          {subItem.detail ? (
-                            <div className={`mt-0.5 text-[11px] leading-4 ${subActive ? 'text-slate-700' : 'text-slate-400'}`}>
-                              {subItem.detail}
-                            </div>
-                          ) : null}
+                          <div className="text-[15px] font-semibold tracking-tight">{subItem.label}</div>
                         </Link>
                       );
                     })}

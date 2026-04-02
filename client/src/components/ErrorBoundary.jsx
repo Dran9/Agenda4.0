@@ -43,10 +43,10 @@ export default class ErrorBoundary extends React.Component {
             }}
           >
             <h1 style={{ margin: '0 0 12px', fontSize: '28px', lineHeight: 1.15, color: '#1A1A17' }}>
-              Ocurrio un error inesperado
+              Error interno, por favor comunicarse con Daniel.
             </h1>
             <p style={{ margin: '0 0 18px', fontSize: '18px', lineHeight: 1.5, color: '#4E6275' }}>
-              La pagina fallo al renderizar. Recarga para volver a intentarlo sin quedar en blanco.
+              Tambien puedes intentar recargar la pagina.
             </p>
             <button
               type="button"

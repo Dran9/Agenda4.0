@@ -113,20 +113,8 @@ function parseBolivianReceipt(text) {
       .map(value => String(value || '').replace(/\D/g, ''))
       .filter(Boolean)
   );
-  const VALID_DESTINATION_NAME_PATTERNS = [
-    /daniel\s*mac\s*lean/i,
-    /oscar\s*daniel\s*mac\s*lean\s*estrada/i,
-    /mac\s*lean\s*estrada/i,
-  ];
-
   function normalizeAccount(value) {
     return String(value || '').replace(/\D/g, '');
-  }
-
-  function isValidDestinationName(value) {
-    const normalized = String(value || '').trim();
-    if (!normalized) return false;
-    return VALID_DESTINATION_NAME_PATTERNS.some((pattern) => pattern.test(normalized));
   }
 
   // ─── Amount (Bs, BOB) ───
@@ -282,8 +270,17 @@ function parseBolivianReceipt(text) {
 
   // Pattern 2: BISA "Para Daniel MacLean" on the same line
   if (!destName) {
-    const paraMatch = fullText.match(/Para[:\s]+([^\n]+)/i);
-    if (paraMatch) destName = paraMatch[1].trim();
+    const paraLine = lines.find((line) => /^para[:\s]+.+/i.test(line));
+    if (paraLine) {
+      const candidate = paraLine.replace(/^para[:\s]+/i, '').trim();
+      if (
+        /^[A-ZÁÉÍÓÚÑa-záéíóúñ\s.-]{3,}$/.test(candidate)
+        && !/nit|ci\s*\/|banco|cuenta|n[°º]|numero/i.test(candidate)
+        && !/^\d/.test(candidate)
+      ) {
+        destName = candidate;
+      }
+    }
   }
   // Pattern 3: BISA/QR "Para" on one line and name on the next
   if (!destName) {
@@ -371,11 +368,10 @@ function parseBolivianReceipt(text) {
   }
 
   // ─── Destination verification ───
-  // Destination is valid only when we extracted a whitelisted destination account
-  // from a destination-specific context, or when the destination name clearly matches Daniel.
+  // Destination is valid only when the extracted destination account matches
+  // one of the whitelisted bank accounts. Recipient names are informational only.
   const destAccountVerified = VALID_DESTINATION_ACCOUNTS.has(destAccount || '');
-  const destNameVerified = isValidDestinationName(destName);
-  const destVerified = destAccountVerified || destNameVerified;
+  const destVerified = destAccountVerified;
 
   // ─── Reference / transaction code ───
   let reference = null;
@@ -439,7 +435,6 @@ function parseBolivianReceipt(text) {
     bank,
     destName: destName || null,
     destAccount: destAccount || null,
-    destNameVerified,
     destAccountVerified,
     destVerified,
     raw_text: fullText,

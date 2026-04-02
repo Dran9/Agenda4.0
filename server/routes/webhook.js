@@ -601,9 +601,7 @@ router.post('/', async (req, res) => {
                         const problems = [];
 
                         // 1. Destinatario: destination account must match one of Daniel's valid accounts
-                        const recipientMismatch = ocrResult.destVerified === false
-                          || (ocrResult.destName && ocrResult.destNameVerified === false)
-                          || (ocrResult.destAccount && ocrResult.destAccountVerified === false);
+                        const recipientMismatch = ocrResult.destAccountVerified !== true;
                         if (recipientMismatch) {
                           problems.push({ type: 'destinatario' });
                         }
@@ -731,7 +729,6 @@ router.post('/', async (req, res) => {
               ocr_reference: ocrResult.reference || null,
               ocr_dest_name: ocrResult.destName || null,
               ocr_dest_account_verified: ocrResult.destAccountVerified || false,
-              ocr_dest_name_verified: ocrResult.destNameVerified || false,
               ocr_dest_verified: ocrResult.destVerified || false,
               ocr_bank: ocrResult.bank || null,
             } : {});

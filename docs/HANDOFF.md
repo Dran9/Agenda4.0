@@ -17,6 +17,7 @@ Read this first, then read `CLAUDE.md` and `LESSONS-LEARNED.md` if the task touc
 - BNB follow-up: some BNB receipts expose a top `Cuenta:` block plus a lower destination block; OCR must prioritize `Nombre del destinatario` and `Se acreditó a la cuenta` instead of generic `Cuenta:`
 - Appointments UI follow-up: appointments toolbar now labels the date-range inputs clearly (`Desde`, `Hasta`) and supports sorting by date, name, created-at, and status
 - Receipt mismatch follow-up: WhatsApp mismatch replies now enumerate reasons as bullet points, not slash-separated text
+- Receipt destination rule: recipient validation now depends only on matching a whitelisted destination bank account; recipient names are informational only
 
 ## Current State
 
@@ -67,6 +68,7 @@ Read this first, then read `CLAUDE.md` and `LESSONS-LEARNED.md` if the task touc
   generic `cuenta` fallback no longer has priority over destination-specific labels
 - Appointments list now supports backend-driven sorting through `sort_by` and `sort_dir` query params
 - Receipt mismatch detection now stores separate destination verification flags (`destNameVerified`, `destAccountVerified`) to avoid losing the `destinatario` reason
+- OCR `Para ...` parsing was fixed to stay on the same line and avoid capturing labels like `CI/NIT` as the recipient name
 
 ## Known Follow-Ups
 

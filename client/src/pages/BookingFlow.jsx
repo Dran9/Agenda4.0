@@ -239,6 +239,7 @@ function flowReducer(state, action) {
 
 // Parse URL params once
 const pageParams = new URLSearchParams(window.location.search);
+const FORCE_SCREEN1_TIMEZONE_SELECTOR = false;
 
 export default function BookingFlow() {
   const devMode = pageParams.get('devmode') === '1';
@@ -249,6 +250,8 @@ export default function BookingFlow() {
   const urlPhone = pageParams.get('t') || urlReschedulePhone;
   const urlFeeMode = pageParams.get('f') || '';
   const urlCode = pageParams.get('code') || '';
+  // Debug hook for QA: devmode keeps the screen-1 timezone confirmation UI visible.
+  const forceShowTimezoneSelector = FORCE_SCREEN1_TIMEZONE_SELECTOR || devMode;
   const parsedPrefilledPhone = useMemo(() => parsePrefilledPhone(urlPhone), [urlPhone]);
 
   const [flow, dispatch] = useReducer(flowReducer, initialFlowState);
@@ -301,6 +304,7 @@ export default function BookingFlow() {
   const isBoliviaPhone = selectedPhoneCountry.code === '+591';
   const isBoliviaFeeFlow = isBoliviaLocation && isBoliviaPhone;
   const showIpCountryWarning = !!ipLocation?.countryCode && ipLocation.countryCode !== 'BO';
+  const showScreen1TimezoneConfirmation = forceShowTimezoneSelector || showIpCountryWarning;
   const deviceType = useMemo(() => getDeviceType(), []);
   const userAgent = useMemo(() => getUserAgentString(), []);
   const bookingContext = useMemo(() => ({
@@ -748,7 +752,7 @@ export default function BookingFlow() {
 
         {selectedDate && (
           <div className="card">
-            {showIpCountryWarning && (
+            {showScreen1TimezoneConfirmation && (
               <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 12 }}>
                 <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10, color: '#B34E35' }}>
                   <AlertTriangle size={18} color="#B34E35" style={{ marginTop: 2, flexShrink: 0 }} />
@@ -759,7 +763,7 @@ export default function BookingFlow() {
                 </div>
               </div>
             )}
-            <TimezoneSelector />
+            {showScreen1TimezoneConfirmation && <TimezoneSelector />}
             <h2 style={{ fontSize: 24, fontWeight: 600, color: 'var(--negro)', marginBottom: 16, textAlign: 'center' }}>
               {formatDateES(selectedDate)}
             </h2>

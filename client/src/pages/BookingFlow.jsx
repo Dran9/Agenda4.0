@@ -8,7 +8,7 @@ import {
   ArrowRight, ArrowLeft, ChevronDown, Calendar as CalendarIcon,
   Clock, CalendarClock, CalendarCheck, Check, Sun, Sunset,
   Coffee, Globe, Search, RefreshCw, Heart, MessageSquareHeart, ShieldAlert, Info, Smartphone, SmilePlus,
-  CalendarArrowUp, CircleArrowRight, Clock4,
+  CalendarArrowUp, CircleArrowRight, CircleCheck, Clock4,
 } from 'lucide-react';
 
 const COUNTRY_CODES = [

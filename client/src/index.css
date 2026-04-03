@@ -56,6 +56,17 @@ body {
   -moz-osx-font-smoothing: grayscale;
 }
 
+@keyframes voicePulse {
+  0%, 100% {
+    transform: scaleY(0.45);
+    opacity: 0.4;
+  }
+  50% {
+    transform: scaleY(1);
+    opacity: 1;
+  }
+}
+
 input, select, button, textarea {
   font-family: inherit;
 }

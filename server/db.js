@@ -307,7 +307,7 @@ async function initializeDatabase() {
       CREATE TABLE IF NOT EXISTS voice_commands_log (
         id INT AUTO_INCREMENT PRIMARY KEY,
         tenant_id INT NOT NULL,
-        source ENUM('shortcut') NOT NULL DEFAULT 'shortcut',
+        source ENUM('shortcut','voice_web') NOT NULL DEFAULT 'shortcut',
         input_type ENUM('audio','text','audio_text') NOT NULL,
         raw_text TEXT,
         transcript TEXT,
@@ -355,6 +355,7 @@ async function initializeDatabase() {
     await conn.query(`ALTER TABLE wa_conversations ADD COLUMN IF NOT EXISTS metadata JSON DEFAULT NULL`).catch(() => {});
     // payments: add Mismatch status for OCR validation failures
     await conn.query(`ALTER TABLE payments MODIFY COLUMN status ENUM('Pendiente','Confirmado','Rechazado','Mismatch') DEFAULT 'Pendiente'`).catch(() => {});
+    await conn.query(`ALTER TABLE voice_commands_log MODIFY COLUMN source ENUM('shortcut','voice_web') NOT NULL DEFAULT 'shortcut'`).catch(() => {});
     // Migrate old source values to new 3 options
     await conn.query(`UPDATE clients SET source = 'Redes sociales' WHERE source IN ('Instagram','Google','Sitio web','WhatsApp')`).catch(() => {});
     await conn.query(`UPDATE clients SET source = 'Referencia de amigos' WHERE source = 'Referido'`).catch(() => {});

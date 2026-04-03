@@ -12,6 +12,7 @@ const AdminAnalytics = lazy(() => import('./pages/Admin/Analytics'));
 const AdminWhatsApp = lazy(() => import('./pages/Admin/WhatsApp'));
 const AdminFinance = lazy(() => import('./pages/Admin/Finance'));
 const AdminPreview = lazy(() => import('./pages/Admin/Preview'));
+const VoiceAssistant = lazy(() => import('./pages/VoiceAssistant'));
 
 function AdminFallback() {
   return (
@@ -74,6 +75,11 @@ export default function App() {
         <Route path="/admin-preview" element={
           <Suspense fallback={<AdminFallback />}>
             <AdminPreview />
+          </Suspense>
+        } />
+        <Route path="/voice" element={
+          <Suspense fallback={<AdminFallback />}>
+            <VoiceAssistant />
           </Suspense>
         } />
 

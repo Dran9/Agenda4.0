@@ -25,6 +25,7 @@ Read this first, then read `CLAUDE.md` and `LESSONS-LEARNED.md` if the task touc
 - Voice shortcut follow-up: first MVP must stay isolated from client-facing flows and support only informational commands
 - Voice shortcut expansion: now supports richer operational queries and a controlled create-appointment action for existing clients only
 - Voice shortcut actions: now also supports reminder toggles, manual reminder sends for today/tomorrow, and day-level availability changes split by morning/tarde while respecting the midday pause
+- Voice web app: new private route `/voice` now provides a dedicated mobile-first voice console with real audio recording, text fallback, spoken replies, and recent command history
 
 ## Current State
 
@@ -41,6 +42,7 @@ Read this first, then read `CLAUDE.md` and `LESSONS-LEARNED.md` if the task touc
 - Voice Shortcut now supports reminder checks, confirmation checks, rescheduled lists, monthly new-client counts, pending-amount totals, unconfirmed tomorrow, confirmed today, weekly appointment counts, and appointment creation for existing clients
 - Voice Shortcut local expansion now includes:
   reminder on/off, reminder send today/tomorrow, and availability updates like `jueves de 8 a 12 en la mañana, en la tarde nada`
+- The new primary UX layer for admin voice is now the private web app at `/voice`, authenticated with the normal admin JWT instead of exposing `VOICE_ADMIN_TOKEN` to the browser
 
 ## Files Changed In Latest Work
 
@@ -94,6 +96,8 @@ Read this first, then read `CLAUDE.md` and `LESSONS-LEARNED.md` if the task touc
   still isolated from public/client flows, but now allows creating an appointment for an existing client when the command includes a unique client plus explicit date and time
 - Voice Shortcut v1.2 scope:
   still isolated from public/client flows, now also allows operational admin actions over reminders and weekly availability without adding any client-facing UI weight
+- Voice web app scope:
+  private route only, audio-first, mobile-friendly, elegant minimal UI, text responses always visible, browser speech output optional, and recent command history loaded from `voice_commands_log`
 
 ## Known Follow-Ups
 
@@ -116,7 +120,7 @@ Read this first, then read `CLAUDE.md` and `LESSONS-LEARNED.md` if the task touc
 
 ## Update Rule
 
-When finishing an important task, update this file with:
+When finishing an important task, update this file and `CLAUDE.md` together with:
 
 - date
 - branch

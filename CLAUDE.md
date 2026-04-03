@@ -1,4 +1,4 @@
-# Proyecto: Agenda 3.0 — Sistema de Agendamiento para Terapeutas
+# Proyecto: Agenda Daniel MacLean — Sistema de Agendamiento para Terapeutas
 
 ## Qué es
 Plataforma de agendamiento de sesiones de psicoterapia con admin premium, WhatsApp integrado, contabilidad y analytics. Reemplaza a whatsapp-reminder-engine (repo anterior). Diseñado para vender como producto a otros terapeutas.
@@ -182,6 +182,89 @@ Recordatorio (18:40 diario):
 
 ## Variables de entorno
 Ver `.env.example` para la lista completa. Se configuran en hPanel de Hostinger.
+
+## Regla de documentación operativa
+- Al cerrar una tarea importante, actualizar SIEMPRE ambos archivos:
+  - `docs/HANDOFF.md`
+  - `CLAUDE.md`
+- `HANDOFF.md` es el snapshot corto para retomar trabajo rápido.
+- `CLAUDE.md` debe contener también el contexto operativo acumulado importante, no solo reglas generales.
+
+## Estado operativo actual (2026-04-03)
+
+### Branding y dominio
+- El dominio público canónico es `https://agenda.danielmaclean.com/`
+- El nombre visible de la app debe ser `Agenda Daniel MacLean`
+- No deben quedar referencias operativas al dominio viejo `plum-rhinoceros-787093.hostingersite.com`
+
+### Regla canónica de teléfonos
+- Guardar y comparar teléfonos como solo dígitos
+- Siempre con código de país
+- Sin `+`
+- Sin espacios, guiones ni separadores
+- Esta normalización ya aplica en clientes, booking, reagendamiento, pagos, webhook y recordatorios
+- No se hizo migración agresiva sobre datos viejos
+
+### Estado OCR / pagos
+- La validación de destinatario depende solo de cuentas bancarias whitelisteadas
+- Los nombres del destinatario son informativos; no definen validez
+- La cuenta destino debe compararse tras limpiar espacios y guiones
+- En BNB, hay que priorizar `Nombre del destinatario` y `Se acreditó a la cuenta`
+- En BNB, `La suma de Bs.:` debe reconocerse como monto
+- `Bancarización:` puede usarse como referencia cuando no hay otro código usable
+- La fecha del comprobante se compara contra el último contexto de pago enviado por WhatsApp, no contra la fecha de la cita
+- El inbox de WhatsApp muestra una caja temporal de `OCR bruto` para debug
+- Los mensajes de mismatch deben listar motivos en bullets, no en una sola línea con `/`
+
+### Estado de citas / admin
+- La barra de citas ya distingue claramente `Desde` y `Hasta`
+- La lista de citas soporta ordenamiento por fecha, nombre, fecha de registro y status
+- `client/dist` sigue versionado y debe mantenerse sincronizado para que no falle GitHub `Frontend Guard`
+
+### Estado del módulo de voz
+- El control por voz vive aislado del flujo público y del flujo cliente
+- Endpoint actual: `POST /api/voice/shortcut`
+- Auth por token secreto `VOICE_ADMIN_TOKEN`
+- Soporta audio y texto
+- Cada comando queda auditado en `voice_commands_log`
+- Ya existe una subapp privada principal en `https://agenda.danielmaclean.com/voice`
+- `/voice` usa la sesión normal de admin por JWT; no debe exponer `VOICE_ADMIN_TOKEN` en cliente
+- `/voice` está pensada como la UX principal de voz: audio-first, texto fallback, respuesta textual siempre visible, respuesta hablada opcional e historial reciente
+- El endpoint web privado para esa subapp es `POST /api/voice/admin-command`
+- El historial para esa subapp sale por `GET /api/voice/history`
+- Consultas ya soportadas:
+  - agenda hoy/mañana/fecha
+  - pagos pendientes
+  - monto pendiente
+  - sesiones para llegar a meta
+  - búsqueda de cliente
+  - próximas citas de cliente
+  - si se envió recordatorio
+  - si confirmó
+  - reagendados
+  - nuevos por mes
+  - no confirmados mañana
+  - confirmados hoy
+  - citas de la semana
+- Acciones ya soportadas:
+  - crear cita para cliente existente con fecha y hora explícitas
+  - activar recordatorios
+  - desactivar recordatorios
+  - mandar recordatorios para hoy
+  - mandar recordatorios para mañana
+  - actualizar disponibilidad por día
+- La disponibilidad por voz ya entiende frases tipo:
+  - `el jueves solo voy a trabajar de 8 a 12 en la mañana, en la tarde nada`
+  - `el jueves en la mañana de 9 a 12, en la tarde todo igual`
+  - `el viernes solo de 10 a 19`
+- Los rangos continuos deben respetar la pausa del medio; no deben llenar automáticamente el bloque entre mañana y tarde
+
+### Reglas de trabajo vigentes
+- Nunca hacer push sin que el usuario lo pida explícitamente en ese turno
+- Los archivos mockup sueltos no se commitean:
+  - `Skills/`
+  - `ocr-sample.png`
+  - `ocr-sample-2.png`
 
 ## Estado actual (2026-03-29)
 

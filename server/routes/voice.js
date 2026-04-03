@@ -2,6 +2,7 @@ const { Router } = require('express');
 const multer = require('multer');
 
 const { pool } = require('../db');
+const { authMiddleware } = require('../middleware/auth');
 const { sendServerError } = require('../utils/httpErrors');
 const { transcribeAudio } = require('../services/voice/groq');
 const { parseVoiceCommand } = require('../services/voice/parseCommand');
@@ -50,6 +51,7 @@ function assertShortcutAuth(req, res, next) {
 
 async function insertVoiceLog({
   tenantId,
+  source = 'shortcut',
   inputType,
   rawText,
   transcript,
@@ -62,9 +64,10 @@ async function insertVoiceLog({
   await pool.query(
     `INSERT INTO voice_commands_log
        (tenant_id, source, input_type, raw_text, transcript, parsed_intent, parsed_entities, response_text, status, error_message)
-     VALUES (?, 'shortcut', ?, ?, ?, ?, ?, ?, ?, ?)`,
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       tenantId,
+      source,
       inputType,
       rawText || null,
       transcript || null,
@@ -77,7 +80,7 @@ async function insertVoiceLog({
   );
 }
 
-router.post('/shortcut', assertShortcutAuth, upload.single('audio'), async (req, res) => {
+async function processVoiceRequest(req, res, { source = 'shortcut' } = {}) {
   let rawText = '';
   let transcript = '';
   let parsedCommand = null;
@@ -99,6 +102,7 @@ router.post('/shortcut', assertShortcutAuth, upload.single('audio'), async (req,
     if (!commandText) {
       await insertVoiceLog({
         tenantId: req.tenantId,
+        source,
         inputType: 'text',
         rawText: providedText,
         transcript: null,
@@ -123,6 +127,7 @@ router.post('/shortcut', assertShortcutAuth, upload.single('audio'), async (req,
 
     await insertVoiceLog({
       tenantId: req.tenantId,
+      source,
       inputType,
       rawText,
       transcript: transcript || null,
@@ -137,6 +142,8 @@ router.post('/shortcut', assertShortcutAuth, upload.single('audio'), async (req,
       ok: true,
       status: execution.status,
       input_type: inputType,
+      input_text: commandText,
+      raw_text: rawText || null,
       transcript: transcript || null,
       parsed: {
         intent: parsedCommand.intent,
@@ -155,6 +162,7 @@ router.post('/shortcut', assertShortcutAuth, upload.single('audio'), async (req,
     try {
       await insertVoiceLog({
         tenantId: req.tenantId || getVoiceTenantId(),
+        source,
         inputType,
         rawText,
         transcript: transcript || null,
@@ -171,6 +179,46 @@ router.post('/shortcut', assertShortcutAuth, upload.single('audio'), async (req,
     return sendServerError(res, req, err, {
       message: 'No se pudo procesar el comando de voz',
       logLabel: 'voice shortcut',
+    });
+  }
+}
+
+router.post('/shortcut', assertShortcutAuth, upload.single('audio'), async (req, res) => {
+  return processVoiceRequest(req, res, { source: 'shortcut' });
+});
+
+router.post('/admin-command', authMiddleware, upload.single('audio'), async (req, res) => {
+  return processVoiceRequest(req, res, { source: 'voice_web' });
+});
+
+router.get('/history', authMiddleware, async (req, res) => {
+  try {
+    const [rows] = await pool.query(
+      `SELECT id, source, input_type, raw_text, transcript, parsed_intent, parsed_entities, response_text, status, error_message, created_at
+       FROM voice_commands_log
+       WHERE tenant_id = ?
+       ORDER BY created_at DESC, id DESC
+       LIMIT 18`,
+      [req.tenantId]
+    );
+    res.json({
+      items: rows.map((row) => ({
+        ...row,
+        parsed_entities: typeof row.parsed_entities === 'string'
+          ? (() => {
+              try {
+                return JSON.parse(row.parsed_entities);
+              } catch (_) {
+                return null;
+              }
+            })()
+          : row.parsed_entities,
+      })),
+    });
+  } catch (err) {
+    sendServerError(res, req, err, {
+      message: 'No se pudo cargar el historial de voz',
+      logLabel: 'voice history',
     });
   }
 });

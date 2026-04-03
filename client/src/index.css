@@ -48,6 +48,10 @@
   padding: 0;
 }
 
+html, body, #root {
+  overflow-x: hidden;
+}
+
 body {
   font-family: 'Work Sans', -apple-system, BlinkMacSystemFont, sans-serif;
   background: #FAF8F1;

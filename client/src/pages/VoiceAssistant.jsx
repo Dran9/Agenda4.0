@@ -2,12 +2,10 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import {
   ArrowLeft,
-  AudioLines,
   LoaderCircle,
   Mic,
   MicOff,
   Send,
-  Sparkles,
   Volume2,
   VolumeX,
   Waves,
@@ -239,29 +237,13 @@ export default function VoiceAssistant() {
       : 'Mantén pulsado para hablar o toca una vez para grabar.';
 
   return (
-    <div className="min-h-screen overflow-hidden bg-[#f6f1e8] text-slate-950">
+    <div className="min-h-screen overflow-x-hidden overflow-y-hidden bg-[#f6f1e8] text-slate-950">
       <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top_left,_rgba(78,118,155,0.22),_transparent_35%),radial-gradient(circle_at_top_right,_rgba(179,78,53,0.16),_transparent_28%),linear-gradient(180deg,_rgba(255,255,255,0.94),_rgba(246,241,232,0.96))]" />
-      <div className="pointer-events-none absolute left-[-8rem] top-24 h-72 w-72 rounded-full bg-[#cfe8e9]/70 blur-3xl" />
-      <div className="pointer-events-none absolute bottom-[-6rem] right-[-4rem] h-72 w-72 rounded-full bg-[#fdda78]/30 blur-3xl" />
+      <div className="pointer-events-none absolute left-[-4rem] top-24 h-56 w-56 rounded-full bg-[#cfe8e9]/70 blur-3xl sm:left-[-6rem] sm:h-72 sm:w-72" />
+      <div className="pointer-events-none absolute bottom-[-4rem] right-[-2rem] h-56 w-56 rounded-full bg-[#fdda78]/30 blur-3xl sm:bottom-[-6rem] sm:right-[-4rem] sm:h-72 sm:w-72" />
 
       <div className="relative mx-auto flex min-h-screen w-full max-w-7xl flex-col px-4 pb-10 pt-6 sm:px-6 lg:px-8">
-        <header className="flex items-center justify-between gap-4">
-          <div className="space-y-3">
-            <div className="inline-flex items-center gap-2 rounded-full border border-white/70 bg-white/75 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.24em] text-[#4E769B] shadow-[0_12px_28px_rgba(78,118,155,0.08)] backdrop-blur">
-              <Sparkles size={14} />
-              Voice Desk
-            </div>
-            <div>
-              <h1 className="font-['Georgia'] text-[2.8rem] leading-none tracking-[-0.04em] text-slate-950 sm:text-[3.6rem]">
-                Controla tu agenda
-                <span className="block text-[#4E769B]">hablando.</span>
-              </h1>
-              <p className="mt-3 max-w-2xl text-[1.05rem] leading-7 text-slate-600">
-                Una interfaz privada, rápida y limpia para ejecutar consultas y acciones reales sin entrar al admin clásico ni depender de Shortcuts.
-              </p>
-            </div>
-          </div>
-
+        <header className="flex items-center justify-end gap-3">
           <div className="flex items-center gap-3">
             <button
               type="button"
@@ -281,18 +263,13 @@ export default function VoiceAssistant() {
           </div>
         </header>
 
-        <section className="mt-8 grid gap-6 lg:grid-cols-[1.15fr_0.85fr]">
+        <section className="mt-6 grid gap-6 lg:grid-cols-[1.15fr_0.85fr]">
           <div className="relative overflow-hidden rounded-[2rem] border border-white/70 bg-[linear-gradient(135deg,rgba(255,255,255,0.96),rgba(238,246,247,0.92))] p-5 shadow-[0_30px_80px_rgba(15,23,42,0.10)] sm:p-7">
             <div className="absolute right-6 top-6 hidden rounded-full bg-[#0f172a] px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.24em] text-white/80 sm:block">
               Privado
             </div>
 
             <div className="flex flex-col items-center text-center">
-              <div className="mb-6 inline-flex items-center gap-2 rounded-full bg-[#eef6f7] px-4 py-2 text-sm font-medium text-slate-600">
-                <AudioLines size={16} className="text-[#4E769B]" />
-                Audio como input principal. Texto como respaldo.
-              </div>
-
               <button
                 type="button"
                 onPointerDown={handlePressStart}
@@ -301,7 +278,7 @@ export default function VoiceAssistant() {
                 onPointerCancel={handlePressEnd}
                 onClick={handleRecordButtonClick}
                 disabled={loading || !micSupported}
-                className={`group relative flex h-72 w-72 max-w-full items-center justify-center rounded-full border border-white/70 transition duration-200 ${
+                className={`group relative flex h-64 w-64 max-w-full select-none items-center justify-center rounded-full border border-white/70 transition duration-200 sm:h-72 sm:w-72 ${
                   isRecording
                     ? 'scale-[1.02] bg-[radial-gradient(circle_at_center,_rgba(179,78,53,0.94),_rgba(120,34,15,0.98))] shadow-[0_0_0_18px_rgba(179,78,53,0.12),0_40px_80px_rgba(120,34,15,0.32)]'
                     : 'bg-[radial-gradient(circle_at_30%_30%,_rgba(78,118,155,0.96),_rgba(8,92,109,0.98))] shadow-[0_0_0_18px_rgba(78,118,155,0.12),0_40px_80px_rgba(8,92,109,0.30)] hover:scale-[1.01]'
@@ -310,22 +287,14 @@ export default function VoiceAssistant() {
                 <div className="absolute inset-5 rounded-full border border-white/20" />
                 <div className="absolute inset-10 rounded-full border border-white/10" />
 
-                <div className="relative z-10 flex flex-col items-center gap-4 text-white">
+                <div className="relative z-10 flex items-center justify-center text-white">
                   {loading ? (
-                    <LoaderCircle size={44} className="animate-spin" />
+                    <LoaderCircle size={54} className="animate-spin" />
                   ) : isRecording ? (
-                    <MicOff size={42} />
+                    <MicOff size={54} />
                   ) : (
-                    <Mic size={42} />
+                    <Mic size={54} />
                   )}
-                  <div className="space-y-1">
-                    <div className="text-[1.4rem] font-semibold tracking-tight">
-                      {isRecording ? 'Grabando ahora' : 'Habla aquí'}
-                    </div>
-                    <div className="text-sm uppercase tracking-[0.22em] text-white/72">
-                      {isRecording ? 'Suelta para enviar' : 'Mantén pulsado'}
-                    </div>
-                  </div>
                 </div>
 
                 <div className="absolute bottom-12 flex gap-2">

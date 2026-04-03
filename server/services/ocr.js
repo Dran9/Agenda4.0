@@ -143,10 +143,11 @@ function parseBolivianReceipt(text) {
   // ─── Amount (Bs, BOB) ───
   let amount = null;
   const amountPatterns = [
-    /(?:Bs\.?|BOB)\s*([\d.,]+)/i,
+    /(?:Bs\.?|BOB)\s*[:.]?\s*([\d.,]+)/i,
     /Monto[:\s]*(?:Bs\.?)?\s*([\d.,]+)/i,
     /Importe[:\s]*(?:Bs\.?)?\s*([\d.,]+)/i,
     /Total[:\s]*(?:Bs\.?)?\s*([\d.,]+)/i,
+    /La\s+suma\s+de\s+Bs\.?[:\s]*([\d.,]+)/i,
   ];
   for (const pat of amountPatterns) {
     const m = fullText.match(pat);
@@ -334,8 +335,9 @@ function parseBolivianReceipt(text) {
     const destNameLineIdx = lines.findIndex(l => /nombre\s+del\s+destinatario/i.test(l));
     if (destNameLineIdx >= 0) {
       const sameLineMatch = lines[destNameLineIdx].match(/nombre\s+del\s+destinatario[:\s]*([^\n]+)/i);
-      if (sameLineMatch?.[1]?.trim()) {
-        destName = sameLineMatch[1].trim();
+      const inlineCandidate = sameLineMatch?.[1]?.replace(/^[:\s.-]+/, '').trim();
+      if (inlineCandidate && /[A-ZÁÉÍÓÚÑa-záéíóúñ]/.test(inlineCandidate)) {
+        destName = inlineCandidate;
         if (destNameLineIdx + 1 < lines.length) {
           const continuation = lines[destNameLineIdx + 1];
           if (
@@ -405,6 +407,7 @@ function parseBolivianReceipt(text) {
   const refPatterns = [
     /(?:c[oó]digo\s*(?:de\s*)?transacci[oó]n|n[°º]\s*transacci?on|n[uú]mero\s*de\s*transacci[oó]n|referencia|nro\.?)[:\s]*(\d{6,})/i,
     /(?:n[uú]mero\s*de\s*comprobante)[:\s]*([^\n]+)/i,
+    /bancarizaci[oó]n[:\s]*([A-Z0-9-]{6,})/i,
   ];
   for (const pat of refPatterns) {
     const m = fullText.match(pat);

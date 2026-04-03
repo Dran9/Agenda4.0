@@ -9,16 +9,17 @@ Read this first, then read `CLAUDE.md` and `LESSONS-LEARNED.md` if the task touc
 
 - Date: 2026-04-02
 - Branch: `main`
-- Commit: `0cf7e02`
-- Summary: normalized phone handling across admin, booking, WhatsApp, reminders, payment matching, and public tokens
+- Commit: `d7e0ac0`
+- Summary: phone normalization is live; WhatsApp inbox now shows parsed OCR data plus raw OCR text for receipt debugging
 - UI follow-up: reschedule screen copy now injects the client name in the banner, "already booked" title, and trust message
 - CI follow-up: GitHub `Frontend Guard` was failing because `client/dist` was out of sync with source; local `lint` and `build` passed, but `git diff --exit-code -- client/dist` failed
-- OCR follow-up: destination-account validation was too permissive and could treat some invalid receipts as valid if a whitelisted account appeared anywhere in the OCR text
+- OCR follow-up: destination validation must depend on exact matches against whitelisted destination accounts after stripping separators
 - BNB follow-up: some BNB receipts expose a top `Cuenta:` block plus a lower destination block; OCR must prioritize `Nombre del destinatario` and `Se acreditó a la cuenta` instead of generic `Cuenta:`
 - Appointments UI follow-up: appointments toolbar now labels the date-range inputs clearly (`Desde`, `Hasta`) and supports sorting by date, name, created-at, and status
 - Receipt mismatch follow-up: WhatsApp mismatch replies now enumerate reasons as bullet points, not slash-separated text
 - Receipt destination rule: recipient validation now depends only on matching a whitelisted destination bank account; recipient names are informational only
-- OCR debug follow-up: WhatsApp inbox now needs a temporary raw OCR text box to inspect exactly what Google Vision returned on digital receipts
+- OCR debug follow-up: WhatsApp inbox now shows a temporary raw OCR text box to inspect exactly what Google Vision returned on digital receipts
+- BNB parser follow-up: `La suma de Bs.:` must be recognized as amount and `Bancarización:` can be used as the extracted reference when no numeric transfer code is present
 
 ## Current State
 
@@ -65,7 +66,7 @@ Read this first, then read `CLAUDE.md` and `LESSONS-LEARNED.md` if the task touc
   `npm run build` passed
   failure source was the committed `client/dist` being stale
 - OCR destination validation was tightened:
-  valid destination now requires a whitelisted destination account found in destination context, or a destination name that clearly matches Daniel
+  valid destination now requires an exact whitelisted destination account after stripping spaces and hyphens; recipient names are display-only
 - BNB parsing was tightened:
   generic `cuenta` fallback no longer has priority over destination-specific labels
 - Appointments list now supports backend-driven sorting through `sort_by` and `sort_dir` query params
@@ -73,6 +74,7 @@ Read this first, then read `CLAUDE.md` and `LESSONS-LEARNED.md` if the task touc
 - OCR `Para ...` parsing was fixed to stay on the same line and avoid capturing labels like `CI/NIT` as the recipient name
 - Destination validation now also accepts an exact whitelisted bank account found anywhere in the OCR text after stripping separators like spaces and hyphens
 - WhatsApp inbox should show both parsed OCR fields and raw OCR text for debugging until receipt parsing stabilizes
+- BNB OCR parsing now recognizes `La suma de Bs.:` as amount, strips the stray leading `:` from `Nombre del destinatario`, and uses `Bancarización:` as reference when needed
 
 ## Known Follow-Ups
 

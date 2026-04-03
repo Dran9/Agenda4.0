@@ -160,7 +160,7 @@ app.get('*', (req, res) => {
     res.set('Expires', '0');
     res.send(html);
   } else {
-    res.send('Agenda 4.0 — server running. Client build pending.');
+    res.send('Agenda Daniel MacLean — server running. Client build pending.');
   }
 });
 
@@ -174,7 +174,7 @@ async function start() {
     startPaymentReminderCron();
     startAutoCompleteCron();
     app.listen(PORT, () => {
-      console.log(`Agenda 4.0 running on port ${PORT}`);
+      console.log(`Agenda Daniel MacLean running on port ${PORT}`);
     });
   } catch (err) {
     console.error('Failed to start:', err.message);

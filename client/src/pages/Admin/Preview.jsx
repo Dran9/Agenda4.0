@@ -174,7 +174,7 @@ export default function AdminPreview() {
         <aside className="w-full border-b border-black/5 bg-[#f8f3ec]/92 px-5 py-6 backdrop-blur-xl lg:w-[290px] lg:border-b-0 lg:border-r lg:px-7">
           <div className="preview-enter flex items-center justify-between pb-6">
             <div>
-              <div className="text-xs font-semibold uppercase tracking-[0.28em] text-[#b3643d]">Agenda 4.0</div>
+              <div className="text-xs font-semibold uppercase tracking-[0.28em] text-[#b3643d]">Agenda Daniel MacLean</div>
               <div className="mt-2 text-2xl font-semibold tracking-tight text-slate-900">Desk Preview</div>
             </div>
             <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-[#b3643d] text-white shadow-[0_18px_40px_rgba(179,100,61,0.28)]">

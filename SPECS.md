@@ -775,7 +775,7 @@ appointments (1) → (0..1) payments
 
 ### Seed data (Daniel como primer tenant)
 ```sql
-INSERT INTO tenants (name, slug, domain) VALUES ('Daniel MacLean', 'daniel', 'plum-rhinoceros-787093.hostingersite.com');
+INSERT INTO tenants (name, slug, domain) VALUES ('Daniel MacLean', 'daniel', 'agenda.danielmaclean.com');
 
 INSERT INTO config (tenant_id, available_hours, available_days) VALUES (
   1,
@@ -793,4 +793,4 @@ La otra instancia de Claude toma este documento como especificación completa:
 2. Copiar del repo anterior: `calendar.js`, `whatsapp.js`, `timezones.js`, `Calendar.jsx`
 3. Exportar env vars del site anterior y configurar en el nuevo site de Hostinger
 4. Crear nueva MySQL en el nuevo site de Hostinger
-5. Verificar que webhook de Meta apunte al nuevo URL (plum-rhinoceros-787093.hostingersite.com)
+5. Verificar que webhook de Meta apunte al nuevo URL (agenda.danielmaclean.com)

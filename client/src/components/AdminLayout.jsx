@@ -37,7 +37,7 @@ export default function AdminLayout({ children, title, sidebarSubItems = [] }) {
         ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}
       `}>
         <div className="p-5 border-b border-slate-200">
-          <div className="inline-flex rounded-full bg-[#CFE8E9] px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.24em] text-[#4E769B]">Agenda 4.0</div>
+          <div className="inline-flex rounded-full bg-[#CFE8E9] px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.24em] text-[#4E769B]">Agenda Daniel MacLean</div>
           <h1 className="mt-2 font-semibold text-xl text-slate-950 tracking-tight">Admin Desk</h1>
         </div>
 

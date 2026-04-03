@@ -7,10 +7,10 @@ Read this first, then read `CLAUDE.md` and `LESSONS-LEARNED.md` if the task touc
 
 ## Last Updated
 
-- Date: 2026-04-02
+- Date: 2026-04-03
 - Branch: `main`
-- Commit: `d7e0ac0`
-- Summary: phone normalization is live; WhatsApp inbox now shows parsed OCR data plus raw OCR text for receipt debugging
+- Commit: `98a887f`
+- Summary: receipt validation is stable again; local pending changes rename the public domain to `agenda.danielmaclean.com`, rename the app to `Agenda Daniel MacLean`, and simplify the payment success copy
 - UI follow-up: reschedule screen copy now injects the client name in the banner, "already booked" title, and trust message
 - CI follow-up: GitHub `Frontend Guard` was failing because `client/dist` was out of sync with source; local `lint` and `build` passed, but `git diff --exit-code -- client/dist` failed
 - OCR follow-up: destination validation must depend on exact matches against whitelisted destination accounts after stripping separators
@@ -21,6 +21,7 @@ Read this first, then read `CLAUDE.md` and `LESSONS-LEARNED.md` if the task touc
 - OCR debug follow-up: WhatsApp inbox now shows a temporary raw OCR text box to inspect exactly what Google Vision returned on digital receipts
 - BNB parser follow-up: `La suma de Bs.:` must be recognized as amount and `Bancarización:` can be used as the extracted reference when no numeric transfer code is present
 - Date validation follow-up: receipt date must be compared against the latest payment context sent by WhatsApp (reminder/QR), not against the appointment date
+- Branding follow-up: public URLs must use `https://agenda.danielmaclean.com/` and browser-visible app name should be `Agenda Daniel MacLean`
 
 ## Current State
 
@@ -32,6 +33,7 @@ Read this first, then read `CLAUDE.md` and `LESSONS-LEARNED.md` if the task touc
 - WhatsApp webhook client resolution now matches by normalized phone
 - Payment receipt matching now matches by normalized phone
 - Reminder matching fallback now matches by normalized phone
+- Payment success WhatsApp reply is being simplified to `✅ Pago recibido correctamente, ¡Gracias!`
 
 ## Files Changed In Latest Work
 
@@ -77,6 +79,8 @@ Read this first, then read `CLAUDE.md` and `LESSONS-LEARNED.md` if the task touc
 - WhatsApp inbox should show both parsed OCR fields and raw OCR text for debugging until receipt parsing stabilizes
 - BNB OCR parsing now recognizes `La suma de Bs.:` as amount, strips the stray leading `:` from `Nombre del destinatario`, and uses `Bancarización:` as reference when needed
 - Receipt date validation now uses the latest outbound payment-context message date instead of the appointment date, so same-day prepayments for tomorrow's session are accepted
+- Local rename in progress:
+  hardcoded public domain is being moved to `agenda.danielmaclean.com`, and browser-visible branding to `Agenda Daniel MacLean`
 
 ## Known Follow-Ups
 

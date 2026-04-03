@@ -1,7 +1,7 @@
 # WhatsApp Context Filter
 
 ## Objetivo
-Reducir ruido en `Agenda 4.0` guardando solo mensajes de WhatsApp relevantes para:
+Reducir ruido en `Agenda Daniel MacLean` guardando solo mensajes de WhatsApp relevantes para:
 
 - booking
 - reagenda/cancelación/confirmación

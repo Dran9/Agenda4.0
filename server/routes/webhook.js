@@ -694,9 +694,7 @@ router.post('/', async (req, res) => {
                           // Send confirmation reply
                           try {
                             const { sendTextMessage } = require('../services/whatsapp');
-                            const paymentOkMessage = bestMatch.first_name
-                              ? `✅ Pago recibido correctamente. Gracias ${formatWhatsappName(bestMatch.first_name)}. Hasta pronto.`
-                              : '✅ Pago recibido correctamente. Gracias. Hasta pronto.';
+                            const paymentOkMessage = '✅ Pago recibido correctamente, ¡Gracias!';
                             await sendTextMessage(phone, paymentOkMessage);
                           } catch (replyErr) {
                             console.error(`[webhook] Payment reply failed:`, replyErr.message);

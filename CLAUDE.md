@@ -175,9 +175,9 @@ Recordatorio (18:40 diario):
 - **ipapi.co:** detección de timezone por IP (gratis)
 
 ## URLs
-- **Producción:** https://plum-rhinoceros-787093.hostingersite.com/
-- **API health:** https://plum-rhinoceros-787093.hostingersite.com/api/health
-- **Dev mode:** https://plum-rhinoceros-787093.hostingersite.com/?devmode=1
+- **Producción:** https://agenda.danielmaclean.com/
+- **API health:** https://agenda.danielmaclean.com/api/health
+- **Dev mode:** https://agenda.danielmaclean.com/?devmode=1
 - **Repo anterior:** https://skyblue-rabbit-531241.hostingersite.com/
 
 ## Variables de entorno
@@ -186,7 +186,7 @@ Ver `.env.example` para la lista completa. Se configuran en hPanel de Hostinger.
 ## Estado actual (2026-03-29)
 
 ### Funcionando
-- **Server Express** corriendo en Hostinger (plum-rhinoceros-787093.hostingersite.com), auto-deploy desde GitHub
+- **Server Express** corriendo en Hostinger (agenda.danielmaclean.com), auto-deploy desde GitHub
 - **10 tablas MySQL** en `u926460478_agenda30` (localhost en Hostinger, srv2023.hstgr.io remoto)
 - **Google Calendar OAuth** funcionando — slots, eventos, recordatorios
 - **WhatsApp Cloud API** — recordatorios diarios 18:40 BOT, auto-reply a botones CONFIRM/REAGEN/DANIEL

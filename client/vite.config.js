@@ -16,7 +16,7 @@ export default defineConfig({
   server: {
     proxy: {
       '/api': {
-        target: 'https://plum-rhinoceros-787093.hostingersite.com',
+        target: 'https://agenda.danielmaclean.com',
         changeOrigin: true,
       },
     },

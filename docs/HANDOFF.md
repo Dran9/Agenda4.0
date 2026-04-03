@@ -20,6 +20,7 @@ Read this first, then read `CLAUDE.md` and `LESSONS-LEARNED.md` if the task touc
 - Receipt destination rule: recipient validation now depends only on matching a whitelisted destination bank account; recipient names are informational only
 - OCR debug follow-up: WhatsApp inbox now shows a temporary raw OCR text box to inspect exactly what Google Vision returned on digital receipts
 - BNB parser follow-up: `La suma de Bs.:` must be recognized as amount and `Bancarización:` can be used as the extracted reference when no numeric transfer code is present
+- Date validation follow-up: receipt date must be compared against the latest payment context sent by WhatsApp (reminder/QR), not against the appointment date
 
 ## Current State
 
@@ -75,6 +76,7 @@ Read this first, then read `CLAUDE.md` and `LESSONS-LEARNED.md` if the task touc
 - Destination validation now also accepts an exact whitelisted bank account found anywhere in the OCR text after stripping separators like spaces and hyphens
 - WhatsApp inbox should show both parsed OCR fields and raw OCR text for debugging until receipt parsing stabilizes
 - BNB OCR parsing now recognizes `La suma de Bs.:` as amount, strips the stray leading `:` from `Nombre del destinatario`, and uses `Bancarización:` as reference when needed
+- Receipt date validation now uses the latest outbound payment-context message date instead of the appointment date, so same-day prepayments for tomorrow's session are accepted
 
 ## Known Follow-Ups
 

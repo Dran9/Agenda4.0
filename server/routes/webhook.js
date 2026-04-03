@@ -99,6 +99,28 @@ function getBoliviaDateKey(dateStr) {
   return year && month && day ? `${year}-${month}-${day}` : null;
 }
 
+async function getLatestPaymentContextDateKey({ tenantId, clientId, phone }) {
+  if (!tenantId || !clientId || !phone) return null;
+
+  const [rows] = await pool.query(
+    `SELECT created_at
+     FROM wa_conversations
+     WHERE tenant_id = ?
+       AND client_id = ?
+       AND ${normalizedPhoneSql('client_phone')} = ?
+       AND direction = 'outbound'
+       AND created_at >= DATE_SUB(NOW(), INTERVAL 7 DAY)
+       AND (
+         content REGEXP 'QR de pago enviado|Recordatorio de pago pendiente enviado|pago adelantado'
+       )
+     ORDER BY created_at DESC
+     LIMIT 1`,
+    [tenantId, clientId, phone]
+  );
+
+  return rows[0]?.created_at ? getBoliviaDateKey(rows[0].created_at) : null;
+}
+
 function formatWhatsappName(name) {
   if (!name) return 'hola';
   const first = String(name).trim().split(/\s+/)[0] || 'hola';
@@ -115,7 +137,7 @@ function formatDisplayDate(value) {
 
 function formatMismatchProblem(problem) {
   if (problem.type === 'fecha_pasada') {
-    return `FECHA PASADA (comprobante ${problem.receiptDate} es anterior a la sesión ${problem.sessionDate})`;
+    return `FECHA PASADA (comprobante ${problem.receiptDate} es anterior al contexto de pago ${problem.contextDate})`;
   }
   if (problem.type === 'monto') {
     return 'MONTO';
@@ -133,7 +155,7 @@ function buildMismatchNotes(problems) {
 function buildMismatchReasonLines(problems) {
   return problems.map((problem) => {
     if (problem.type === 'fecha_pasada') {
-      return 'La fecha del comprobante es anterior a la fecha de la sesión.';
+      return 'La fecha del comprobante es anterior al último recordatorio o QR de pago enviado.';
     }
     if (problem.type === 'monto') {
       return 'El monto del comprobante no coincide con el valor registrado de la sesión.';
@@ -612,16 +634,20 @@ router.post('/', async (req, res) => {
                           problems.push({ type: 'monto', expectedAmount, receivedAmount: ocrResult.amount });
                         }
 
-                        // 3. Fecha: receipt date must not be before the session date
+                        // 3. Fecha: receipt date must not be older than the latest payment context
                         if (ocrResult.date && bestMatch.date_time) {
                           const receiptDateKey = parseReceiptDateKey(ocrResult.date);
-                          const sessionDateKey = getBoliviaDateKey(bestMatch.date_time);
+                          const paymentContextDateKey = await getLatestPaymentContextDateKey({
+                            tenantId,
+                            clientId,
+                            phone,
+                          });
 
-                          if (receiptDateKey && sessionDateKey && receiptDateKey < sessionDateKey) {
+                          if (receiptDateKey && paymentContextDateKey && receiptDateKey < paymentContextDateKey) {
                             problems.push({
                               type: 'fecha_pasada',
                               receiptDate: ocrResult.date,
-                              sessionDate: sessionDateKey,
+                              contextDate: paymentContextDateKey,
                             });
                           }
                         }

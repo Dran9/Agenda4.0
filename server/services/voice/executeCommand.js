@@ -1,6 +1,8 @@
 const { pool } = require('../../db');
 const { createBooking } = require('../booking');
 const { getTodayContext } = require('./parseCommand');
+const { checkAndSendReminders } = require('../reminder');
+const { refreshConfigSchedulers } = require('../../cron/scheduler');
 
 function addDays(dateKey, days) {
   const [y, m, d] = String(dateKey).split('-').map(Number);
@@ -60,6 +62,57 @@ function shortList(items, max = 5) {
 
 function pluralize(count, singular, plural) {
   return count === 1 ? singular : plural;
+}
+
+const WEEKDAY_LABELS = {
+  lunes: 'lunes',
+  martes: 'martes',
+  miercoles: 'miércoles',
+  jueves: 'jueves',
+  viernes: 'viernes',
+  sabado: 'sábado',
+  domingo: 'domingo',
+};
+
+const WEEKDAY_ORDER = ['lunes', 'martes', 'miercoles', 'jueves', 'viernes', 'sabado', 'domingo'];
+
+function timeToMinutes(t) {
+  const [h, m] = String(t).split(':').map(Number);
+  return h * 60 + m;
+}
+
+function minutesToTime(totalMinutes) {
+  const h = String(Math.floor(totalMinutes / 60)).padStart(2, '0');
+  const m = String(totalMinutes % 60).padStart(2, '0');
+  return `${h}:${m}`;
+}
+
+function buildHourlySlots(startTime, endTime) {
+  if (!startTime || !endTime) return [];
+  const start = timeToMinutes(startTime);
+  const end = timeToMinutes(endTime);
+  if (Number.isNaN(start) || Number.isNaN(end) || end < start) return [];
+  const slots = [];
+  for (let current = start; current <= end; current += 60) {
+    slots.push(minutesToTime(current));
+  }
+  return slots;
+}
+
+function describeSlots(slots) {
+  if (!slots.length) return 'sin horarios';
+  if (slots.length === 1) return `${slots[0]}`;
+  return `${slots[0]} a ${slots[slots.length - 1]}`;
+}
+
+function parseJsonField(value, fallback) {
+  if (!value) return fallback;
+  if (typeof value === 'object') return value;
+  try {
+    return JSON.parse(value);
+  } catch (_) {
+    return fallback;
+  }
 }
 
 function getCurrentMonthYear() {
@@ -206,6 +259,40 @@ async function buildPendingAmountReply(tenantId) {
     status: 'resolved',
     replyText: total > 0 ? `Tienes Bs ${total} pendientes de cobro.` : 'No tienes dinero pendiente de cobro.',
     data: { total_amount: total },
+  };
+}
+
+async function buildReminderToggleReply(tenantId, reminderEnabled) {
+  if (typeof reminderEnabled !== 'boolean') {
+    return {
+      status: 'clarification',
+      replyText: 'Dime si quieres activar o desactivar los recordatorios.',
+      data: {},
+    };
+  }
+
+  await pool.query(
+    'UPDATE config SET reminder_enabled = ? WHERE tenant_id = ?',
+    [reminderEnabled ? 1 : 0, tenantId]
+  );
+  refreshConfigSchedulers();
+
+  return {
+    status: 'resolved',
+    replyText: reminderEnabled ? 'Recordatorios activados.' : 'Recordatorios desactivados.',
+    data: { reminder_enabled: reminderEnabled },
+  };
+}
+
+async function buildSendRemindersReply(tenantId, reminderDate) {
+  const date = reminderDate === 'today' ? 'today' : 'tomorrow';
+  const result = await checkAndSendReminders({ tenantId, date, force: false });
+  return {
+    status: 'resolved',
+    replyText:
+      `Recordatorios para ${date === 'today' ? 'hoy' : 'mañana'}: ` +
+      `${result.sent} enviados, ${result.skipped} omitidos, ${result.failed || 0} fallidos.`,
+    data: result,
   };
 }
 
@@ -547,7 +634,7 @@ async function buildUnconfirmedTomorrowReply(tenantId) {
   const lines = rows.map((row) => `${row.first_name} ${row.last_name}, ${formatDateTime(row.date_time)}`);
   return {
     status: 'resolved',
-    replyText: [`Mañana tienes ${rows.length} citas sin confirmar.`, ...shortList(lines)].join('\n'),
+    replyText: [`Mañana tienes ${rows.length} ${pluralize(rows.length, 'cita sin confirmar', 'citas sin confirmar')}.`, ...shortList(lines)].join('\n'),
     data: { total: rows.length, items: rows },
   };
 }
@@ -579,7 +666,7 @@ async function buildConfirmedTodayReply(tenantId) {
   const lines = rows.map((row) => `${row.first_name} ${row.last_name}, ${formatDateTime(row.date_time)}`);
   return {
     status: 'resolved',
-    replyText: [`Hoy tienes ${rows.length} citas confirmadas.`, ...shortList(lines)].join('\n'),
+    replyText: [`Hoy tienes ${rows.length} ${pluralize(rows.length, 'cita confirmada', 'citas confirmadas')}.`, ...shortList(lines)].join('\n'),
     data: { total: rows.length, items: rows },
   };
 }
@@ -662,6 +749,94 @@ async function buildCreateAppointmentReply(tenantId, clientName, dateKey, timeHh
   };
 }
 
+async function buildUpdateAvailabilityReply(tenantId, entities) {
+  const weekdayName = entities.weekday_name;
+  if (!weekdayName || !WEEKDAY_LABELS[weekdayName]) {
+    return {
+      status: 'clarification',
+      replyText: 'Dime qué día quieres cambiar. Ejemplo: jueves.',
+      data: {},
+    };
+  }
+
+  const [rows] = await pool.query(
+    `SELECT available_hours, available_days
+     FROM config
+     WHERE tenant_id = ?
+     LIMIT 1`,
+    [tenantId]
+  );
+  const cfg = rows[0];
+  const availableHours = parseJsonField(cfg?.available_hours, {});
+  const availableDays = parseJsonField(cfg?.available_days, []);
+  const currentDaySlots = Array.isArray(availableHours[weekdayName]) ? availableHours[weekdayName] : [];
+  const currentMorning = currentDaySlots.filter((slot) => timeToMinutes(slot) < 13 * 60);
+  const currentAfternoon = currentDaySlots.filter((slot) => timeToMinutes(slot) >= 16 * 60);
+
+  let newMorning = currentMorning;
+  let newAfternoon = currentAfternoon;
+
+  if (entities.morning_mode === 'off') newMorning = [];
+  if (entities.morning_mode === 'range') {
+    newMorning = buildHourlySlots(entities.morning_start, entities.morning_end);
+  }
+
+  if (entities.afternoon_mode === 'off') newAfternoon = [];
+  if (entities.afternoon_mode === 'range') {
+    newAfternoon = buildHourlySlots(entities.afternoon_start, entities.afternoon_end);
+  }
+
+  if (
+    entities.morning_mode == null &&
+    entities.afternoon_mode == null &&
+    entities.morning_start &&
+    entities.morning_end
+  ) {
+    newMorning = buildHourlySlots(entities.morning_start, entities.morning_end);
+  }
+
+  const mergedSlots = [...newMorning, ...newAfternoon]
+    .filter(Boolean)
+    .sort((a, b) => timeToMinutes(a) - timeToMinutes(b));
+
+  availableHours[weekdayName] = mergedSlots;
+  const nextAvailableDays = new Set(availableDays);
+  if (mergedSlots.length > 0) nextAvailableDays.add(weekdayName);
+  else nextAvailableDays.delete(weekdayName);
+  const orderedAvailableDays = WEEKDAY_ORDER.filter((day) => nextAvailableDays.has(day));
+
+  await pool.query(
+    `UPDATE config
+     SET available_hours = ?, available_days = ?
+     WHERE tenant_id = ?`,
+    [JSON.stringify(availableHours), JSON.stringify(orderedAvailableDays), tenantId]
+  );
+
+  if (!mergedSlots.length) {
+    return {
+      status: 'resolved',
+      replyText: `Disponibilidad actualizada para ${WEEKDAY_LABELS[weekdayName]}: sin horarios.`,
+      data: { weekday_name: weekdayName, slots: [] },
+    };
+  }
+
+  const summaryParts = [];
+  if (newMorning.length > 0) summaryParts.push(`mañana ${describeSlots(newMorning)}`);
+  else if (entities.morning_mode === 'off') summaryParts.push('mañana sin horarios');
+
+  if (newAfternoon.length > 0) summaryParts.push(`tarde ${describeSlots(newAfternoon)}`);
+  else if (entities.afternoon_mode === 'off') summaryParts.push('tarde sin horarios');
+
+  return {
+    status: 'resolved',
+    replyText:
+      summaryParts.length > 0
+        ? `Disponibilidad actualizada para ${WEEKDAY_LABELS[weekdayName]}: ${summaryParts.join(', ')}.`
+        : `Disponibilidad actualizada para ${WEEKDAY_LABELS[weekdayName]}: ${mergedSlots.join(', ')}.`,
+    data: { weekday_name: weekdayName, slots: mergedSlots },
+  };
+}
+
 async function executeVoiceCommand({ tenantId, parsedCommand }) {
   const { intent, entities = {} } = parsedCommand || {};
 
@@ -673,6 +848,12 @@ async function executeVoiceCommand({ tenantId, parsedCommand }) {
   }
   if (intent === 'pending_amount') {
     return buildPendingAmountReply(tenantId);
+  }
+  if (intent === 'reminder_toggle') {
+    return buildReminderToggleReply(tenantId, entities.reminder_enabled);
+  }
+  if (intent === 'send_reminders') {
+    return buildSendRemindersReply(tenantId, entities.reminder_date);
   }
   if (intent === 'sessions_to_goal') {
     return buildSessionsToGoalReply(tenantId, entities.goal_amount);
@@ -707,15 +888,20 @@ async function executeVoiceCommand({ tenantId, parsedCommand }) {
   if (intent === 'create_appointment') {
     return buildCreateAppointmentReply(tenantId, entities.client_name, entities.date_key, entities.time_hhmm);
   }
+  if (intent === 'update_availability') {
+    return buildUpdateAvailabilityReply(tenantId, entities);
+  }
 
   return {
     status: 'clarification',
-    replyText: 'Todavía no puedo hacer eso. Por ahora consulta agenda, pendientes, metas, clientes, confirmaciones, recordatorios, reagendados, nuevos por mes o crea citas para clientes existentes.',
+    replyText: 'Todavía no puedo hacer eso. Por ahora consulta agenda, pendientes, metas, clientes, confirmaciones, recordatorios, reagendados, nuevos por mes, crea citas para clientes existentes o ajusta recordatorios y disponibilidad.',
     data: {
       supported_intents: [
         'agenda_query',
         'pending_payments',
         'pending_amount',
+        'reminder_toggle',
+        'send_reminders',
         'sessions_to_goal',
         'client_lookup',
         'client_upcoming_appointments',
@@ -727,6 +913,7 @@ async function executeVoiceCommand({ tenantId, parsedCommand }) {
         'confirmed_today',
         'appointments_this_week',
         'create_appointment',
+        'update_availability',
       ],
     },
   };

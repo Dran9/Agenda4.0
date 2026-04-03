@@ -24,6 +24,7 @@ Read this first, then read `CLAUDE.md` and `LESSONS-LEARNED.md` if the task touc
 - Branding follow-up: public URLs must use `https://agenda.danielmaclean.com/` and browser-visible app name should be `Agenda Daniel MacLean`
 - Voice shortcut follow-up: first MVP must stay isolated from client-facing flows and support only informational commands
 - Voice shortcut expansion: now supports richer operational queries and a controlled create-appointment action for existing clients only
+- Voice shortcut actions: now also supports reminder toggles, manual reminder sends for today/tomorrow, and day-level availability changes split by morning/tarde while respecting the midday pause
 
 ## Current State
 
@@ -38,6 +39,8 @@ Read this first, then read `CLAUDE.md` and `LESSONS-LEARNED.md` if the task touc
 - Payment success WhatsApp reply is being simplified to `✅ Pago recibido correctamente, ¡Gracias!`
 - Voice Shortcut MVP is now being added as a separate backend module with Groq transcription, token auth, and audit logging
 - Voice Shortcut now supports reminder checks, confirmation checks, rescheduled lists, monthly new-client counts, pending-amount totals, unconfirmed tomorrow, confirmed today, weekly appointment counts, and appointment creation for existing clients
+- Voice Shortcut local expansion now includes:
+  reminder on/off, reminder send today/tomorrow, and availability updates like `jueves de 8 a 12 en la mañana, en la tarde nada`
 
 ## Files Changed In Latest Work
 
@@ -89,6 +92,8 @@ Read this first, then read `CLAUDE.md` and `LESSONS-LEARNED.md` if the task touc
   iPhone Shortcut only, audio + text input, short operational responses, secret-token auth, informational commands only, logged in DB
 - Voice Shortcut v1.1 scope:
   still isolated from public/client flows, but now allows creating an appointment for an existing client when the command includes a unique client plus explicit date and time
+- Voice Shortcut v1.2 scope:
+  still isolated from public/client flows, now also allows operational admin actions over reminders and weekly availability without adding any client-facing UI weight
 
 ## Known Follow-Ups
 

@@ -56,10 +56,213 @@ function detectMonthYear(text) {
   };
 }
 
+function findWeekdayName(text) {
+  const normalized = normalizeText(text);
+  const weekdays = ['lunes', 'martes', 'miercoles', 'jueves', 'viernes', 'sabado', 'domingo'];
+  return weekdays.find((name) => normalized.includes(name)) || null;
+}
+
+function parseTimeValue(rawValue, period = null) {
+  const value = normalizeText(rawValue);
+  const match = value.match(/(\d{1,2})(?::(\d{2}))?/);
+  if (!match) return null;
+
+  let hour = Number(match[1]);
+  let minute = match[2] ? Number(match[2]) : 0;
+  if (Number.isNaN(hour) || Number.isNaN(minute)) return null;
+
+  if (!match[2] && /\by media\b/.test(value)) {
+    minute = 30;
+  }
+
+  const hasPm = /\bpm\b|\bp\.m\b|\bde la tarde\b|\bde la noche\b/.test(value);
+  const hasAm = /\bam\b|\ba\.m\b|\bde la manana\b/.test(value);
+  if ((period === 'afternoon' || hasPm) && hour < 12) {
+    hour += 12;
+  } else if (hasAm && hour === 12) {
+    hour = 0;
+  }
+
+  if (hour > 23 || minute > 59) return null;
+  return `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
+}
+
+function extractTimeRange(text, period = null) {
+  const normalized = normalizeText(text);
+  const match = normalized.match(
+    /(?:de\s+)?(?:las\s+)?(\d{1,2}(?::\d{2})?(?:\s+y\s+media)?)\s*(?:a|hasta)\s*(?:las\s+)?(\d{1,2}(?::\d{2})?(?:\s+y\s+media)?)/
+  );
+  if (!match) return null;
+  const start = parseTimeValue(match[1], period);
+  const end = parseTimeValue(match[2], period);
+  if (!start || !end) return null;
+  return { start, end };
+}
+
+function extractAvailabilityRange(text, segmentName) {
+  const normalized = normalizeText(text);
+  const directAfterSegment = normalized.match(
+    new RegExp(`${segmentName}[^\\d]{0,24}(?:de\\s+)?(?:las\\s+)?(\\d{1,2}(?::\\d{2})?(?:\\s+y\\s+media)?)\\s*(?:a|hasta)\\s*(?:las\\s+)?(\\d{1,2}(?::\\d{2})?(?:\\s+y\\s+media)?)`)
+  );
+  if (directAfterSegment) {
+    return {
+      start: parseTimeValue(directAfterSegment[1], segmentName === 'tarde' ? 'afternoon' : 'morning'),
+      end: parseTimeValue(directAfterSegment[2], segmentName === 'tarde' ? 'afternoon' : 'morning'),
+    };
+  }
+
+  const directBeforeSegment = normalized.match(
+    new RegExp(`(?:de\\s+)?(?:las\\s+)?(\\d{1,2}(?::\\d{2})?(?:\\s+y\\s+media)?)\\s*(?:a|hasta)\\s*(?:las\\s+)?(\\d{1,2}(?::\\d{2})?(?:\\s+y\\s+media)?)\\s*(?:en\\s+la\\s+)?${segmentName}`)
+  );
+  if (directBeforeSegment) {
+    return {
+      start: parseTimeValue(directBeforeSegment[1], segmentName === 'tarde' ? 'afternoon' : 'morning'),
+      end: parseTimeValue(directBeforeSegment[2], segmentName === 'tarde' ? 'afternoon' : 'morning'),
+    };
+  }
+
+  return null;
+}
+
+function splitContinuousRange(start, end) {
+  const startMinutes = Number(start.slice(0, 2)) * 60 + Number(start.slice(3, 5));
+  const endMinutes = Number(end.slice(0, 2)) * 60 + Number(end.slice(3, 5));
+  if (Number.isNaN(startMinutes) || Number.isNaN(endMinutes) || endMinutes < startMinutes) {
+    return null;
+  }
+
+  const result = {
+    morning_mode: 'off',
+    morning_start: null,
+    morning_end: null,
+    afternoon_mode: 'off',
+    afternoon_start: null,
+    afternoon_end: null,
+  };
+
+  if (startMinutes < 13 * 60) {
+    const morningEndMinutes = Math.min(endMinutes, 12 * 60);
+    if (morningEndMinutes >= startMinutes) {
+      result.morning_mode = 'range';
+      result.morning_start = start;
+      result.morning_end = `${String(Math.floor(morningEndMinutes / 60)).padStart(2, '0')}:${String(morningEndMinutes % 60).padStart(2, '0')}`;
+    }
+  }
+
+  if (endMinutes >= 16 * 60) {
+    const afternoonStartMinutes = Math.max(startMinutes, 16 * 60);
+    if (endMinutes >= afternoonStartMinutes) {
+      result.afternoon_mode = 'range';
+      result.afternoon_start = `${String(Math.floor(afternoonStartMinutes / 60)).padStart(2, '0')}:${String(afternoonStartMinutes % 60).padStart(2, '0')}`;
+      result.afternoon_end = end;
+    }
+  }
+
+  return result;
+}
+
+function detectAvailabilityIntent(text) {
+  const normalized = normalizeText(text);
+  const weekdayName = findWeekdayName(normalized);
+  if (!weekdayName) return null;
+
+  const soundsLikeAvailability =
+    /\b(disponibilidad|disponible|horario|trabaj|atiendo|solo|todo igual|en la manana|en la tarde|nada)\b/.test(normalized);
+  if (!soundsLikeAvailability) return null;
+
+  const entities = {
+    weekday_name: weekdayName,
+    morning_mode: null,
+    morning_start: null,
+    morning_end: null,
+    afternoon_mode: null,
+    afternoon_start: null,
+    afternoon_end: null,
+  };
+
+  const mentionsMorning = /\bmanana\b/.test(normalized);
+  const mentionsAfternoon = /\btarde\b/.test(normalized);
+  const hasSolo = /\bsolo\b/.test(normalized);
+
+  if (/manana[^.]*todo igual|todo igual[^.]*manana/.test(normalized)) {
+    entities.morning_mode = 'keep';
+  } else if (/manana[^.]*nada|nada[^.]*manana/.test(normalized)) {
+    entities.morning_mode = 'off';
+  }
+
+  if (/tarde[^.]*todo igual|todo igual[^.]*tarde/.test(normalized)) {
+    entities.afternoon_mode = 'keep';
+  } else if (/tarde[^.]*nada|nada[^.]*tarde/.test(normalized)) {
+    entities.afternoon_mode = 'off';
+  }
+
+  const morningRange = extractAvailabilityRange(normalized, 'manana');
+  if (morningRange?.start && morningRange?.end) {
+    entities.morning_mode = 'range';
+    entities.morning_start = morningRange.start;
+    entities.morning_end = morningRange.end;
+  }
+
+  const afternoonRange = extractAvailabilityRange(normalized, 'tarde');
+  if (afternoonRange?.start && afternoonRange?.end) {
+    entities.afternoon_mode = 'range';
+    entities.afternoon_start = afternoonRange.start;
+    entities.afternoon_end = afternoonRange.end;
+  }
+
+  if ((mentionsMorning || mentionsAfternoon) && hasSolo) {
+    if (mentionsMorning && entities.afternoon_mode == null) entities.afternoon_mode = 'off';
+    if (mentionsAfternoon && entities.morning_mode == null) entities.morning_mode = 'off';
+  }
+
+  if (
+    !morningRange &&
+    !afternoonRange &&
+    !mentionsMorning &&
+    !mentionsAfternoon
+  ) {
+    const globalRange = extractTimeRange(normalized);
+    if (globalRange?.start && globalRange?.end) {
+      const split = splitContinuousRange(globalRange.start, globalRange.end);
+      if (split) {
+        entities.morning_mode = split.morning_mode;
+        entities.morning_start = split.morning_start;
+        entities.morning_end = split.morning_end;
+        entities.afternoon_mode = split.afternoon_mode;
+        entities.afternoon_start = split.afternoon_start;
+        entities.afternoon_end = split.afternoon_end;
+      }
+    }
+  }
+
+  const hasDirective =
+    entities.morning_mode != null ||
+    entities.afternoon_mode != null ||
+    entities.morning_start != null ||
+    entities.afternoon_start != null;
+
+  if (!hasDirective) return null;
+  return { intent: 'update_availability', entities };
+}
+
 function detectDirectIntent(text) {
   const normalized = normalizeText(text);
   const monthYear = detectMonthYear(text);
+  const availabilityIntent = detectAvailabilityIntent(text);
 
+  if (availabilityIntent) return availabilityIntent;
+  if (/\bdesactivar recordatorios\b|\bapagar recordatorios\b/.test(normalized)) {
+    return { intent: 'reminder_toggle', entities: { reminder_enabled: false } };
+  }
+  if (/\bactivar recordatorios\b|\bencender recordatorios\b/.test(normalized)) {
+    return { intent: 'reminder_toggle', entities: { reminder_enabled: true } };
+  }
+  if (/\b(manda?r|envia?r)\b.*\brecordatorios?\b.*\bhoy\b|\brecordatorios?\b.*\bpara hoy\b/.test(normalized)) {
+    return { intent: 'send_reminders', entities: { reminder_date: 'today' } };
+  }
+  if (/\b(manda?r|envia?r)\b.*\brecordatorios?\b.*\bmanana\b|\brecordatorios?\b.*\bpara manana\b/.test(normalized)) {
+    return { intent: 'send_reminders', entities: { reminder_date: 'tomorrow' } };
+  }
   if (/\b(cuanto|cuanta)\b.*\bdinero pendiente\b|\bpendiente de cobro\b/.test(normalized)) {
     return { intent: 'pending_amount', entities: {} };
   }
@@ -120,6 +323,15 @@ async function parseVoiceCommand(inputText) {
         year: direct.entities?.year != null && direct.entities.year !== ''
           ? Number(direct.entities.year)
           : null,
+        reminder_enabled: direct.entities?.reminder_enabled ?? null,
+        reminder_date: direct.entities?.reminder_date || null,
+        weekday_name: direct.entities?.weekday_name || null,
+        morning_mode: direct.entities?.morning_mode || null,
+        morning_start: direct.entities?.morning_start || null,
+        morning_end: direct.entities?.morning_end || null,
+        afternoon_mode: direct.entities?.afternoon_mode || null,
+        afternoon_start: direct.entities?.afternoon_start || null,
+        afternoon_end: direct.entities?.afternoon_end || null,
       },
       raw: direct,
     };
@@ -133,14 +345,16 @@ async function parseVoiceCommand(inputText) {
         `Eres un parser de comandos administrativos para una agenda terapéutica. ` +
         `Debes devolver solo JSON válido, sin markdown ni explicación. ` +
         `Fecha actual en Bolivia: ${today}. ` +
-        `Intents permitidos: agenda_query, pending_payments, pending_amount, sessions_to_goal, client_lookup, client_upcoming_appointments, reminder_check, confirmation_check, rescheduled_list, new_clients_count, unconfirmed_tomorrow, confirmed_today, appointments_this_week, create_appointment, unknown. ` +
-        `Entities posibles: client_name (string o null), date_key (YYYY-MM-DD o null), time_hhmm (HH:MM o null), goal_amount (number o null), month (1-12 o null), year (YYYY o null). ` +
+        `Intents permitidos: agenda_query, pending_payments, pending_amount, sessions_to_goal, client_lookup, client_upcoming_appointments, reminder_check, confirmation_check, rescheduled_list, new_clients_count, unconfirmed_tomorrow, confirmed_today, appointments_this_week, create_appointment, reminder_toggle, send_reminders, update_availability, unknown. ` +
+        `Entities posibles: client_name (string o null), date_key (YYYY-MM-DD o null), time_hhmm (HH:MM o null), goal_amount (number o null), month (1-12 o null), year (YYYY o null), reminder_enabled (boolean o null), reminder_date (today|tomorrow|null), weekday_name (lunes|martes|miercoles|jueves|viernes|sabado|domingo|null), morning_mode (keep|off|range|null), morning_start (HH:MM|null), morning_end (HH:MM|null), afternoon_mode (keep|off|range|null), afternoon_start (HH:MM|null), afternoon_end (HH:MM|null). ` +
         `Convierte fechas relativas como hoy, mañana, pasado mañana, este viernes, el viernes a YYYY-MM-DD. ` +
         `Convierte horas como 8, 8 de la mañana, 8 am, 8 y media, 14:30 a HH:MM en formato 24 horas. ` +
         `Si el usuario pregunta por marzo o abril, extrae month y year cuando sea posible. ` +
+        `Para disponibilidad, interpreta frases como "jueves solo de 8 a 12 en la mañana, en la tarde nada" usando weekday_name y morning/afternoon modes. ` +
+        `Si el usuario dice "en la tarde todo igual", usa afternoon_mode=keep. ` +
         `Si el usuario pide una acción no permitida o destructiva, usa unknown. ` +
         `Responde con este shape exacto: ` +
-        `{"intent":"...","confidence":0.0,"entities":{"client_name":null,"date_key":null,"time_hhmm":null,"goal_amount":null,"month":null,"year":null},"reply_hint":"..."}`,
+        `{"intent":"...","confidence":0.0,"entities":{"client_name":null,"date_key":null,"time_hhmm":null,"goal_amount":null,"month":null,"year":null,"reminder_enabled":null,"reminder_date":null,"weekday_name":null,"morning_mode":null,"morning_start":null,"morning_end":null,"afternoon_mode":null,"afternoon_start":null,"afternoon_end":null},"reply_hint":"..."}`,
     },
     {
       role: 'user',
@@ -168,6 +382,15 @@ async function parseVoiceCommand(inputText) {
       year: entities.year != null && entities.year !== ''
         ? Number(entities.year)
         : null,
+      reminder_enabled: entities.reminder_enabled ?? null,
+      reminder_date: entities.reminder_date ? String(entities.reminder_date).trim() : null,
+      weekday_name: entities.weekday_name ? String(entities.weekday_name).trim().toLowerCase() : null,
+      morning_mode: entities.morning_mode ? String(entities.morning_mode).trim().toLowerCase() : null,
+      morning_start: entities.morning_start ? String(entities.morning_start).trim() : null,
+      morning_end: entities.morning_end ? String(entities.morning_end).trim() : null,
+      afternoon_mode: entities.afternoon_mode ? String(entities.afternoon_mode).trim().toLowerCase() : null,
+      afternoon_start: entities.afternoon_start ? String(entities.afternoon_start).trim() : null,
+      afternoon_end: entities.afternoon_end ? String(entities.afternoon_end).trim() : null,
     },
     raw: parsed,
   };

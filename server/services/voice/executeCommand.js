@@ -1,4 +1,5 @@
 const { pool } = require('../../db');
+const { createBooking } = require('../booking');
 const { getTodayContext } = require('./parseCommand');
 
 function addDays(dateKey, days) {
@@ -11,8 +12,8 @@ function addDays(dateKey, days) {
 function formatDateTime(dateTime) {
   const parts = new Intl.DateTimeFormat('es-BO', {
     timeZone: 'America/La_Paz',
-    day: '2-digit',
-    month: '2-digit',
+    day: 'numeric',
+    month: 'long',
     hour: '2-digit',
     minute: '2-digit',
     hour12: false,
@@ -21,12 +22,65 @@ function formatDateTime(dateTime) {
   const month = parts.find((part) => part.type === 'month')?.value;
   const hour = parts.find((part) => part.type === 'hour')?.value;
   const minute = parts.find((part) => part.type === 'minute')?.value;
-  return `${day}/${month} ${hour}:${minute}`;
+  return `${day} de ${month}, ${hour}:${minute}`;
+}
+
+function formatDateKey(dateKey) {
+  const [year, month, day] = String(dateKey).split('-').map(Number);
+  const label = new Intl.DateTimeFormat('es-BO', {
+    timeZone: 'America/La_Paz',
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric',
+  }).format(new Date(Date.UTC(year, month - 1, day)));
+  return label;
+}
+
+function formatMonthYear(month, year) {
+  const label = new Intl.DateTimeFormat('es-BO', {
+    timeZone: 'America/La_Paz',
+    month: 'long',
+    year: 'numeric',
+  }).format(new Date(Date.UTC(year, month - 1, 1)));
+  return label;
+}
+
+function getRelativeDateLabel(dateKey) {
+  const today = getTodayContext();
+  const tomorrow = addDays(today, 1);
+  if (dateKey === today) return 'hoy';
+  if (dateKey === tomorrow) return 'mañana';
+  return null;
 }
 
 function shortList(items, max = 5) {
   if (items.length <= max) return items;
   return [...items.slice(0, max), `y ${items.length - max} más`];
+}
+
+function pluralize(count, singular, plural) {
+  return count === 1 ? singular : plural;
+}
+
+function getCurrentMonthYear() {
+  const now = new Date();
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/La_Paz',
+    year: 'numeric',
+    month: '2-digit',
+  }).formatToParts(now);
+  const year = Number(parts.find((part) => part.type === 'year')?.value);
+  const month = Number(parts.find((part) => part.type === 'month')?.value);
+  return { month, year };
+}
+
+function getTomorrowKey() {
+  return addDays(getTodayContext(), 1);
+}
+
+function buildDateTimeKey(dateKey, timeHhmm) {
+  if (!dateKey || !timeHhmm) return null;
+  return `${dateKey}T${timeHhmm}`;
 }
 
 async function findClientsByName(tenantId, clientName) {
@@ -59,6 +113,7 @@ async function findClientsByName(tenantId, clientName) {
 async function buildAgendaReply(tenantId, dateKey) {
   const dayKey = dateKey || getTodayContext();
   const nextDayKey = addDays(dayKey, 1);
+  const relativeLabel = getRelativeDateLabel(dayKey);
   const [rows] = await pool.query(
     `SELECT a.id, a.date_time, a.status, c.first_name, c.last_name,
             (
@@ -82,18 +137,25 @@ async function buildAgendaReply(tenantId, dateKey) {
   if (!rows.length) {
     return {
       status: 'resolved',
-      replyText: `No hay citas para ${dayKey}.`,
+      replyText: relativeLabel
+        ? `No tienes citas para ${relativeLabel}.`
+        : `No tienes citas para el ${formatDateKey(dayKey)}.`,
       data: { date_key: dayKey, total: 0, items: [] },
     };
   }
 
   const lines = rows.map((row) =>
-    `${formatDateTime(row.date_time)} ${row.first_name} ${row.last_name} (${row.status}${row.payment_status ? `, ${row.payment_status}` : ''})`
+    `${formatDateTime(row.date_time)}: ${row.first_name} ${row.last_name} (${row.status}${row.payment_status ? `, ${row.payment_status}` : ''})`
   );
 
-  return {
-    status: 'resolved',
-    replyText: [`${rows.length} citas para ${dayKey}.`, ...shortList(lines)].join('\n'),
+    return {
+      status: 'resolved',
+      replyText: [
+        relativeLabel
+        ? `Tienes ${rows.length} ${pluralize(rows.length, 'cita', 'citas')} para ${relativeLabel}.`
+        : `Tienes ${rows.length} ${pluralize(rows.length, 'cita', 'citas')} para el ${formatDateKey(dayKey)}.`,
+      ...shortList(lines),
+    ].join('\n'),
     data: { date_key: dayKey, total: rows.length, items: rows },
   };
 }
@@ -125,8 +187,25 @@ async function buildPendingPaymentsReply(tenantId) {
 
   return {
     status: 'resolved',
-    replyText: [`Hay ${rows.length} pagos pendientes.`, ...shortList(lines)].join('\n'),
+    replyText: [`Tienes ${rows.length} ${pluralize(rows.length, 'pago pendiente', 'pagos pendientes')}.`, ...shortList(lines)].join('\n'),
     data: { total: rows.length, items: rows },
+  };
+}
+
+async function buildPendingAmountReply(tenantId) {
+  const [[row]] = await pool.query(
+    `SELECT COALESCE(SUM(amount), 0) AS total
+     FROM payments
+     WHERE tenant_id = ?
+       AND status = 'Pendiente'`,
+    [tenantId]
+  );
+
+  const total = Number(row?.total || 0);
+  return {
+    status: 'resolved',
+    replyText: total > 0 ? `Tienes Bs ${total} pendientes de cobro.` : 'No tienes dinero pendiente de cobro.',
+    data: { total_amount: total },
   };
 }
 
@@ -202,7 +281,7 @@ async function buildClientLookupReply(tenantId, clientName) {
         `${client.first_name} ${client.last_name}. ` +
         `${client.city || 'Sin ciudad'}. ` +
         `Arancel Bs ${client.fee}. ` +
-        `${client.next_appointment ? `Próxima cita ${formatDateTime(client.next_appointment)}.` : 'Sin próxima cita.'}`,
+        `${client.next_appointment ? `Próxima cita: ${formatDateTime(client.next_appointment)}.` : 'Sin próxima cita.'}`,
       data: { total: 1, matches },
     };
   }
@@ -269,8 +348,317 @@ async function buildClientUpcomingAppointmentsReply(tenantId, clientName) {
   const lines = appointments.map((row) => `${formatDateTime(row.date_time)} (${row.status})`);
   return {
     status: 'resolved',
-    replyText: [`${client.first_name} ${client.last_name} tiene ${appointments.length} próximas citas.`, ...shortList(lines)].join('\n'),
+    replyText: [`${client.first_name} ${client.last_name} tiene ${appointments.length} ${pluralize(appointments.length, 'próxima cita', 'próximas citas')}.`, ...shortList(lines)].join('\n'),
     data: { client, total: appointments.length, items: appointments },
+  };
+}
+
+async function buildReminderCheckReply(tenantId, clientName) {
+  if (!clientName) {
+    return {
+      status: 'clarification',
+      replyText: 'Dime el nombre del cliente.',
+      data: {},
+    };
+  }
+
+  const matches = await findClientsByName(tenantId, clientName);
+  if (!matches.length) {
+    return {
+      status: 'resolved',
+      replyText: `No encontré clientes para "${clientName}".`,
+      data: { total: 0, matches: [] },
+    };
+  }
+
+  if (matches.length > 1) {
+    const lines = matches.map((client) => `${client.first_name} ${client.last_name}`);
+    return {
+      status: 'clarification',
+      replyText: [`Encontré varios clientes para "${clientName}".`, ...shortList(lines)].join('\n'),
+      data: { total: matches.length, matches },
+    };
+  }
+
+  const client = matches[0];
+  const [[row]] = await pool.query(
+    `SELECT wl.created_at, wl.appointment_id
+     FROM webhooks_log wl
+     WHERE wl.tenant_id = ?
+       AND wl.client_id = ?
+       AND wl.type = 'reminder_sent'
+     ORDER BY wl.created_at DESC
+     LIMIT 1`,
+    [tenantId, client.id]
+  );
+
+  if (!row) {
+    return {
+      status: 'resolved',
+      replyText: `No, no hay recordatorio enviado a ${client.first_name} ${client.last_name}.`,
+      data: { client, sent: false },
+    };
+  }
+
+  return {
+    status: 'resolved',
+    replyText: `Sí. El último recordatorio a ${client.first_name} ${client.last_name} fue el ${formatDateTime(row.created_at)}.`,
+    data: { client, sent: true, last_reminder_at: row.created_at, appointment_id: row.appointment_id || null },
+  };
+}
+
+async function buildConfirmationCheckReply(tenantId, clientName) {
+  if (!clientName) {
+    return {
+      status: 'clarification',
+      replyText: 'Dime el nombre del cliente.',
+      data: {},
+    };
+  }
+
+  const matches = await findClientsByName(tenantId, clientName);
+  if (!matches.length) {
+    return {
+      status: 'resolved',
+      replyText: `No encontré clientes para "${clientName}".`,
+      data: { total: 0, matches: [] },
+    };
+  }
+
+  if (matches.length > 1) {
+    const lines = matches.map((client) => `${client.first_name} ${client.last_name}`);
+    return {
+      status: 'clarification',
+      replyText: [`Encontré varios clientes para "${clientName}".`, ...shortList(lines)].join('\n'),
+      data: { total: matches.length, matches },
+    };
+  }
+
+  const client = matches[0];
+  const [[appointment]] = await pool.query(
+    `SELECT id, date_time, status, confirmed_at
+     FROM appointments
+     WHERE tenant_id = ?
+       AND client_id = ?
+       AND status IN ('Agendada','Confirmada','Reagendada')
+       AND date_time > NOW()
+     ORDER BY date_time ASC
+     LIMIT 1`,
+    [tenantId, client.id]
+  );
+
+  if (!appointment) {
+    return {
+      status: 'resolved',
+      replyText: `${client.first_name} ${client.last_name} no tiene una próxima cita para revisar confirmación.`,
+      data: { client, confirmed: false, appointment: null },
+    };
+  }
+
+  if (appointment.status === 'Confirmada') {
+    return {
+      status: 'resolved',
+      replyText: `Sí. ${client.first_name} ${client.last_name} confirmó su cita del ${formatDateTime(appointment.date_time)}.`,
+      data: { client, confirmed: true, appointment },
+    };
+  }
+
+  return {
+    status: 'resolved',
+    replyText: `No. ${client.first_name} ${client.last_name} todavía no confirmó su cita del ${formatDateTime(appointment.date_time)}.`,
+    data: { client, confirmed: false, appointment },
+  };
+}
+
+async function buildRescheduledListReply(tenantId) {
+  const [rows] = await pool.query(
+    `SELECT a.id, a.date_time, c.first_name, c.last_name
+     FROM appointments a
+     JOIN clients c ON c.id = a.client_id
+     WHERE a.tenant_id = ?
+       AND a.status = 'Reagendada'
+     ORDER BY a.updated_at DESC
+     LIMIT 8`,
+    [tenantId]
+  );
+
+  if (!rows.length) {
+    return {
+      status: 'resolved',
+      replyText: 'No hay citas reagendadas.',
+      data: { total: 0, items: [] },
+    };
+  }
+
+  const lines = rows.map((row) => `${row.first_name} ${row.last_name}, ${formatDateTime(row.date_time)}`);
+  return {
+    status: 'resolved',
+    replyText: [`Hay ${rows.length} ${pluralize(rows.length, 'cita reagendada', 'citas reagendadas')}.`, ...shortList(lines)].join('\n'),
+    data: { total: rows.length, items: rows },
+  };
+}
+
+async function buildNewClientsCountReply(tenantId, month, year) {
+  const current = getCurrentMonthYear();
+  const targetMonth = month || current.month;
+  const targetYear = year || current.year;
+
+  const [[row]] = await pool.query(
+    `SELECT COUNT(*) AS total
+     FROM clients
+     WHERE tenant_id = ?
+       AND deleted_at IS NULL
+       AND MONTH(created_at) = ?
+       AND YEAR(created_at) = ?`,
+    [tenantId, targetMonth, targetYear]
+  );
+
+  return {
+    status: 'resolved',
+    replyText: `Tuviste ${Number(row?.total || 0)} clientes nuevos en ${formatMonthYear(targetMonth, targetYear)}.`,
+    data: { total: Number(row?.total || 0), month: targetMonth, year: targetYear },
+  };
+}
+
+async function buildUnconfirmedTomorrowReply(tenantId) {
+  const tomorrowKey = getTomorrowKey();
+  const dayAfterKey = addDays(tomorrowKey, 1);
+  const [rows] = await pool.query(
+    `SELECT a.id, a.date_time, a.status, c.first_name, c.last_name
+     FROM appointments a
+     JOIN clients c ON c.id = a.client_id
+     WHERE a.tenant_id = ?
+       AND a.date_time >= ?
+       AND a.date_time < ?
+       AND a.status IN ('Agendada','Reagendada')
+     ORDER BY a.date_time ASC
+     LIMIT 10`,
+    [tenantId, `${tomorrowKey} 00:00:00`, `${dayAfterKey} 00:00:00`]
+  );
+
+  if (!rows.length) {
+    return {
+      status: 'resolved',
+      replyText: 'Mañana no tienes citas sin confirmar.',
+      data: { total: 0, items: [] },
+    };
+  }
+
+  const lines = rows.map((row) => `${row.first_name} ${row.last_name}, ${formatDateTime(row.date_time)}`);
+  return {
+    status: 'resolved',
+    replyText: [`Mañana tienes ${rows.length} citas sin confirmar.`, ...shortList(lines)].join('\n'),
+    data: { total: rows.length, items: rows },
+  };
+}
+
+async function buildConfirmedTodayReply(tenantId) {
+  const todayKey = getTodayContext();
+  const tomorrowKey = addDays(todayKey, 1);
+  const [rows] = await pool.query(
+    `SELECT a.id, a.date_time, c.first_name, c.last_name
+     FROM appointments a
+     JOIN clients c ON c.id = a.client_id
+     WHERE a.tenant_id = ?
+       AND a.date_time >= ?
+       AND a.date_time < ?
+       AND a.status = 'Confirmada'
+     ORDER BY a.date_time ASC
+     LIMIT 10`,
+    [tenantId, `${todayKey} 00:00:00`, `${tomorrowKey} 00:00:00`]
+  );
+
+  if (!rows.length) {
+    return {
+      status: 'resolved',
+      replyText: 'Hoy no hay citas confirmadas.',
+      data: { total: 0, items: [] },
+    };
+  }
+
+  const lines = rows.map((row) => `${row.first_name} ${row.last_name}, ${formatDateTime(row.date_time)}`);
+  return {
+    status: 'resolved',
+    replyText: [`Hoy tienes ${rows.length} citas confirmadas.`, ...shortList(lines)].join('\n'),
+    data: { total: rows.length, items: rows },
+  };
+}
+
+async function buildAppointmentsThisWeekReply(tenantId) {
+  const [rows] = await pool.query(
+    `SELECT COUNT(*) AS total
+     FROM appointments
+     WHERE tenant_id = ?
+       AND YEARWEEK(date_time, 1) = YEARWEEK(CURDATE(), 1)
+       AND status IN ('Agendada','Confirmada','Reagendada','Completada','No-show')`,
+    [tenantId]
+  );
+
+  const total = Number(rows?.[0]?.total || 0);
+  return {
+    status: 'resolved',
+    replyText: `Tienes ${total} ${pluralize(total, 'cita', 'citas')} esta semana.`,
+    data: { total },
+  };
+}
+
+async function buildCreateAppointmentReply(tenantId, clientName, dateKey, timeHhmm) {
+  if (!clientName) {
+    return {
+      status: 'clarification',
+      replyText: 'Dime el nombre del cliente.',
+      data: {},
+    };
+  }
+
+  if (!dateKey || !timeHhmm) {
+    return {
+      status: 'clarification',
+      replyText: 'Dime fecha y hora. Ejemplo: crear cita para Cecilia de Ugarte el 8 de abril a las 08:00.',
+      data: {},
+    };
+  }
+
+  const matches = await findClientsByName(tenantId, clientName);
+  if (!matches.length) {
+    return {
+      status: 'resolved',
+      replyText: `No encontré clientes para "${clientName}".`,
+      data: { total: 0, matches: [] },
+    };
+  }
+
+  if (matches.length > 1) {
+    const lines = matches.map((client) => `${client.first_name} ${client.last_name}`);
+    return {
+      status: 'clarification',
+      replyText: [`Encontré varios clientes para "${clientName}".`, ...shortList(lines)].join('\n'),
+      data: { total: matches.length, matches },
+    };
+  }
+
+  const client = matches[0];
+  const dateTime = buildDateTimeKey(dateKey, timeHhmm);
+  const result = await createBooking(client, dateTime, tenantId, {
+    user_agent: 'voice-shortcut',
+    device_type: 'shortcut',
+  });
+
+  if (result?.error) {
+    return {
+      status: 'clarification',
+      replyText: result.error,
+      data: { client, date_time: dateTime, booking_result: result },
+    };
+  }
+
+  return {
+    status: 'resolved',
+    replyText: `Cita creada para ${client.first_name} ${client.last_name}: ${formatDateTime(`${dateTime}:00-04:00`)}.`,
+    data: {
+      client,
+      appointment: result.appointment,
+    },
   };
 }
 
@@ -283,6 +671,9 @@ async function executeVoiceCommand({ tenantId, parsedCommand }) {
   if (intent === 'pending_payments') {
     return buildPendingPaymentsReply(tenantId);
   }
+  if (intent === 'pending_amount') {
+    return buildPendingAmountReply(tenantId);
+  }
   if (intent === 'sessions_to_goal') {
     return buildSessionsToGoalReply(tenantId, entities.goal_amount);
   }
@@ -292,11 +683,52 @@ async function executeVoiceCommand({ tenantId, parsedCommand }) {
   if (intent === 'client_upcoming_appointments') {
     return buildClientUpcomingAppointmentsReply(tenantId, entities.client_name);
   }
+  if (intent === 'reminder_check') {
+    return buildReminderCheckReply(tenantId, entities.client_name);
+  }
+  if (intent === 'confirmation_check') {
+    return buildConfirmationCheckReply(tenantId, entities.client_name);
+  }
+  if (intent === 'rescheduled_list') {
+    return buildRescheduledListReply(tenantId);
+  }
+  if (intent === 'new_clients_count') {
+    return buildNewClientsCountReply(tenantId, entities.month, entities.year);
+  }
+  if (intent === 'unconfirmed_tomorrow') {
+    return buildUnconfirmedTomorrowReply(tenantId);
+  }
+  if (intent === 'confirmed_today') {
+    return buildConfirmedTodayReply(tenantId);
+  }
+  if (intent === 'appointments_this_week') {
+    return buildAppointmentsThisWeekReply(tenantId);
+  }
+  if (intent === 'create_appointment') {
+    return buildCreateAppointmentReply(tenantId, entities.client_name, entities.date_key, entities.time_hhmm);
+  }
 
   return {
     status: 'clarification',
-    replyText: 'Todavía no puedo hacer eso. Por ahora consulta agenda, pagos pendientes, meta mensual o próximas citas.',
-    data: { supported_intents: ['agenda_query', 'pending_payments', 'sessions_to_goal', 'client_lookup', 'client_upcoming_appointments'] },
+    replyText: 'Todavía no puedo hacer eso. Por ahora consulta agenda, pendientes, metas, clientes, confirmaciones, recordatorios, reagendados, nuevos por mes o crea citas para clientes existentes.',
+    data: {
+      supported_intents: [
+        'agenda_query',
+        'pending_payments',
+        'pending_amount',
+        'sessions_to_goal',
+        'client_lookup',
+        'client_upcoming_appointments',
+        'reminder_check',
+        'confirmation_check',
+        'rescheduled_list',
+        'new_clients_count',
+        'unconfirmed_tomorrow',
+        'confirmed_today',
+        'appointments_this_week',
+        'create_appointment',
+      ],
+    },
   };
 }
 

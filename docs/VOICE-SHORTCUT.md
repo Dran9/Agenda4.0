@@ -16,7 +16,7 @@ First isolated MVP for admin voice control.
 
 Headers:
 
-- `x-shortcut-token: <VOICE_ADMIN_TOKEN>`
+- `x-voice-token: <VOICE_ADMIN_TOKEN>`
 
 Accepted input:
 
@@ -28,9 +28,18 @@ Accepted input:
 
 - agenda of today / tomorrow / explicit date
 - pending payments
+- pending amount
 - sessions needed to reach a target amount
 - find client by name
 - upcoming appointments for a client
+- check whether a reminder was sent to a client
+- check whether a client confirmed
+- list rescheduled appointments
+- count new clients by month
+- list unconfirmed appointments for tomorrow
+- list confirmed appointments for today
+- count appointments this week
+- create an appointment for an existing client with explicit date and time
 
 ## Example Phrases
 
@@ -40,6 +49,15 @@ Accepted input:
 - `cuántas sesiones necesito para llegar a 5000`
 - `buscar a Octavia Quiroga`
 - `próximas citas de Juan Pérez`
+- `has enviado recordatorio a Ana Faby`
+- `ha confirmado Patricia`
+- `quiénes han reagendado`
+- `cuántos nuevos tuve en marzo`
+- `cuánto dinero pendiente tengo`
+- `quiénes no han confirmado mañana`
+- `quiénes confirmaron hoy`
+- `cuántas citas tengo esta semana`
+- `crea evento el 10 de abril a las 8 para Cecilia de Ugarte`
 
 ## Suggested Shortcut Flow
 
@@ -52,7 +70,7 @@ Accepted input:
    - URL: `https://agenda.danielmaclean.com/api/voice/shortcut`
    - Method: `POST`
    - Headers:
-     - `x-shortcut-token`
+     - `x-voice-token`
    - Body:
      - `audio` file and/or `text`
 5. Read `reply_text`
@@ -68,6 +86,6 @@ Accepted input:
 
 ## Notes
 
-- No data mutation in this MVP
+- Only one data-changing action is enabled in this phase: creating an appointment for an existing client
 - Every request is logged in `voice_commands_log`
 - Audio transcription and command parsing both happen server-side

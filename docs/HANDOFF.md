@@ -23,6 +23,7 @@ Read this first, then read `CLAUDE.md` and `LESSONS-LEARNED.md` if the task touc
 - Date validation follow-up: receipt date must be compared against the latest payment context sent by WhatsApp (reminder/QR), not against the appointment date
 - Branding follow-up: public URLs must use `https://agenda.danielmaclean.com/` and browser-visible app name should be `Agenda Daniel MacLean`
 - Voice shortcut follow-up: first MVP must stay isolated from client-facing flows and support only informational commands
+- Voice shortcut expansion: now supports richer operational queries and a controlled create-appointment action for existing clients only
 
 ## Current State
 
@@ -36,6 +37,7 @@ Read this first, then read `CLAUDE.md` and `LESSONS-LEARNED.md` if the task touc
 - Reminder matching fallback now matches by normalized phone
 - Payment success WhatsApp reply is being simplified to `✅ Pago recibido correctamente, ¡Gracias!`
 - Voice Shortcut MVP is now being added as a separate backend module with Groq transcription, token auth, and audit logging
+- Voice Shortcut now supports reminder checks, confirmation checks, rescheduled lists, monthly new-client counts, pending-amount totals, unconfirmed tomorrow, confirmed today, weekly appointment counts, and appointment creation for existing clients
 
 ## Files Changed In Latest Work
 
@@ -85,6 +87,8 @@ Read this first, then read `CLAUDE.md` and `LESSONS-LEARNED.md` if the task touc
   hardcoded public domain is being moved to `agenda.danielmaclean.com`, and browser-visible branding to `Agenda Daniel MacLean`
 - Voice Shortcut MVP scope:
   iPhone Shortcut only, audio + text input, short operational responses, secret-token auth, informational commands only, logged in DB
+- Voice Shortcut v1.1 scope:
+  still isolated from public/client flows, but now allows creating an appointment for an existing client when the command includes a unique client plus explicit date and time
 
 ## Known Follow-Ups
 

@@ -95,6 +95,15 @@ export default function VoiceAssistant() {
     };
   }, []);
 
+  useEffect(() => {
+    document.documentElement.classList.add('voice-app-mode');
+    document.body.classList.add('voice-app-mode');
+    return () => {
+      document.documentElement.classList.remove('voice-app-mode');
+      document.body.classList.remove('voice-app-mode');
+    };
+  }, []);
+
   const lastResponse = result?.reply_text || '';
   const statusTone = useMemo(() => {
     const status = result?.status;
@@ -237,11 +246,12 @@ export default function VoiceAssistant() {
       : 'Mantén pulsado para hablar o toca una vez para grabar.';
 
   return (
-    <div className="min-h-screen overflow-x-hidden overflow-y-hidden bg-[#f6f1e8] text-slate-950">
+    <div className="voice-app-root bg-[#f6f1e8] text-slate-950">
       <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top_left,_rgba(78,118,155,0.22),_transparent_35%),radial-gradient(circle_at_top_right,_rgba(179,78,53,0.16),_transparent_28%),linear-gradient(180deg,_rgba(255,255,255,0.94),_rgba(246,241,232,0.96))]" />
       <div className="pointer-events-none absolute left-[-4rem] top-24 h-56 w-56 rounded-full bg-[#cfe8e9]/70 blur-3xl sm:left-[-6rem] sm:h-72 sm:w-72" />
       <div className="pointer-events-none absolute bottom-[-4rem] right-[-2rem] h-56 w-56 rounded-full bg-[#fdda78]/30 blur-3xl sm:bottom-[-6rem] sm:right-[-4rem] sm:h-72 sm:w-72" />
 
+      <div className="voice-scroll-shell">
       <div className="relative mx-auto flex min-h-screen w-full max-w-7xl flex-col px-4 pb-10 pt-6 sm:px-6 lg:px-8">
         <header className="flex items-center justify-end gap-3">
           <div className="flex items-center gap-3">
@@ -278,7 +288,7 @@ export default function VoiceAssistant() {
                 onPointerCancel={handlePressEnd}
                 onClick={handleRecordButtonClick}
                 disabled={loading || !micSupported}
-                className={`group relative flex h-64 w-64 max-w-full select-none items-center justify-center rounded-full border border-white/70 transition duration-200 sm:h-72 sm:w-72 ${
+                className={`voice-record-button group relative flex h-64 w-64 max-w-full select-none items-center justify-center rounded-full border border-white/70 transition duration-200 sm:h-72 sm:w-72 ${
                   isRecording
                     ? 'scale-[1.02] bg-[radial-gradient(circle_at_center,_rgba(179,78,53,0.94),_rgba(120,34,15,0.98))] shadow-[0_0_0_18px_rgba(179,78,53,0.12),0_40px_80px_rgba(120,34,15,0.32)]'
                     : 'bg-[radial-gradient(circle_at_30%_30%,_rgba(78,118,155,0.96),_rgba(8,92,109,0.98))] shadow-[0_0_0_18px_rgba(78,118,155,0.12),0_40px_80px_rgba(8,92,109,0.30)] hover:scale-[1.01]'
@@ -465,6 +475,7 @@ export default function VoiceAssistant() {
             </div>
           </div>
         </section>
+      </div>
       </div>
     </div>
   );

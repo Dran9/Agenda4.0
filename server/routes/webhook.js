@@ -728,9 +728,11 @@ router.post('/', async (req, res) => {
               ocr_date: ocrResult.date || null,
               ocr_reference: ocrResult.reference || null,
               ocr_dest_name: ocrResult.destName || null,
+              ocr_dest_account: ocrResult.destAccount || null,
               ocr_dest_account_verified: ocrResult.destAccountVerified || false,
               ocr_dest_verified: ocrResult.destVerified || false,
               ocr_bank: ocrResult.bank || null,
+              ocr_raw_text: ocrResult.raw_text || null,
             } : {});
 
             await pool.query(

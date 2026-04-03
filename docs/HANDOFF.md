@@ -18,6 +18,7 @@ Read this first, then read `CLAUDE.md` and `LESSONS-LEARNED.md` if the task touc
 - Appointments UI follow-up: appointments toolbar now labels the date-range inputs clearly (`Desde`, `Hasta`) and supports sorting by date, name, created-at, and status
 - Receipt mismatch follow-up: WhatsApp mismatch replies now enumerate reasons as bullet points, not slash-separated text
 - Receipt destination rule: recipient validation now depends only on matching a whitelisted destination bank account; recipient names are informational only
+- OCR debug follow-up: WhatsApp inbox now needs a temporary raw OCR text box to inspect exactly what Google Vision returned on digital receipts
 
 ## Current State
 
@@ -50,6 +51,7 @@ Read this first, then read `CLAUDE.md` and `LESSONS-LEARNED.md` if the task touc
 - We did not run any aggressive migration over old client data
 - We did not merge existing clients automatically
 - The current fix is forward-safe: new writes and comparisons should use canonical phone format
+- Never push automatically. Ask the user explicitly before every push.
 - Untracked mockup files were intentionally not committed:
   `Skills/`, `ocr-sample.png`, `ocr-sample-2.png`
 
@@ -69,6 +71,8 @@ Read this first, then read `CLAUDE.md` and `LESSONS-LEARNED.md` if the task touc
 - Appointments list now supports backend-driven sorting through `sort_by` and `sort_dir` query params
 - Receipt mismatch detection now stores separate destination verification flags (`destNameVerified`, `destAccountVerified`) to avoid losing the `destinatario` reason
 - OCR `Para ...` parsing was fixed to stay on the same line and avoid capturing labels like `CI/NIT` as the recipient name
+- Destination validation now also accepts an exact whitelisted bank account found anywhere in the OCR text after stripping separators like spaces and hyphens
+- WhatsApp inbox should show both parsed OCR fields and raw OCR text for debugging until receipt parsing stabilizes
 
 ## Known Follow-Ups
 

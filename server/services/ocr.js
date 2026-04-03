@@ -117,6 +117,29 @@ function parseBolivianReceipt(text) {
     return String(value || '').replace(/\D/g, '');
   }
 
+  function findWhitelistedAccountInText() {
+    const candidates = new Set();
+
+    for (const line of lines) {
+      const inlineMatches = line.match(/\d[\d\s.-]{7,}\d/g) || [];
+      for (const match of inlineMatches) {
+        const normalized = normalizeAccount(match);
+        if (normalized.length >= 8) candidates.add(normalized);
+      }
+
+      const normalizedLine = normalizeAccount(line);
+      if (normalizedLine.length >= 8) candidates.add(normalizedLine);
+    }
+
+    for (const candidate of candidates) {
+      if (VALID_DESTINATION_ACCOUNTS.has(candidate)) {
+        return candidate;
+      }
+    }
+
+    return null;
+  }
+
   // ─── Amount (Bs, BOB) ───
   let amount = null;
   const amountPatterns = [
@@ -370,7 +393,11 @@ function parseBolivianReceipt(text) {
   // ─── Destination verification ───
   // Destination is valid only when the extracted destination account matches
   // one of the whitelisted bank accounts. Recipient names are informational only.
-  const destAccountVerified = VALID_DESTINATION_ACCOUNTS.has(destAccount || '');
+  const matchedWhitelistedAccount = findWhitelistedAccountInText();
+  if (!destAccount && matchedWhitelistedAccount) {
+    destAccount = matchedWhitelistedAccount;
+  }
+  const destAccountVerified = VALID_DESTINATION_ACCOUNTS.has(destAccount || '') || !!matchedWhitelistedAccount;
   const destVerified = destAccountVerified;
 
   // ─── Reference / transaction code ───
@@ -434,7 +461,7 @@ function parseBolivianReceipt(text) {
     reference,
     bank,
     destName: destName || null,
-    destAccount: destAccount || null,
+    destAccount: destAccount || matchedWhitelistedAccount || null,
     destAccountVerified,
     destVerified,
     raw_text: fullText,

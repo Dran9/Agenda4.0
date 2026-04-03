@@ -22,6 +22,7 @@ Read this first, then read `CLAUDE.md` and `LESSONS-LEARNED.md` if the task touc
 - BNB parser follow-up: `La suma de Bs.:` must be recognized as amount and `Bancarización:` can be used as the extracted reference when no numeric transfer code is present
 - Date validation follow-up: receipt date must be compared against the latest payment context sent by WhatsApp (reminder/QR), not against the appointment date
 - Branding follow-up: public URLs must use `https://agenda.danielmaclean.com/` and browser-visible app name should be `Agenda Daniel MacLean`
+- Voice shortcut follow-up: first MVP must stay isolated from client-facing flows and support only informational commands
 
 ## Current State
 
@@ -34,6 +35,7 @@ Read this first, then read `CLAUDE.md` and `LESSONS-LEARNED.md` if the task touc
 - Payment receipt matching now matches by normalized phone
 - Reminder matching fallback now matches by normalized phone
 - Payment success WhatsApp reply is being simplified to `✅ Pago recibido correctamente, ¡Gracias!`
+- Voice Shortcut MVP is now being added as a separate backend module with Groq transcription, token auth, and audit logging
 
 ## Files Changed In Latest Work
 
@@ -81,6 +83,8 @@ Read this first, then read `CLAUDE.md` and `LESSONS-LEARNED.md` if the task touc
 - Receipt date validation now uses the latest outbound payment-context message date instead of the appointment date, so same-day prepayments for tomorrow's session are accepted
 - Local rename in progress:
   hardcoded public domain is being moved to `agenda.danielmaclean.com`, and browser-visible branding to `Agenda Daniel MacLean`
+- Voice Shortcut MVP scope:
+  iPhone Shortcut only, audio + text input, short operational responses, secret-token auth, informational commands only, logged in DB
 
 ## Known Follow-Ups
 

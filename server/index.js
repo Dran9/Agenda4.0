@@ -20,6 +20,7 @@ const authRoutes = require('./routes/auth');
 const webhookRoutes = require('./routes/webhook');
 const analyticsRoutes = require('./routes/analytics');
 const paymentsRoutes = require('./routes/payments');
+const voiceRoutes = require('./routes/voice');
 
 const app = express();
 app.set('trust proxy', 1);
@@ -56,6 +57,7 @@ app.use('/api/auth', authRoutes);
 app.use('/api/webhook', webhookRoutes);
 app.use('/api/analytics', analyticsRoutes);
 app.use('/api/payments', paymentsRoutes);
+app.use('/api/voice', voiceRoutes);
 
 // ─── Admin reminder trigger (protected) ─────────────────────────
 app.get('/api/admin/test-reminder', authMiddleware, async (req, res) => {

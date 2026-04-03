@@ -56,7 +56,7 @@ async function withAdvisoryLock(lockName, timeoutSeconds, callback) {
   }
 }
 
-// Schema: 10 tables, multi-tenant from day 1
+// Schema: 11 tables, multi-tenant from day 1
 async function initializeDatabase() {
   const conn = await pool.getConnection();
   try {
@@ -302,6 +302,27 @@ async function initializeDatabase() {
       )
     `);
 
+    // 11. voice_commands_log (admin voice/text shortcut audit)
+    await conn.query(`
+      CREATE TABLE IF NOT EXISTS voice_commands_log (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        tenant_id INT NOT NULL,
+        source ENUM('shortcut') NOT NULL DEFAULT 'shortcut',
+        input_type ENUM('audio','text','audio_text') NOT NULL,
+        raw_text TEXT,
+        transcript TEXT,
+        parsed_intent VARCHAR(100),
+        parsed_entities JSON,
+        response_text TEXT,
+        status ENUM('resolved','clarification','error') NOT NULL DEFAULT 'resolved',
+        error_message TEXT,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        KEY idx_tenant (tenant_id),
+        KEY idx_created (created_at),
+        FOREIGN KEY (tenant_id) REFERENCES tenants(id)
+      )
+    `);
+
     // Seed: Daniel as first tenant (idempotent)
     const [tenants] = await conn.query('SELECT id FROM tenants WHERE slug = ?', ['daniel']);
     if (tenants.length === 0) {
@@ -354,7 +375,7 @@ async function initializeDatabase() {
        WHERE slug = 'daniel' AND COALESCE(domain, '') <> 'agenda.danielmaclean.com'`
     ).catch(() => {});
 
-    console.log('[DB] All 10 tables initialized');
+    console.log('[DB] All 11 tables initialized');
   } finally {
     conn.release();
   }

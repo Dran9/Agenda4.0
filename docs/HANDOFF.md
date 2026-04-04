@@ -7,10 +7,10 @@ Read this first, then read `CLAUDE.md` and `LESSONS-LEARNED.md` if the task touc
 
 ## Last Updated
 
-- Date: 2026-04-03
+- Date: 2026-04-04
 - Branch: `main`
-- Commit: `98a887f`
-- Summary: receipt validation is stable again; local pending changes rename the public domain to `agenda.danielmaclean.com`, rename the app to `Agenda Daniel MacLean`, and simplify the payment success copy
+- Commit: `4a7dc45`
+- Summary: Google OAuth was re-grounded on the new `agenda40` Google Cloud project and is now working again across Calendar, Sheets, and Contacts
 - UI follow-up: reschedule screen copy now injects the client name in the banner, "already booked" title, and trust message
 - CI follow-up: GitHub `Frontend Guard` was failing because `client/dist` was out of sync with source; local `lint` and `build` passed, but `git diff --exit-code -- client/dist` failed
 - OCR follow-up: destination validation must depend on exact matches against whitelisted destination accounts after stripping separators
@@ -27,6 +27,9 @@ Read this first, then read `CLAUDE.md` and `LESSONS-LEARNED.md` if the task touc
 - Voice shortcut actions: now also supports reminder toggles, manual reminder sends for today/tomorrow, and day-level availability changes split by morning/tarde while respecting the midday pause
 - Voice web app: new private route `/voice` now provides a dedicated mobile-first voice console with real audio recording, text fallback, spoken replies, and recent command history
 - Voice natural-language booking: create-appointment parsing is now more tolerant of phrases like `nueva cita para Fidalgo el martes a las 8`, and ambiguous client names should trigger human clarification prompts instead of rigid format errors
+- Voice integration guardrail: if Google Calendar returns `invalid_grant`, voice booking now replies with a human message about reconnecting Google instead of looking like an LLM/intelligence failure
+- Voice safety guardrail: availability commands now require an explicit change directive, so queries like `horas libres para el lunes` should no longer mutate or fake-update availability
+- Google OAuth follow-up: temporary token-generation script should be removed after successful setup; root package must stay CommonJS and should not keep `open` or `"type": "module"` just for one-off token generation
 
 ## Current State
 
@@ -45,6 +48,8 @@ Read this first, then read `CLAUDE.md` and `LESSONS-LEARNED.md` if the task touc
   reminder on/off, reminder send today/tomorrow, and availability updates like `jueves de 8 a 12 en la mañana, en la tarde nada`
 - The new primary UX layer for admin voice is now the private web app at `/voice`, authenticated with the normal admin JWT instead of exposing `VOICE_ADMIN_TOKEN` to the browser
 - Voice booking parsing now resolves relative dates like `mañana` and weekdays like `martes` directly before falling back to the LLM
+- Google integrations are healthy again with the new `agenda40` Google Cloud project:
+  Calendar, Sheets, and People all authenticate from the backend using the same refresh token and current Hostinger env vars
 
 ## Files Changed In Latest Work
 
@@ -100,6 +105,8 @@ Read this first, then read `CLAUDE.md` and `LESSONS-LEARNED.md` if the task touc
   still isolated from public/client flows, now also allows operational admin actions over reminders and weekly availability without adding any client-facing UI weight
 - Voice web app scope:
   private route only, audio-first, mobile-friendly, elegant minimal UI, text responses always visible, browser speech output optional, and recent command history loaded from `voice_commands_log`
+- Google OAuth cleanup scope:
+  remove `generate-token.js` after token generation, remove `open` from dependencies, keep backend runtime in CommonJS, and document the new `agenda40` setup in both `HANDOFF.md` and `CLAUDE.md`
 
 ## Known Follow-Ups
 

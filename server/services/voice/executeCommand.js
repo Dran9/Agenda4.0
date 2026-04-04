@@ -732,10 +732,36 @@ async function buildCreateAppointmentReply(tenantId, clientName, dateKey, timeHh
 
   const client = matches[0];
   const dateTime = buildDateTimeKey(dateKey, timeHhmm);
-  const result = await createBooking(client, dateTime, tenantId, {
-    user_agent: 'voice-shortcut',
-    device_type: 'shortcut',
-  });
+  let result;
+  try {
+    result = await createBooking(client, dateTime, tenantId, {
+      user_agent: 'voice-shortcut',
+      device_type: 'shortcut',
+    });
+  } catch (err) {
+    const message = String(err?.message || '');
+    if (message.includes('invalid_grant')) {
+      return {
+        status: 'clarification',
+        replyText: 'No pude crear la cita porque Google Calendar perdió autorización. Hay que reconectar la cuenta de Google primero.',
+        data: {
+          client,
+          date_time: dateTime,
+          integration_error: 'google_calendar_invalid_grant',
+        },
+      };
+    }
+
+    return {
+      status: 'clarification',
+      replyText: `No pude crear la cita por un error externo: ${message || 'error desconocido'}.`,
+      data: {
+        client,
+        date_time: dateTime,
+        integration_error: message || 'unknown',
+      },
+    };
+  }
 
   if (result?.error) {
     return {
@@ -762,6 +788,23 @@ async function buildUpdateAvailabilityReply(tenantId, entities) {
       status: 'clarification',
       replyText: 'Dime qué día quieres cambiar. Ejemplo: jueves.',
       data: {},
+    };
+  }
+
+  const hasAvailabilityDirective = [
+    entities.morning_mode,
+    entities.afternoon_mode,
+    entities.morning_start,
+    entities.morning_end,
+    entities.afternoon_start,
+    entities.afternoon_end,
+  ].some((value) => value != null && value !== '');
+
+  if (!hasAvailabilityDirective) {
+    return {
+      status: 'clarification',
+      replyText: 'Entendí el día, pero no un cambio concreto de disponibilidad. Dime algo como "jueves de 8 a 12" o "jueves en la tarde nada".',
+      data: { weekday_name: weekdayName },
     };
   }
 

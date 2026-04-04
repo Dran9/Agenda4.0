@@ -183,6 +183,23 @@ Recordatorio (18:40 diario):
 ## Variables de entorno
 Ver `.env.example` para la lista completa. Se configuran en hPanel de Hostinger.
 
+## Estado Google OAuth (2026-04-04)
+- Proyecto Google Cloud operativo nuevo: `agenda40`
+- Cliente OAuth operativo: `cliente-agenda40`
+- APIs activas: Google Calendar, Google Sheets, Google People
+- La app OAuth está en modo `Producción`, no en `Prueba`
+- El backend sigue usando el cliente reutilizable actual en `server/services/calendar.js`
+- `server/services/sheets.js` y `server/services/contacts.js` reutilizan ese mismo OAuth client
+- No se creó un segundo módulo `src/lib/googleAuth.js` porque el repo ya tenía esa función cubierta
+- `generate-token.js` fue solo un script de un uso para obtener el refresh token y no debe quedarse como herramienta viva del repo
+- El repo debe permanecer en CommonJS para backend; no dejar `"type": "module"` en el `package.json` raíz
+- Si vuelve a aparecer `invalid_grant`, revisar primero:
+  - `GOOGLE_CLIENT_ID`
+  - `GOOGLE_CLIENT_SECRET`
+  - `GOOGLE_REFRESH_TOKEN`
+  - estado `Producción` del OAuth consent screen
+  - que Hostinger esté usando las credenciales nuevas
+
 ## Regla de documentación operativa
 - Al cerrar una tarea importante, actualizar SIEMPRE ambos archivos:
   - `docs/HANDOFF.md`
@@ -264,6 +281,8 @@ Ver `.env.example` para la lista completa. Se configuran en hPanel de Hostinger.
 - Si el nombre del cliente es ambiguo, la respuesta debe preguntar de forma humana:
   `¿Te refieres a Cecilia X o Cecilia Y?`
 - Antes de pedir “fecha exacta”, el parser debe intentar resolver fechas relativas y días de semana por sí mismo
+- Si falla la creación de cita por `invalid_grant`, la respuesta debe culpar claramente a Google Calendar/autorización, no al comando del usuario ni al LLM
+- Las consultas sobre disponibilidad no deben ejecutar cambios salvo que haya una instrucción explícita de modificación
 
 ### Reglas de trabajo vigentes
 - Nunca hacer push sin que el usuario lo pida explícitamente en ese turno

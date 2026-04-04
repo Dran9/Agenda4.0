@@ -33,6 +33,7 @@ Ya existe un backend operativo para voz con:
 
 - transcripción STT vía Groq
 - planner híbrido con heurísticas, contexto reciente y grounding por tools
+- TTS backend vía Cartesia con fallback a `speechSynthesis`
 - ejecución contra la base
 - logging completo
 
@@ -51,6 +52,7 @@ Google Calendar, Google Sheets y Google Contacts están nuevamente sanos con el 
 
 - Rutas de voz: [server/routes/voice.js](/Users/dran/Documents/Codex%20openai/agenda4.0/server/routes/voice.js)
 - STT y chat Groq: [server/services/voice/groq.js](/Users/dran/Documents/Codex%20openai/agenda4.0/server/services/voice/groq.js)
+- TTS Cartesia: [server/services/voice/cartesia.js](/Users/dran/Documents/Codex%20openai/agenda4.0/server/services/voice/cartesia.js)
 - Parser de lenguaje natural: [server/services/voice/parseCommand.js](/Users/dran/Documents/Codex%20openai/agenda4.0/server/services/voice/parseCommand.js)
 - Contexto conversacional corto: [server/services/voice/context.js](/Users/dran/Documents/Codex%20openai/agenda4.0/server/services/voice/context.js)
 - Planner con tools de grounding: [server/services/voice/planner.js](/Users/dran/Documents/Codex%20openai/agenda4.0/server/services/voice/planner.js)
@@ -64,6 +66,8 @@ Google Calendar, Google Sheets y Google Contacts están nuevamente sanos con el 
   pensado para Shortcut o clientes externos autenticados por token secreto
 - `POST /api/voice/admin-command`
   usado por la web app privada `/voice`, autenticada con JWT admin normal
+- `POST /api/voice/tts`
+  genera audio privado desde backend usando Cartesia
 - `GET /api/voice/history`
   historial reciente de comandos
 
@@ -177,6 +181,13 @@ La respuesta hablada todavía no tiene calidad suficiente para ser “la experie
 - `VOICE_ADMIN_TOKEN`
 - `VOICE_ADMIN_TENANT_ID`
 
+### Voice / Cartesia
+
+- `CARTESIA_API_KEY`
+- `CARTESIA_VERSION`
+- `CARTESIA_MODEL_ID`
+- `CARTESIA_VOICE_ID`
+
 ### Google
 
 - `GOOGLE_CLIENT_ID`
@@ -222,7 +233,7 @@ Mejorar la experiencia de voz:
 
 - mantener respuesta en texto siempre
 - dejar la voz del navegador como fallback, no como experiencia ideal
-- evaluar un TTS mejor o directamente desactivar voz por defecto hasta tener una buena
+- Cartesia ya puede cubrir la salida hablada inicial; lo siguiente es afinar voz, latencia percibida y manejo de interrupciones
 
 ### Priority 3
 

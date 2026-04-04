@@ -59,6 +59,9 @@ export default function VoiceAssistant() {
   const chunksRef = useRef([]);
   const pressTriggeredRef = useRef(false);
   const selectedVoiceRef = useRef(null);
+  const audioRef = useRef(null);
+  const audioUrlRef = useRef(null);
+  const speakRequestRef = useRef(0);
 
   useEffect(() => {
     const token = localStorage.getItem('auth_token');
@@ -89,6 +92,7 @@ export default function VoiceAssistant() {
     loadHistory();
     return () => {
       stopTracks();
+      stopSpokenAudio();
       if ('speechSynthesis' in window) {
         window.speechSynthesis.cancel();
       }
@@ -124,8 +128,80 @@ export default function VoiceAssistant() {
     }
   }
 
-  function speak(text) {
-    if (!voiceEnabled || !text || !('speechSynthesis' in window)) return;
+  function stopSpokenAudio() {
+    if (audioRef.current) {
+      audioRef.current.pause();
+      audioRef.current = null;
+    }
+    if (audioUrlRef.current) {
+      URL.revokeObjectURL(audioUrlRef.current);
+      audioUrlRef.current = null;
+    }
+    if ('speechSynthesis' in window) {
+      window.speechSynthesis.cancel();
+    }
+  }
+
+  async function speak(text) {
+    if (!voiceEnabled || !text) return;
+    const requestId = Date.now();
+    speakRequestRef.current = requestId;
+    stopSpokenAudio();
+
+    try {
+      const token = localStorage.getItem('auth_token');
+      const response = await fetch('/api/voice/tts', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({ text }),
+      });
+
+      if (!response.ok) {
+        let message = `HTTP ${response.status}`;
+        try {
+          const data = await response.json();
+          message = data.error || message;
+        } catch (_) {
+          // ignore
+        }
+        throw new Error(message);
+      }
+
+      const blob = await response.blob();
+      if (speakRequestRef.current !== requestId || !voiceEnabled) return;
+
+      const url = URL.createObjectURL(blob);
+      audioUrlRef.current = url;
+      const audio = new Audio(url);
+      audioRef.current = audio;
+      audio.onended = () => {
+        if (audioRef.current === audio) {
+          audioRef.current = null;
+        }
+        if (audioUrlRef.current === url) {
+          URL.revokeObjectURL(url);
+          audioUrlRef.current = null;
+        }
+      };
+      audio.onerror = () => {
+        if (audioRef.current === audio) {
+          audioRef.current = null;
+        }
+        if (audioUrlRef.current === url) {
+          URL.revokeObjectURL(url);
+          audioUrlRef.current = null;
+        }
+      };
+      await audio.play();
+      return;
+    } catch (_) {
+      // Fallback below.
+    }
+
+    if (!('speechSynthesis' in window)) return;
     window.speechSynthesis.cancel();
     const utterance = new SpeechSynthesisUtterance(text);
     utterance.lang = selectedVoiceRef.current?.lang || 'es-ES';
@@ -137,6 +213,12 @@ export default function VoiceAssistant() {
     window.speechSynthesis.speak(utterance);
   }
 
+  useEffect(() => {
+    if (!voiceEnabled) {
+      stopSpokenAudio();
+    }
+  }, [voiceEnabled]);
+
   async function sendTextCommand(text) {
     const trimmed = String(text || '').trim();
     if (!trimmed) return;
@@ -147,7 +229,7 @@ export default function VoiceAssistant() {
       const response = await api.post('/voice/admin-command', { text: trimmed });
       setResult(response);
       setDraft('');
-      speak(response.spoken_text || response.reply_text);
+      void speak(response.spoken_text || response.reply_text);
       await loadHistory();
     } catch (err) {
       setError(err.message);
@@ -191,7 +273,7 @@ export default function VoiceAssistant() {
           setLoading(true);
           const response = await api.upload('/voice/admin-command', formData);
           setResult(response);
-          speak(response.spoken_text || response.reply_text);
+          void speak(response.spoken_text || response.reply_text);
           await loadHistory();
         } catch (err) {
           setError(err.message);

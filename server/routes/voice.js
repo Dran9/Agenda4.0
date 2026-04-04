@@ -5,6 +5,7 @@ const { pool } = require('../db');
 const { authMiddleware } = require('../middleware/auth');
 const { sendServerError } = require('../utils/httpErrors');
 const { transcribeAudio } = require('../services/voice/groq');
+const { synthesizeSpeech } = require('../services/voice/cartesia');
 const { parseVoiceCommand } = require('../services/voice/parseCommand');
 const { executeVoiceCommand } = require('../services/voice/executeCommand');
 const { getRecentVoiceContext } = require('../services/voice/context');
@@ -204,6 +205,28 @@ router.post('/shortcut', assertShortcutAuth, upload.single('audio'), async (req,
 
 router.post('/admin-command', authMiddleware, upload.single('audio'), async (req, res) => {
   return processVoiceRequest(req, res, { source: 'voice_web' });
+});
+
+router.post('/tts', authMiddleware, async (req, res) => {
+  try {
+    const text = typeof req.body?.text === 'string' ? req.body.text.trim() : '';
+    if (!text) {
+      return res.status(400).json({ error: 'Texto requerido para TTS' });
+    }
+
+    const result = await synthesizeSpeech(text, {
+      language: 'es',
+    });
+
+    res.set('Content-Type', result.mimeType);
+    res.set('Cache-Control', 'no-store');
+    res.send(result.buffer);
+  } catch (err) {
+    sendServerError(res, req, err, {
+      message: 'No se pudo generar el audio TTS',
+      logLabel: 'voice tts',
+    });
+  }
 });
 
 router.get('/history', authMiddleware, async (req, res) => {

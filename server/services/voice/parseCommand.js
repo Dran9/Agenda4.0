@@ -1,4 +1,6 @@
 const { completeJson } = require('./groq');
+const { buildRecentVoiceSummary, resolveExplicitFollowUp } = require('./context');
+const { planVoiceCommand, sanitizeEntities } = require('./planner');
 
 function getTodayContext() {
   const now = new Date();
@@ -423,7 +425,9 @@ function detectDirectIntent(text) {
   return null;
 }
 
-async function parseVoiceCommand(inputText) {
+async function parseVoiceCommand(inputText, options = {}) {
+  const tenantId = options.tenantId || null;
+  const recentContext = Array.isArray(options.recentContext) ? options.recentContext : [];
   const text = String(inputText || '').trim();
   if (!text) {
     return {
@@ -434,37 +438,42 @@ async function parseVoiceCommand(inputText) {
     };
   }
 
+  const explicitFollowUp = resolveExplicitFollowUp({ text, recentTurns: recentContext });
+  if (explicitFollowUp) {
+    return {
+      intent: explicitFollowUp.intent,
+      confidence: Number(explicitFollowUp.confidence || 0),
+      reply_hint: explicitFollowUp.reply_hint || '',
+      entities: sanitizeEntities(explicitFollowUp.entities),
+      raw: explicitFollowUp.raw || explicitFollowUp,
+    };
+  }
+
   const direct = detectDirectIntent(text);
   if (direct) {
     return {
       intent: direct.intent,
       confidence: 0.99,
       reply_hint: '',
-      entities: {
-        client_name: direct.entities?.client_name ? String(direct.entities.client_name).trim() : null,
-        date_key: direct.entities?.date_key || null,
-        time_hhmm: direct.entities?.time_hhmm || null,
-        goal_amount: direct.entities?.goal_amount != null && direct.entities.goal_amount !== ''
-          ? Number(direct.entities.goal_amount)
-          : null,
-        month: direct.entities?.month != null && direct.entities.month !== ''
-          ? Number(direct.entities.month)
-          : null,
-        year: direct.entities?.year != null && direct.entities.year !== ''
-          ? Number(direct.entities.year)
-          : null,
-        reminder_enabled: direct.entities?.reminder_enabled ?? null,
-        reminder_date: direct.entities?.reminder_date || null,
-        weekday_name: direct.entities?.weekday_name || null,
-        morning_mode: direct.entities?.morning_mode || null,
-        morning_start: direct.entities?.morning_start || null,
-        morning_end: direct.entities?.morning_end || null,
-        afternoon_mode: direct.entities?.afternoon_mode || null,
-        afternoon_start: direct.entities?.afternoon_start || null,
-        afternoon_end: direct.entities?.afternoon_end || null,
-      },
+      entities: sanitizeEntities(direct.entities),
       raw: direct,
     };
+  }
+
+  const recentSummary = buildRecentVoiceSummary(recentContext);
+  if (tenantId) {
+    try {
+      const planned = await planVoiceCommand({ tenantId, text, recentSummary });
+      return {
+        intent: planned.intent,
+        confidence: Number(planned.confidence || 0),
+        reply_hint: planned.reply_hint || '',
+        entities: sanitizeEntities(planned.entities),
+        raw: planned.raw || planned,
+      };
+    } catch (_) {
+      // Fall through to the simpler parser prompt below.
+    }
   }
 
   const today = getTodayContext();
@@ -475,16 +484,18 @@ async function parseVoiceCommand(inputText) {
         `Eres un parser de comandos administrativos para una agenda terapéutica. ` +
         `Debes devolver solo JSON válido, sin markdown ni explicación. ` +
         `Fecha actual en Bolivia: ${today}. ` +
+        `Contexto reciente: ${recentSummary}. ` +
         `Intents permitidos: agenda_query, pending_payments, pending_amount, sessions_to_goal, client_lookup, client_upcoming_appointments, reminder_check, confirmation_check, rescheduled_list, new_clients_count, unconfirmed_tomorrow, confirmed_today, appointments_this_week, create_appointment, reminder_toggle, send_reminders, update_availability, unknown. ` +
-        `Entities posibles: client_name (string o null), date_key (YYYY-MM-DD o null), time_hhmm (HH:MM o null), goal_amount (number o null), month (1-12 o null), year (YYYY o null), reminder_enabled (boolean o null), reminder_date (today|tomorrow|null), weekday_name (lunes|martes|miercoles|jueves|viernes|sabado|domingo|null), morning_mode (keep|off|range|null), morning_start (HH:MM|null), morning_end (HH:MM|null), afternoon_mode (keep|off|range|null), afternoon_start (HH:MM|null), afternoon_end (HH:MM|null). ` +
+        `Entities posibles: client_id (number o null), client_name (string o null), date_key (YYYY-MM-DD o null), time_hhmm (HH:MM o null), goal_amount (number o null), month (1-12 o null), year (YYYY o null), reminder_enabled (boolean o null), reminder_date (today|tomorrow|null), weekday_name (lunes|martes|miercoles|jueves|viernes|sabado|domingo|null), morning_mode (keep|off|range|null), morning_start (HH:MM|null), morning_end (HH:MM|null), afternoon_mode (keep|off|range|null), afternoon_start (HH:MM|null), afternoon_end (HH:MM|null). ` +
         `Convierte fechas relativas como hoy, mañana, pasado mañana, este viernes, el viernes a YYYY-MM-DD. ` +
         `Convierte horas como 8, 8 de la mañana, 8 am, 8 y media, 14:30 a HH:MM en formato 24 horas. ` +
         `Si el usuario pregunta por marzo o abril, extrae month y year cuando sea posible. ` +
         `Para disponibilidad, interpreta frases como "jueves solo de 8 a 12 en la mañana, en la tarde nada" usando weekday_name y morning/afternoon modes. ` +
         `Si el usuario dice "en la tarde todo igual", usa afternoon_mode=keep. ` +
+        `Si el contexto reciente muestra una aclaración pendiente, puedes continuarla y completar entidades faltantes. ` +
         `Si el usuario pide una acción no permitida o destructiva, usa unknown. ` +
         `Responde con este shape exacto: ` +
-        `{"intent":"...","confidence":0.0,"entities":{"client_name":null,"date_key":null,"time_hhmm":null,"goal_amount":null,"month":null,"year":null,"reminder_enabled":null,"reminder_date":null,"weekday_name":null,"morning_mode":null,"morning_start":null,"morning_end":null,"afternoon_mode":null,"afternoon_start":null,"afternoon_end":null},"reply_hint":"..."}`,
+        `{"intent":"...","confidence":0.0,"entities":{"client_id":null,"client_name":null,"date_key":null,"time_hhmm":null,"goal_amount":null,"month":null,"year":null,"reminder_enabled":null,"reminder_date":null,"weekday_name":null,"morning_mode":null,"morning_start":null,"morning_end":null,"afternoon_mode":null,"afternoon_start":null,"afternoon_end":null},"reply_hint":"..."}`,
     },
     {
       role: 'user',
@@ -499,29 +510,7 @@ async function parseVoiceCommand(inputText) {
     intent: typeof parsed.intent === 'string' ? parsed.intent : 'unknown',
     confidence: Number(parsed.confidence || 0),
     reply_hint: typeof parsed.reply_hint === 'string' ? parsed.reply_hint : '',
-    entities: {
-      client_name: entities.client_name ? String(entities.client_name).trim() : null,
-      date_key: entities.date_key ? String(entities.date_key).trim() : null,
-      time_hhmm: entities.time_hhmm ? String(entities.time_hhmm).trim() : null,
-      goal_amount: entities.goal_amount != null && entities.goal_amount !== ''
-        ? Number(entities.goal_amount)
-        : null,
-      month: entities.month != null && entities.month !== ''
-        ? Number(entities.month)
-        : null,
-      year: entities.year != null && entities.year !== ''
-        ? Number(entities.year)
-        : null,
-      reminder_enabled: entities.reminder_enabled ?? null,
-      reminder_date: entities.reminder_date ? String(entities.reminder_date).trim() : null,
-      weekday_name: entities.weekday_name ? String(entities.weekday_name).trim().toLowerCase() : null,
-      morning_mode: entities.morning_mode ? String(entities.morning_mode).trim().toLowerCase() : null,
-      morning_start: entities.morning_start ? String(entities.morning_start).trim() : null,
-      morning_end: entities.morning_end ? String(entities.morning_end).trim() : null,
-      afternoon_mode: entities.afternoon_mode ? String(entities.afternoon_mode).trim().toLowerCase() : null,
-      afternoon_start: entities.afternoon_start ? String(entities.afternoon_start).trim() : null,
-      afternoon_end: entities.afternoon_end ? String(entities.afternoon_end).trim() : null,
-    },
+    entities: sanitizeEntities(entities),
     raw: parsed,
   };
 }

@@ -314,6 +314,7 @@ async function initializeDatabase() {
         parsed_intent VARCHAR(100),
         parsed_entities JSON,
         response_text TEXT,
+        result_data JSON,
         status ENUM('resolved','clarification','error') NOT NULL DEFAULT 'resolved',
         error_message TEXT,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -356,6 +357,7 @@ async function initializeDatabase() {
     // payments: add Mismatch status for OCR validation failures
     await conn.query(`ALTER TABLE payments MODIFY COLUMN status ENUM('Pendiente','Confirmado','Rechazado','Mismatch') DEFAULT 'Pendiente'`).catch(() => {});
     await conn.query(`ALTER TABLE voice_commands_log MODIFY COLUMN source ENUM('shortcut','voice_web') NOT NULL DEFAULT 'shortcut'`).catch(() => {});
+    await conn.query(`ALTER TABLE voice_commands_log ADD COLUMN IF NOT EXISTS result_data JSON DEFAULT NULL`).catch(() => {});
     // Migrate old source values to new 3 options
     await conn.query(`UPDATE clients SET source = 'Redes sociales' WHERE source IN ('Instagram','Google','Sitio web','WhatsApp')`).catch(() => {});
     await conn.query(`UPDATE clients SET source = 'Referencia de amigos' WHERE source = 'Referido'`).catch(() => {});

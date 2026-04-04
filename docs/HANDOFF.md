@@ -50,6 +50,7 @@ If the task is about the private voice app, also read `docs/VOICE-APP-REPORT.md`
   reminder on/off, reminder send today/tomorrow, and availability updates like `jueves de 8 a 12 en la mañana, en la tarde nada`
 - The new primary UX layer for admin voice is now the private web app at `/voice`, authenticated with the normal admin JWT instead of exposing `VOICE_ADMIN_TOKEN` to the browser
 - Voice booking parsing now resolves relative dates like `mañana` and weekdays like `martes` directly before falling back to the LLM
+- Voice planner follow-up: `/voice` now keeps short recent context, stores `result_data` in `voice_commands_log`, resolves clarifications like `el otro` / `el de Santa Cruz`, and can use read-only grounding tools before deciding the final command
 - Google integrations are healthy again with the new `agenda40` Google Cloud project:
   Calendar, Sheets, and People all authenticate from the backend using the same refresh token and current Hostinger env vars
 - There is now a dedicated starter report for the voice product line in `docs/VOICE-APP-REPORT.md`
@@ -65,9 +66,14 @@ If the task is about the private voice app, also read `docs/VOICE-APP-REPORT.md`
 - `server/services/publicBookingToken.js`
 - `server/routes/booking.js`
 - `server/routes/webhook.js`
+- `server/routes/voice.js`
 - `server/routes/payments.js`
 - `server/services/reminder.js`
 - `server/services/messageContext.js`
+- `server/services/voice/context.js`
+- `server/services/voice/planner.js`
+- `server/services/voice/parseCommand.js`
+- `server/services/voice/executeCommand.js`
 - `client/src/pages/Admin/Clients.jsx`
 
 ## Important Decisions
@@ -109,6 +115,8 @@ If the task is about the private voice app, also read `docs/VOICE-APP-REPORT.md`
   still isolated from public/client flows, now also allows operational admin actions over reminders and weekly availability without adding any client-facing UI weight
 - Voice web app scope:
   private route only, audio-first, mobile-friendly, elegant minimal UI, text responses always visible, browser speech output optional, and recent command history loaded from `voice_commands_log`
+- Voice planner scope:
+  heuristics first, then recent-context follow-up resolution, then tool-grounded planning, then execution; the LLM should no longer behave like a blind classifier with no operational memory
 - Google OAuth cleanup scope:
   remove `generate-token.js` after token generation, remove `open` from dependencies, keep backend runtime in CommonJS, and document the new `agenda40` setup in both `HANDOFF.md` and `CLAUDE.md`
 - WhatsApp confirmation QR follow-up was syntax-checked after making the Bolivia fallback less strict for legacy/manual appointments

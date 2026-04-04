@@ -171,6 +171,82 @@ async function findClientsByName(tenantId, clientName) {
   return rows;
 }
 
+async function findClientById(tenantId, clientId) {
+  if (!clientId) return null;
+  const [rows] = await pool.query(
+    `SELECT c.id, c.first_name, c.last_name, c.phone, c.city, c.fee,
+            (
+              SELECT MIN(a.date_time)
+              FROM appointments a
+              WHERE a.client_id = c.id
+                AND a.tenant_id = c.tenant_id
+                AND a.status IN ('Agendada','Confirmada','Reagendada')
+                AND a.date_time > NOW()
+            ) AS next_appointment
+     FROM clients c
+     WHERE c.tenant_id = ?
+       AND c.id = ?
+       AND c.deleted_at IS NULL
+     LIMIT 1`,
+    [tenantId, clientId]
+  );
+  return rows[0] || null;
+}
+
+async function resolveClientReference(tenantId, { clientId = null, clientName = null } = {}) {
+  if (clientId) {
+    const client = await findClientById(tenantId, clientId);
+    if (client) return { kind: 'single', client, matches: [client] };
+  }
+
+  if (!clientName) {
+    return { kind: 'missing', client: null, matches: [] };
+  }
+
+  const matches = await findClientsByName(tenantId, clientName);
+  if (!matches.length) return { kind: 'none', client: null, matches: [] };
+  if (matches.length === 1) return { kind: 'single', client: matches[0], matches };
+  return { kind: 'multiple', client: null, matches };
+}
+
+function buildPendingAction(intent, entities = {}) {
+  return {
+    intent,
+    entities: {
+      client_id: entities.client_id ?? null,
+      client_name: entities.client_name ?? null,
+      date_key: entities.date_key ?? null,
+      time_hhmm: entities.time_hhmm ?? null,
+      goal_amount: entities.goal_amount ?? null,
+      month: entities.month ?? null,
+      year: entities.year ?? null,
+      reminder_enabled: entities.reminder_enabled ?? null,
+      reminder_date: entities.reminder_date ?? null,
+      weekday_name: entities.weekday_name ?? null,
+      morning_mode: entities.morning_mode ?? null,
+      morning_start: entities.morning_start ?? null,
+      morning_end: entities.morning_end ?? null,
+      afternoon_mode: entities.afternoon_mode ?? null,
+      afternoon_start: entities.afternoon_start ?? null,
+      afternoon_end: entities.afternoon_end ?? null,
+    },
+  };
+}
+
+function buildClientClarificationReply(clientName, matches, pendingAction) {
+  const lines = matches.map((client) => formatClientOption(client));
+  return {
+    status: 'clarification',
+    replyText: [`Encontré varias opciones para "${clientName}". ¿Te refieres a:`, ...shortList(lines)].join('\n'),
+    data: {
+      total: matches.length,
+      matches,
+      clarification_type: 'client_disambiguation',
+      pending_action: pendingAction,
+    },
+  };
+}
+
 async function buildAgendaReply(tenantId, dateKey) {
   const dayKey = dateKey || getTodayContext();
   const nextDayKey = addDays(dayKey, 1);
@@ -350,17 +426,28 @@ async function buildSessionsToGoalReply(tenantId, goalAmount) {
   };
 }
 
-async function buildClientLookupReply(tenantId, clientName) {
-  if (!clientName) {
+async function buildClientLookupReply(tenantId, clientName, clientId = null) {
+  if (!clientName && !clientId) {
     return {
       status: 'clarification',
       replyText: 'Dime el nombre del cliente.',
-      data: {},
+      data: {
+        pending_action: buildPendingAction('client_lookup', { client_name: clientName, client_id: clientId }),
+      },
     };
   }
 
-  const matches = await findClientsByName(tenantId, clientName);
-  if (!matches.length) {
+  const resolution = await resolveClientReference(tenantId, { clientId, clientName });
+  if (resolution.kind === 'missing') {
+    return {
+      status: 'clarification',
+      replyText: 'Dime el nombre del cliente.',
+      data: {
+        pending_action: buildPendingAction('client_lookup', { client_name: clientName, client_id: clientId }),
+      },
+    };
+  }
+  if (resolution.kind === 'none') {
     return {
       status: 'resolved',
       replyText: `No encontré clientes para "${clientName}".`,
@@ -368,8 +455,8 @@ async function buildClientLookupReply(tenantId, clientName) {
     };
   }
 
-  if (matches.length === 1) {
-    const client = matches[0];
+  if (resolution.kind === 'single') {
+    const client = resolution.client;
     return {
       status: 'resolved',
       replyText:
@@ -377,30 +464,39 @@ async function buildClientLookupReply(tenantId, clientName) {
         `${client.city || 'Sin ciudad'}. ` +
         `Arancel Bs ${client.fee}. ` +
         `${client.next_appointment ? `Próxima cita: ${formatDateTime(client.next_appointment)}.` : 'Sin próxima cita.'}`,
-      data: { total: 1, matches },
+      data: { total: 1, matches: [client], client },
     };
   }
 
-  const lines = matches.map((client) => formatClientOption(client));
-
-  return {
-    status: 'clarification',
-    replyText: [`Encontré varias opciones para "${clientName}". ¿Te refieres a:`, ...shortList(lines)].join('\n'),
-    data: { total: matches.length, matches },
-  };
+  return buildClientClarificationReply(
+    clientName,
+    resolution.matches,
+    buildPendingAction('client_lookup', { client_name: clientName, client_id: clientId })
+  );
 }
 
-async function buildClientUpcomingAppointmentsReply(tenantId, clientName) {
-  if (!clientName) {
+async function buildClientUpcomingAppointmentsReply(tenantId, clientName, clientId = null) {
+  if (!clientName && !clientId) {
     return {
       status: 'clarification',
       replyText: 'Dime el nombre del cliente.',
-      data: {},
+      data: {
+        pending_action: buildPendingAction('client_upcoming_appointments', { client_name: clientName, client_id: clientId }),
+      },
     };
   }
 
-  const matches = await findClientsByName(tenantId, clientName);
-  if (!matches.length) {
+  const resolution = await resolveClientReference(tenantId, { clientId, clientName });
+  if (resolution.kind === 'missing') {
+    return {
+      status: 'clarification',
+      replyText: 'Dime el nombre del cliente.',
+      data: {
+        pending_action: buildPendingAction('client_upcoming_appointments', { client_name: clientName, client_id: clientId }),
+      },
+    };
+  }
+  if (resolution.kind === 'none') {
     return {
       status: 'resolved',
       replyText: `No encontré clientes para "${clientName}".`,
@@ -408,16 +504,15 @@ async function buildClientUpcomingAppointmentsReply(tenantId, clientName) {
     };
   }
 
-  if (matches.length > 1) {
-    const lines = matches.map((client) => formatClientOption(client));
-    return {
-      status: 'clarification',
-      replyText: [`Encontré varias opciones para "${clientName}". ¿Te refieres a:`, ...shortList(lines)].join('\n'),
-      data: { total: matches.length, matches },
-    };
+  if (resolution.kind === 'multiple') {
+    return buildClientClarificationReply(
+      clientName,
+      resolution.matches,
+      buildPendingAction('client_upcoming_appointments', { client_name: clientName, client_id: clientId })
+    );
   }
 
-  const client = matches[0];
+  const client = resolution.client;
   const [appointments] = await pool.query(
     `SELECT id, date_time, status
      FROM appointments
@@ -446,17 +541,28 @@ async function buildClientUpcomingAppointmentsReply(tenantId, clientName) {
   };
 }
 
-async function buildReminderCheckReply(tenantId, clientName) {
-  if (!clientName) {
+async function buildReminderCheckReply(tenantId, clientName, clientId = null) {
+  if (!clientName && !clientId) {
     return {
       status: 'clarification',
       replyText: 'Dime el nombre del cliente.',
-      data: {},
+      data: {
+        pending_action: buildPendingAction('reminder_check', { client_name: clientName, client_id: clientId }),
+      },
     };
   }
 
-  const matches = await findClientsByName(tenantId, clientName);
-  if (!matches.length) {
+  const resolution = await resolveClientReference(tenantId, { clientId, clientName });
+  if (resolution.kind === 'missing') {
+    return {
+      status: 'clarification',
+      replyText: 'Dime el nombre del cliente.',
+      data: {
+        pending_action: buildPendingAction('reminder_check', { client_name: clientName, client_id: clientId }),
+      },
+    };
+  }
+  if (resolution.kind === 'none') {
     return {
       status: 'resolved',
       replyText: `No encontré clientes para "${clientName}".`,
@@ -464,16 +570,15 @@ async function buildReminderCheckReply(tenantId, clientName) {
     };
   }
 
-  if (matches.length > 1) {
-    const lines = matches.map((client) => formatClientOption(client));
-    return {
-      status: 'clarification',
-      replyText: [`Encontré varias opciones para "${clientName}". ¿Te refieres a:`, ...shortList(lines)].join('\n'),
-      data: { total: matches.length, matches },
-    };
+  if (resolution.kind === 'multiple') {
+    return buildClientClarificationReply(
+      clientName,
+      resolution.matches,
+      buildPendingAction('reminder_check', { client_name: clientName, client_id: clientId })
+    );
   }
 
-  const client = matches[0];
+  const client = resolution.client;
   const [[row]] = await pool.query(
     `SELECT wl.created_at, wl.appointment_id
      FROM webhooks_log wl
@@ -500,17 +605,28 @@ async function buildReminderCheckReply(tenantId, clientName) {
   };
 }
 
-async function buildConfirmationCheckReply(tenantId, clientName) {
-  if (!clientName) {
+async function buildConfirmationCheckReply(tenantId, clientName, clientId = null) {
+  if (!clientName && !clientId) {
     return {
       status: 'clarification',
       replyText: 'Dime el nombre del cliente.',
-      data: {},
+      data: {
+        pending_action: buildPendingAction('confirmation_check', { client_name: clientName, client_id: clientId }),
+      },
     };
   }
 
-  const matches = await findClientsByName(tenantId, clientName);
-  if (!matches.length) {
+  const resolution = await resolveClientReference(tenantId, { clientId, clientName });
+  if (resolution.kind === 'missing') {
+    return {
+      status: 'clarification',
+      replyText: 'Dime el nombre del cliente.',
+      data: {
+        pending_action: buildPendingAction('confirmation_check', { client_name: clientName, client_id: clientId }),
+      },
+    };
+  }
+  if (resolution.kind === 'none') {
     return {
       status: 'resolved',
       replyText: `No encontré clientes para "${clientName}".`,
@@ -518,16 +634,15 @@ async function buildConfirmationCheckReply(tenantId, clientName) {
     };
   }
 
-  if (matches.length > 1) {
-    const lines = matches.map((client) => formatClientOption(client));
-    return {
-      status: 'clarification',
-      replyText: [`Encontré varias opciones para "${clientName}". ¿Te refieres a:`, ...shortList(lines)].join('\n'),
-      data: { total: matches.length, matches },
-    };
+  if (resolution.kind === 'multiple') {
+    return buildClientClarificationReply(
+      clientName,
+      resolution.matches,
+      buildPendingAction('confirmation_check', { client_name: clientName, client_id: clientId })
+    );
   }
 
-  const client = matches[0];
+  const client = resolution.client;
   const [[appointment]] = await pool.query(
     `SELECT id, date_time, status, confirmed_at
      FROM appointments
@@ -695,12 +810,20 @@ async function buildAppointmentsThisWeekReply(tenantId) {
   };
 }
 
-async function buildCreateAppointmentReply(tenantId, clientName, dateKey, timeHhmm) {
-  if (!clientName) {
+async function buildCreateAppointmentReply(tenantId, clientName, dateKey, timeHhmm, clientId = null) {
+  if (!clientName && !clientId) {
     return {
       status: 'clarification',
       replyText: 'Dime el nombre del cliente.',
-      data: {},
+      data: {
+        clarification_type: 'missing_fields',
+        pending_action: buildPendingAction('create_appointment', {
+          client_name: clientName,
+          client_id: clientId,
+          date_key: dateKey,
+          time_hhmm: timeHhmm,
+        }),
+      },
     };
   }
 
@@ -708,12 +831,35 @@ async function buildCreateAppointmentReply(tenantId, clientName, dateKey, timeHh
     return {
       status: 'clarification',
       replyText: 'Dime fecha y hora. Ejemplo: crear cita para Cecilia de Ugarte el 8 de abril a las 08:00.',
-      data: {},
+      data: {
+        clarification_type: 'missing_fields',
+        pending_action: buildPendingAction('create_appointment', {
+          client_name: clientName,
+          client_id: clientId,
+          date_key: dateKey,
+          time_hhmm: timeHhmm,
+        }),
+      },
     };
   }
 
-  const matches = await findClientsByName(tenantId, clientName);
-  if (!matches.length) {
+  const resolution = await resolveClientReference(tenantId, { clientId, clientName });
+  if (resolution.kind === 'missing') {
+    return {
+      status: 'clarification',
+      replyText: 'Dime el nombre del cliente.',
+      data: {
+        clarification_type: 'missing_fields',
+        pending_action: buildPendingAction('create_appointment', {
+          client_name: clientName,
+          client_id: clientId,
+          date_key: dateKey,
+          time_hhmm: timeHhmm,
+        }),
+      },
+    };
+  }
+  if (resolution.kind === 'none') {
     return {
       status: 'resolved',
       replyText: `No encontré clientes para "${clientName}".`,
@@ -721,16 +867,20 @@ async function buildCreateAppointmentReply(tenantId, clientName, dateKey, timeHh
     };
   }
 
-  if (matches.length > 1) {
-    const lines = matches.map((client) => formatClientOption(client));
-    return {
-      status: 'clarification',
-      replyText: [`Hay más de una coincidencia para "${clientName}". ¿Te refieres a:`, ...shortList(lines)].join('\n'),
-      data: { total: matches.length, matches },
-    };
+  if (resolution.kind === 'multiple') {
+    return buildClientClarificationReply(
+      clientName,
+      resolution.matches,
+      buildPendingAction('create_appointment', {
+        client_name: clientName,
+        client_id: clientId,
+        date_key: dateKey,
+        time_hhmm: timeHhmm,
+      })
+    );
   }
 
-  const client = matches[0];
+  const client = resolution.client;
   const dateTime = buildDateTimeKey(dateKey, timeHhmm);
   let result;
   try {
@@ -908,16 +1058,16 @@ async function executeVoiceCommand({ tenantId, parsedCommand }) {
     return buildSessionsToGoalReply(tenantId, entities.goal_amount);
   }
   if (intent === 'client_lookup') {
-    return buildClientLookupReply(tenantId, entities.client_name);
+    return buildClientLookupReply(tenantId, entities.client_name, entities.client_id);
   }
   if (intent === 'client_upcoming_appointments') {
-    return buildClientUpcomingAppointmentsReply(tenantId, entities.client_name);
+    return buildClientUpcomingAppointmentsReply(tenantId, entities.client_name, entities.client_id);
   }
   if (intent === 'reminder_check') {
-    return buildReminderCheckReply(tenantId, entities.client_name);
+    return buildReminderCheckReply(tenantId, entities.client_name, entities.client_id);
   }
   if (intent === 'confirmation_check') {
-    return buildConfirmationCheckReply(tenantId, entities.client_name);
+    return buildConfirmationCheckReply(tenantId, entities.client_name, entities.client_id);
   }
   if (intent === 'rescheduled_list') {
     return buildRescheduledListReply(tenantId);
@@ -935,7 +1085,7 @@ async function executeVoiceCommand({ tenantId, parsedCommand }) {
     return buildAppointmentsThisWeekReply(tenantId);
   }
   if (intent === 'create_appointment') {
-    return buildCreateAppointmentReply(tenantId, entities.client_name, entities.date_key, entities.time_hhmm);
+    return buildCreateAppointmentReply(tenantId, entities.client_name, entities.date_key, entities.time_hhmm, entities.client_id);
   }
   if (intent === 'update_availability') {
     return buildUpdateAvailabilityReply(tenantId, entities);

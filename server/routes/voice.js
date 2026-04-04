@@ -7,6 +7,7 @@ const { sendServerError } = require('../utils/httpErrors');
 const { transcribeAudio } = require('../services/voice/groq');
 const { parseVoiceCommand } = require('../services/voice/parseCommand');
 const { executeVoiceCommand } = require('../services/voice/executeCommand');
+const { getRecentVoiceContext } = require('../services/voice/context');
 
 const router = Router();
 const upload = multer({
@@ -58,13 +59,14 @@ async function insertVoiceLog({
   parsedIntent,
   parsedEntities,
   responseText,
+  resultData,
   status,
   errorMessage,
 }) {
   await pool.query(
     `INSERT INTO voice_commands_log
-       (tenant_id, source, input_type, raw_text, transcript, parsed_intent, parsed_entities, response_text, status, error_message)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       (tenant_id, source, input_type, raw_text, transcript, parsed_intent, parsed_entities, response_text, result_data, status, error_message)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       tenantId,
       source,
@@ -74,6 +76,7 @@ async function insertVoiceLog({
       parsedIntent || null,
       parsedEntities ? JSON.stringify(parsedEntities) : null,
       responseText || null,
+      resultData ? JSON.stringify(resultData) : null,
       status || 'resolved',
       errorMessage || null,
     ]
@@ -115,7 +118,17 @@ async function processVoiceRequest(req, res, { source = 'shortcut' } = {}) {
       return res.status(400).json({ error: 'No llegó audio ni texto' });
     }
 
-    parsedCommand = await parseVoiceCommand(commandText);
+    const recentContext = await getRecentVoiceContext({
+      tenantId: req.tenantId,
+      source,
+      limit: 6,
+    });
+
+    parsedCommand = await parseVoiceCommand(commandText, {
+      tenantId: req.tenantId,
+      source,
+      recentContext,
+    });
     const execution = await executeVoiceCommand({
       tenantId: req.tenantId,
       parsedCommand,
@@ -134,6 +147,7 @@ async function processVoiceRequest(req, res, { source = 'shortcut' } = {}) {
       parsedIntent: parsedCommand.intent,
       parsedEntities: parsedCommand.entities,
       responseText: execution.replyText,
+      resultData: execution.data,
       status: execution.status,
       errorMessage: null,
     });
@@ -169,6 +183,7 @@ async function processVoiceRequest(req, res, { source = 'shortcut' } = {}) {
         parsedIntent: parsedCommand?.intent || 'unknown',
         parsedEntities: parsedCommand?.entities || {},
         responseText: null,
+        resultData: null,
         status: 'error',
         errorMessage: err.message,
       });
@@ -194,7 +209,7 @@ router.post('/admin-command', authMiddleware, upload.single('audio'), async (req
 router.get('/history', authMiddleware, async (req, res) => {
   try {
     const [rows] = await pool.query(
-      `SELECT id, source, input_type, raw_text, transcript, parsed_intent, parsed_entities, response_text, status, error_message, created_at
+      `SELECT id, source, input_type, raw_text, transcript, parsed_intent, parsed_entities, response_text, result_data, status, error_message, created_at
        FROM voice_commands_log
        WHERE tenant_id = ?
        ORDER BY created_at DESC, id DESC
@@ -213,6 +228,15 @@ router.get('/history', authMiddleware, async (req, res) => {
               }
             })()
           : row.parsed_entities,
+        result_data: typeof row.result_data === 'string'
+          ? (() => {
+              try {
+                return JSON.parse(row.result_data);
+              } catch (_) {
+                return null;
+              }
+            })()
+          : row.result_data,
       })),
     });
   } catch (err) {

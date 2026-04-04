@@ -251,6 +251,9 @@ Ver `.env.example` para la lista completa. Se configuran en hPanel de Hostinger.
 - `/voice` está pensada como la UX principal de voz: audio-first, texto fallback, respuesta textual siempre visible, respuesta hablada opcional e historial reciente
 - El endpoint web privado para esa subapp es `POST /api/voice/admin-command`
 - El historial para esa subapp sale por `GET /api/voice/history`
+- `voice_commands_log` ahora también guarda `result_data`, para persistir aclaraciones, opciones de cliente y acciones pendientes entre turnos
+- La arquitectura de comprensión ya no debe ser solo `intent -> switch`:
+  heurísticas directas primero, luego resolución de follow-up con contexto reciente, luego planner con tools de solo lectura, y recién después ejecución
 - Consultas ya soportadas:
   - agenda hoy/mañana/fecha
   - pagos pendientes
@@ -282,6 +285,7 @@ Ver `.env.example` para la lista completa. Se configuran en hPanel de Hostinger.
   - `crea una cita para Cecilia mañana a las 18`
 - Si el nombre del cliente es ambiguo, la respuesta debe preguntar de forma humana:
   `¿Te refieres a Cecilia X o Cecilia Y?`
+- Follow-ups como `el otro`, `el de Santa Cruz`, `sí`, `a las 8` deben intentar reutilizar la aclaración o acción pendiente inmediatamente anterior antes de caer en una nueva pregunta desde cero
 - Antes de pedir “fecha exacta”, el parser debe intentar resolver fechas relativas y días de semana por sí mismo
 - Si falla la creación de cita por `invalid_grant`, la respuesta debe culpar claramente a Google Calendar/autorización, no al comando del usuario ni al LLM
 - Las consultas sobre disponibilidad no deben ejecutar cambios salvo que haya una instrucción explícita de modificación

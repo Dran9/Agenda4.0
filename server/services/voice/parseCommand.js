@@ -62,6 +62,134 @@ function findWeekdayName(text) {
   return weekdays.find((name) => normalized.includes(name)) || null;
 }
 
+function toDateKey(date) {
+  return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}-${String(date.getUTCDate()).padStart(2, '0')}`;
+}
+
+function resolveRelativeDate(text) {
+  const normalized = normalizeText(text);
+  const todayKey = getTodayContext();
+
+  if (/\bpasado manana\b/.test(normalized)) {
+    return addDays(todayKey, 2);
+  }
+  if (/\bmanana\b/.test(normalized)) {
+    return addDays(todayKey, 1);
+  }
+  if (/\bhoy\b/.test(normalized)) {
+    return todayKey;
+  }
+
+  const weekdayName = findWeekdayName(normalized);
+  if (!weekdayName) return null;
+
+  const weekdayMap = {
+    domingo: 0,
+    lunes: 1,
+    martes: 2,
+    miercoles: 3,
+    jueves: 4,
+    viernes: 5,
+    sabado: 6,
+  };
+
+  const [year, month, day] = todayKey.split('-').map(Number);
+  const today = new Date(Date.UTC(year, month - 1, day));
+  const currentWeekday = today.getUTCDay();
+  const targetWeekday = weekdayMap[weekdayName];
+  let diff = (targetWeekday - currentWeekday + 7) % 7;
+
+  const hasExplicitThis = /\beste\b/.test(normalized);
+  const hasExplicitNext = /\bproximo\b|\bsiguiente\b/.test(normalized);
+
+  if (hasExplicitNext && diff === 0) diff = 7;
+  if (!hasExplicitThis && !hasExplicitNext && diff === 0) diff = 7;
+
+  const target = new Date(today);
+  target.setUTCDate(target.getUTCDate() + diff);
+  return toDateKey(target);
+}
+
+function extractNaturalTime(text) {
+  const normalized = normalizeText(text);
+  const explicit = normalized.match(
+    /(?:a\s+las?|para\s+las?|a\s+la|para\s+la)\s+(\d{1,2}(?::\d{2})?(?:\s+y\s+media)?(?:\s*(?:am|pm|a\.m\.|p\.m\.))?(?:\s+de\s+la\s+(?:manana|tarde|noche))?)/
+  );
+  if (explicit) return parseTimeValue(explicit[1]);
+
+  const naked = normalized.match(/\b(\d{1,2}:\d{2}|\d{1,2})\b/);
+  if (naked) return parseTimeValue(naked[1]);
+  return null;
+}
+
+function extractClientNameForCreate(text) {
+  const original = String(text || '').trim();
+  let candidate = '';
+
+  const afterPara = original.match(/(?:nueva\s+|crear?\s+|crea\s+|agendar?\s+|agenda(?:r)?\s+)?(?:una\s+)?(?:nueva\s+)?(?:cita|evento)(?:\s+para)?\s+(.+)$/i);
+  if (afterPara?.[1]) {
+    candidate = afterPara[1];
+  } else {
+    const simpler = original.match(/para\s+(.+)$/i);
+    if (simpler?.[1]) candidate = simpler[1];
+  }
+
+  if (!candidate) return null;
+
+  const cutPatterns = [
+    /\s+para\s+el\s+/i,
+    /\s+el\s+(lunes|martes|miercoles|miércoles|jueves|viernes|sabado|sábado|domingo)\b/i,
+    /\s+este\s+(lunes|martes|miercoles|miércoles|jueves|viernes|sabado|sábado|domingo)\b/i,
+    /\s+hoy\b/i,
+    /\s+mañana\b/i,
+    /\s+pasado\s+mañana\b/i,
+    /\s+a\s+las?\s+/i,
+    /\s+para\s+las?\s+/i,
+    /\s+\d{1,2}\s+de\s+(enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|octubre|noviembre|diciembre)\b/i,
+    /\s+\d{1,2}\/\d{1,2}(?:\/\d{2,4})?\b/i,
+  ];
+
+  let endIndex = candidate.length;
+  for (const pattern of cutPatterns) {
+    const match = candidate.match(pattern);
+    if (match?.index != null) {
+      endIndex = Math.min(endIndex, match.index);
+    }
+  }
+
+  const trimmed = candidate.slice(0, endIndex).replace(/[,.]+$/, '').trim();
+  return trimmed || null;
+}
+
+function detectCreateAppointmentIntent(text) {
+  const normalized = normalizeText(text);
+  const soundsLikeCreate =
+    /\b(nueva cita|crear cita|crea cita|agendar cita|agenda cita|nuevo evento|crear evento|crea evento|nueva sesion|nueva sesión)\b/.test(normalized) ||
+    /\b(cita|evento)\b.*\bpara\b/.test(normalized);
+  if (!soundsLikeCreate) return null;
+
+  const clientName = extractClientNameForCreate(text);
+  const dateKey = resolveRelativeDate(text);
+  const timeHhmm = extractNaturalTime(text);
+
+  if (!clientName && !dateKey && !timeHhmm) return null;
+  return {
+    intent: 'create_appointment',
+    entities: {
+      client_name: clientName,
+      date_key: dateKey,
+      time_hhmm: timeHhmm,
+    },
+  };
+}
+
+function addDays(dateKey, days) {
+  const [y, m, d] = String(dateKey).split('-').map(Number);
+  const dt = new Date(Date.UTC(y, m - 1, d));
+  dt.setUTCDate(dt.getUTCDate() + days);
+  return toDateKey(dt);
+}
+
 function parseTimeValue(rawValue, period = null) {
   const value = normalizeText(rawValue);
   const match = value.match(/(\d{1,2})(?::(\d{2}))?/);
@@ -249,8 +377,10 @@ function detectDirectIntent(text) {
   const normalized = normalizeText(text);
   const monthYear = detectMonthYear(text);
   const availabilityIntent = detectAvailabilityIntent(text);
+  const createAppointmentIntent = detectCreateAppointmentIntent(text);
 
   if (availabilityIntent) return availabilityIntent;
+  if (createAppointmentIntent) return createAppointmentIntent;
   if (/\bdesactivar recordatorios\b|\bapagar recordatorios\b/.test(normalized)) {
     return { intent: 'reminder_toggle', entities: { reminder_enabled: false } };
   }

@@ -60,6 +60,14 @@ function shortList(items, max = 5) {
   return [...items.slice(0, max), `y ${items.length - max} más`];
 }
 
+function formatClientOption(client) {
+  const suffix = client.phone ? String(client.phone).slice(-4) : null;
+  const details = [client.city || null, suffix ? `...${suffix}` : null].filter(Boolean);
+  return details.length > 0
+    ? `${client.first_name} ${client.last_name} (${details.join(', ')})`
+    : `${client.first_name} ${client.last_name}`;
+}
+
 function pluralize(count, singular, plural) {
   return count === 1 ? singular : plural;
 }
@@ -373,13 +381,11 @@ async function buildClientLookupReply(tenantId, clientName) {
     };
   }
 
-  const lines = matches.map((client) =>
-    `${client.first_name} ${client.last_name}${client.city ? `, ${client.city}` : ''}`
-  );
+  const lines = matches.map((client) => formatClientOption(client));
 
   return {
     status: 'clarification',
-    replyText: [`Encontré varios clientes para "${clientName}".`, ...shortList(lines)].join('\n'),
+    replyText: [`Encontré varias opciones para "${clientName}". ¿Te refieres a:`, ...shortList(lines)].join('\n'),
     data: { total: matches.length, matches },
   };
 }
@@ -403,10 +409,10 @@ async function buildClientUpcomingAppointmentsReply(tenantId, clientName) {
   }
 
   if (matches.length > 1) {
-    const lines = matches.map((client) => `${client.first_name} ${client.last_name}`);
+    const lines = matches.map((client) => formatClientOption(client));
     return {
       status: 'clarification',
-      replyText: [`Encontré varios clientes para "${clientName}".`, ...shortList(lines)].join('\n'),
+      replyText: [`Encontré varias opciones para "${clientName}". ¿Te refieres a:`, ...shortList(lines)].join('\n'),
       data: { total: matches.length, matches },
     };
   }
@@ -459,10 +465,10 @@ async function buildReminderCheckReply(tenantId, clientName) {
   }
 
   if (matches.length > 1) {
-    const lines = matches.map((client) => `${client.first_name} ${client.last_name}`);
+    const lines = matches.map((client) => formatClientOption(client));
     return {
       status: 'clarification',
-      replyText: [`Encontré varios clientes para "${clientName}".`, ...shortList(lines)].join('\n'),
+      replyText: [`Encontré varias opciones para "${clientName}". ¿Te refieres a:`, ...shortList(lines)].join('\n'),
       data: { total: matches.length, matches },
     };
   }
@@ -513,10 +519,10 @@ async function buildConfirmationCheckReply(tenantId, clientName) {
   }
 
   if (matches.length > 1) {
-    const lines = matches.map((client) => `${client.first_name} ${client.last_name}`);
+    const lines = matches.map((client) => formatClientOption(client));
     return {
       status: 'clarification',
-      replyText: [`Encontré varios clientes para "${clientName}".`, ...shortList(lines)].join('\n'),
+      replyText: [`Encontré varias opciones para "${clientName}". ¿Te refieres a:`, ...shortList(lines)].join('\n'),
       data: { total: matches.length, matches },
     };
   }
@@ -716,10 +722,10 @@ async function buildCreateAppointmentReply(tenantId, clientName, dateKey, timeHh
   }
 
   if (matches.length > 1) {
-    const lines = matches.map((client) => `${client.first_name} ${client.last_name}`);
+    const lines = matches.map((client) => formatClientOption(client));
     return {
       status: 'clarification',
-      replyText: [`Encontré varios clientes para "${clientName}".`, ...shortList(lines)].join('\n'),
+      replyText: [`Hay más de una coincidencia para "${clientName}". ¿Te refieres a:`, ...shortList(lines)].join('\n'),
       data: { total: matches.length, matches },
     };
   }

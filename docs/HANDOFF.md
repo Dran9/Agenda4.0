@@ -26,6 +26,7 @@ Read this first, then read `CLAUDE.md` and `LESSONS-LEARNED.md` if the task touc
 - Voice shortcut expansion: now supports richer operational queries and a controlled create-appointment action for existing clients only
 - Voice shortcut actions: now also supports reminder toggles, manual reminder sends for today/tomorrow, and day-level availability changes split by morning/tarde while respecting the midday pause
 - Voice web app: new private route `/voice` now provides a dedicated mobile-first voice console with real audio recording, text fallback, spoken replies, and recent command history
+- Voice natural-language booking: create-appointment parsing is now more tolerant of phrases like `nueva cita para Fidalgo el martes a las 8`, and ambiguous client names should trigger human clarification prompts instead of rigid format errors
 
 ## Current State
 
@@ -43,6 +44,7 @@ Read this first, then read `CLAUDE.md` and `LESSONS-LEARNED.md` if the task touc
 - Voice Shortcut local expansion now includes:
   reminder on/off, reminder send today/tomorrow, and availability updates like `jueves de 8 a 12 en la mañana, en la tarde nada`
 - The new primary UX layer for admin voice is now the private web app at `/voice`, authenticated with the normal admin JWT instead of exposing `VOICE_ADMIN_TOKEN` to the browser
+- Voice booking parsing now resolves relative dates like `mañana` and weekdays like `martes` directly before falling back to the LLM
 
 ## Files Changed In Latest Work
 

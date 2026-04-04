@@ -258,6 +258,12 @@ Ver `.env.example` para la lista completa. Se configuran en hPanel de Hostinger.
   - `el jueves en la mañana de 9 a 12, en la tarde todo igual`
   - `el viernes solo de 10 a 19`
 - Los rangos continuos deben respetar la pausa del medio; no deben llenar automáticamente el bloque entre mañana y tarde
+- La creación de citas por voz debe tolerar lenguaje natural:
+  - `nueva cita para Fidalgo el martes a las 8`
+  - `crea una cita para Cecilia mañana a las 18`
+- Si el nombre del cliente es ambiguo, la respuesta debe preguntar de forma humana:
+  `¿Te refieres a Cecilia X o Cecilia Y?`
+- Antes de pedir “fecha exacta”, el parser debe intentar resolver fechas relativas y días de semana por sí mismo
 
 ### Reglas de trabajo vigentes
 - Nunca hacer push sin que el usuario lo pida explícitamente en ese turno

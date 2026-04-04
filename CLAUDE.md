@@ -206,6 +206,7 @@ Ver `.env.example` para la lista completa. Se configuran en hPanel de Hostinger.
   - `CLAUDE.md`
 - `HANDOFF.md` es el snapshot corto para retomar trabajo rápido.
 - `CLAUDE.md` debe contener también el contexto operativo acumulado importante, no solo reglas generales.
+- Si la tarea toca la app de voz como línea de producto, mantener también `docs/VOICE-APP-REPORT.md`.
 
 ## Estado operativo actual (2026-04-03)
 
@@ -245,6 +246,7 @@ Ver `.env.example` para la lista completa. Se configuran en hPanel de Hostinger.
 - Soporta audio y texto
 - Cada comando queda auditado en `voice_commands_log`
 - Ya existe una subapp privada principal en `https://agenda.danielmaclean.com/voice`
+- Existe un informe operativo específico para esta línea de producto en `docs/VOICE-APP-REPORT.md`
 - `/voice` usa la sesión normal de admin por JWT; no debe exponer `VOICE_ADMIN_TOKEN` en cliente
 - `/voice` está pensada como la UX principal de voz: audio-first, texto fallback, respuesta textual siempre visible, respuesta hablada opcional e historial reciente
 - El endpoint web privado para esa subapp es `POST /api/voice/admin-command`
@@ -300,7 +302,7 @@ Ver `.env.example` para la lista completa. Se configuran en hPanel de Hostinger.
 - **WhatsApp Cloud API** — recordatorios diarios 18:40 BOT, auto-reply a botones CONFIRM/REAGEN/DANIEL
 - **OCR de comprobantes** — Google Vision API reconoce montos, referencias, bancos bolivianos. **Soporta imágenes Y PDFs** (via `files:annotate` endpoint)
 - **Auto-match pagos por teléfono** — imagen/PDF WhatsApp → OCR → match con pago pendiente → confirma automáticamente
-- **QR de pago automático** — al confirmar asistencia, envía QR según arancel del cliente
+- **QR de pago automático** — al confirmar asistencia, envía QR según arancel del cliente; si la cita vieja/manual no tiene `booking_context`, un teléfono boliviano ya no debe bloquear el envío
 - **Payment badges** — verde "Pagado" / rojo "Pendiente" en Appointments y Dashboard
 - **Hard delete de clientes** — CASCADE por payments, appointments, wa_conversations
 - **Rate limiting** solo en /api/book, /api/reschedule, /api/client (NO en admin routes)
@@ -349,6 +351,7 @@ Ver `.env.example` para la lista completa. Se configuran en hPanel de Hostinger.
 - **Calendario visual**: sin borde, fuentes +2pt, #A4A4A6 para headers y días no disponibles, #000 fw900 para días con slots
 - **Phone input unificado**: eliminado dropdown de país en Screen 2, prefijo derivado de timezone
 - **CONFIRM_NOW WhatsApp**: texto estático sin variables de fecha, delay 60s antes de enviar QR
+- **Diagnóstico QR WhatsApp**: el follow-up posterior a `CONFIRM_NOW` ahora deja entradas `enviado` / `skipped` / `error` en `webhooks_log`
 - **Blue checkmarks**: mensajes se marcan como leídos inmediatamente
 - **Finance page**: conectada con datos reales, goal mensual, tabla de pagos con OCR
 - **Dashboard KPIs**: conectados a datos reales de analytics

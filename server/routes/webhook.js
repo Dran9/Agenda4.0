@@ -398,14 +398,35 @@ router.post('/', async (req, res) => {
                   // Send QR payment image after confirmation (delayed 60s to feel natural)
                   if (payload === 'CONFIRM_NOW') {
                     setTimeout(async () => {
+                      const qrEventKey = `payment_qr_${confirmedAppointmentId || clientId || phone}`;
+                      const writeQrLog = async (status, payloadData) => {
+                        await pool.query(
+                          `INSERT INTO webhooks_log (tenant_id, event, type, payload, status, client_phone, client_id, appointment_id)
+                           VALUES (?, ?, 'message_sent', ?, ?, ?, ?, ?)`,
+                          [
+                            tenantId,
+                            qrEventKey,
+                            JSON.stringify(payloadData),
+                            status,
+                            phone,
+                            clientId,
+                            confirmedAppointmentId || null,
+                          ]
+                        ).catch(() => {});
+                      };
+
                       try {
                         if (!confirmedAppointmentId) {
                           console.log(`[webhook] Skipping automatic Bolivian QR for ${phone}: missing appointment context`);
+                          await writeQrLog('error', {
+                            action: 'payment_qr_skipped',
+                            reason: 'missing_appointment_context',
+                          });
                           return;
                         }
 
                         const [appointmentRows] = await pool.query(
-                          `SELECT a.phone, a.booking_context, c.fee
+                          `SELECT a.phone, a.booking_context, c.phone AS client_phone, c.country AS client_country, c.fee
                            FROM appointments a
                            JOIN clients c ON c.id = a.client_id
                            WHERE a.id = ? AND a.tenant_id = ?
@@ -424,18 +445,41 @@ router.post('/', async (req, res) => {
                           }
                         }
 
-                        const normalizedPhone = String(appointment.phone || phone || '').replace(/\D/g, '');
+                        const normalizedPhone = String(appointment.client_phone || appointment.phone || phone || '').replace(/\D/g, '');
                         const isBoliviaPhone = normalizedPhone.startsWith('591');
                         const ipCountryCode = String(bookingContext?.ip_country_code || '').toUpperCase();
                         const locationCountryCode = String(bookingContext?.location_country_code || '').toUpperCase();
+                        const clientCountry = String(appointment.client_country || '').trim().toUpperCase();
                         const locationConfirmedManually = !!bookingContext?.location_confirmed_manually;
-                        const isBoliviaLocation = locationCountryCode === 'BO'
-                          && (ipCountryCode === 'BO' || locationConfirmedManually);
+                        const hasBoliviaSignal =
+                          locationCountryCode === 'BO'
+                          || ipCountryCode === 'BO'
+                          || clientCountry === 'BO'
+                          || clientCountry === 'BOLIVIA';
+                        const hasAnyLocationSignal = !!(
+                          locationCountryCode
+                          || ipCountryCode
+                          || locationConfirmedManually
+                          || clientCountry
+                        );
+                        // Older/manual bookings may have no booking_context at all.
+                        // In that case, a Bolivian phone is the best available signal and should not block the QR.
+                        const shouldFallbackToPhoneOnly = isBoliviaPhone && !hasAnyLocationSignal;
+                        const shouldSendBoliviaQr = isBoliviaPhone && (hasBoliviaSignal || shouldFallbackToPhoneOnly);
 
-                        if (!(isBoliviaPhone && isBoliviaLocation)) {
+                        if (!shouldSendBoliviaQr) {
                           console.log(
-                            `[webhook] Skipping automatic Bolivian QR for ${phone}: phone_prefix=${isBoliviaPhone ? 'BO' : 'other'}, ip=${ipCountryCode || 'unknown'}, location=${locationCountryCode || 'unknown'}, manual_confirm=${locationConfirmedManually}`
+                            `[webhook] Skipping automatic Bolivian QR for ${phone}: phone_prefix=${isBoliviaPhone ? 'BO' : 'other'}, ip=${ipCountryCode || 'unknown'}, location=${locationCountryCode || 'unknown'}, client_country=${clientCountry || 'unknown'}, manual_confirm=${locationConfirmedManually}`
                           );
+                          await writeQrLog('skipped', {
+                            action: 'payment_qr_skipped',
+                            reason: 'non_bolivia_context',
+                            phone_prefix_bolivia: isBoliviaPhone,
+                            ip_country_code: ipCountryCode || null,
+                            location_country_code: locationCountryCode || null,
+                            client_country: clientCountry || null,
+                            location_confirmed_manually: locationConfirmedManually,
+                          });
                           return;
                         }
 
@@ -448,19 +492,48 @@ router.post('/', async (req, res) => {
 
                         const { getFile } = require('../services/storage');
                         const qrFile = await getFile(tenantId, qrKey);
-                        if (qrFile) {
-                          const domain = (await pool.query('SELECT domain FROM tenants WHERE id = ?', [tenantId]))[0]?.[0]?.domain || '';
-                          const qrUrl = `https://${domain}/api/config/qr/${qrKey}`;
-                          const qrResult = await sendImageMessage(phone, qrUrl, `QR de pago - Bs ${fee}`);
-                          await pool.query(
-                            `INSERT INTO wa_conversations (tenant_id, client_id, client_phone, direction, message_type, content, wa_message_id)
-                             VALUES (?, ?, ?, 'outbound', 'auto_reply', ?, ?)`,
-                            [tenantId, clientId, phone, `QR de pago enviado (${qrKey})`, qrResult.messages?.[0]?.id]
-                          );
-                          console.log(`[webhook] QR sent to ${phone}: ${qrKey}`);
+                        if (!qrFile) {
+                          console.log(`[webhook] QR file missing for ${phone}: ${qrKey}`);
+                          await writeQrLog('error', {
+                            action: 'payment_qr_missing_asset',
+                            qr_key: qrKey,
+                            fee,
+                          });
+                          return;
                         }
+
+                        const domain = (await pool.query('SELECT domain FROM tenants WHERE id = ?', [tenantId]))[0]?.[0]?.domain || '';
+                        if (!domain) {
+                          console.log(`[webhook] QR domain missing for tenant ${tenantId}`);
+                          await writeQrLog('error', {
+                            action: 'payment_qr_missing_domain',
+                            qr_key: qrKey,
+                            fee,
+                          });
+                          return;
+                        }
+
+                        const qrUrl = `https://${domain}/api/config/qr/${qrKey}`;
+                        const qrResult = await sendImageMessage(phone, qrUrl, `QR de pago - Bs ${fee}`);
+                        await pool.query(
+                          `INSERT INTO wa_conversations (tenant_id, client_id, client_phone, direction, message_type, content, wa_message_id)
+                           VALUES (?, ?, ?, 'outbound', 'auto_reply', ?, ?)`,
+                          [tenantId, clientId, phone, `QR de pago enviado (${qrKey})`, qrResult.messages?.[0]?.id]
+                        );
+                        await writeQrLog('enviado', {
+                          action: 'payment_qr_sent',
+                          qr_key: qrKey,
+                          fee,
+                          qr_url: qrUrl,
+                          wa_message_id: qrResult.messages?.[0]?.id || null,
+                        });
+                        console.log(`[webhook] QR sent to ${phone}: ${qrKey}`);
                       } catch (qrErr) {
                         console.error(`[webhook] QR send failed for ${phone}:`, qrErr.message);
+                        await writeQrLog('error', {
+                          action: 'payment_qr_failed',
+                          message: qrErr.message,
+                        });
                       }
                     }, 15000); // 15 second delay
                   }

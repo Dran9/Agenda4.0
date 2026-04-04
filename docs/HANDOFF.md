@@ -4,6 +4,7 @@
 
 Short operational snapshot for future chats.
 Read this first, then read `CLAUDE.md` and `LESSONS-LEARNED.md` if the task touches behavior or production safety.
+If the task is about the private voice app, also read `docs/VOICE-APP-REPORT.md`.
 
 ## Last Updated
 
@@ -42,6 +43,7 @@ Read this first, then read `CLAUDE.md` and `LESSONS-LEARNED.md` if the task touc
 - Payment receipt matching now matches by normalized phone
 - Reminder matching fallback now matches by normalized phone
 - Payment success WhatsApp reply is being simplified to `✅ Pago recibido correctamente, ¡Gracias!`
+- Automatic QR follow-up after reminder confirmation no longer depends strictly on `booking_context`; for Bolivian clients, legacy/manual appointments without location metadata should still receive the correct QR by fee
 - Voice Shortcut MVP is now being added as a separate backend module with Groq transcription, token auth, and audit logging
 - Voice Shortcut now supports reminder checks, confirmation checks, rescheduled lists, monthly new-client counts, pending-amount totals, unconfirmed tomorrow, confirmed today, weekly appointment counts, and appointment creation for existing clients
 - Voice Shortcut local expansion now includes:
@@ -50,6 +52,8 @@ Read this first, then read `CLAUDE.md` and `LESSONS-LEARNED.md` if the task touc
 - Voice booking parsing now resolves relative dates like `mañana` and weekdays like `martes` directly before falling back to the LLM
 - Google integrations are healthy again with the new `agenda40` Google Cloud project:
   Calendar, Sheets, and People all authenticate from the backend using the same refresh token and current Hostinger env vars
+- There is now a dedicated starter report for the voice product line in `docs/VOICE-APP-REPORT.md`
+- WhatsApp QR follow-up after `CONFIRM_NOW` now records explicit `enviado`, `skipped`, and `error` entries in `webhooks_log` to diagnose cases where the client says the QR never arrived
 
 ## Files Changed In Latest Work
 
@@ -107,6 +111,7 @@ Read this first, then read `CLAUDE.md` and `LESSONS-LEARNED.md` if the task touc
   private route only, audio-first, mobile-friendly, elegant minimal UI, text responses always visible, browser speech output optional, and recent command history loaded from `voice_commands_log`
 - Google OAuth cleanup scope:
   remove `generate-token.js` after token generation, remove `open` from dependencies, keep backend runtime in CommonJS, and document the new `agenda40` setup in both `HANDOFF.md` and `CLAUDE.md`
+- WhatsApp confirmation QR follow-up was syntax-checked after making the Bolivia fallback less strict for legacy/manual appointments
 
 ## Known Follow-Ups
 

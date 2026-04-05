@@ -52,6 +52,8 @@ If the task is about the private voice app, also read `docs/VOICE-APP-REPORT.md`
 - Voice booking parsing now resolves relative dates like `mañana` and weekdays like `martes` directly before falling back to the LLM
 - Voice planner follow-up: `/voice` now keeps short recent context, stores `result_data` in `voice_commands_log`, resolves clarifications like `el otro` / `el de Santa Cruz`, and can use read-only grounding tools before deciding the final command
 - Voice TTS follow-up: `/voice` now has backend Cartesia TTS at `POST /api/voice/tts`, with browser `speechSynthesis` kept only as fallback if Cartesia fails or is unavailable
+- Voice agenda follow-up: `/voice` now resolves agenda day/week queries more deterministically before the LLM, including `mañana`, weekdays, `esta semana`, and `la próxima semana`
+- Voice date-label follow-up: calendar-date labels in voice replies must be formatted as pure dates, so explicit dates like `2026-04-08` no longer drift back one day in Bolivia
 - Google integrations are healthy again with the new `agenda40` Google Cloud project:
   Calendar, Sheets, and People all authenticate from the backend using the same refresh token and current Hostinger env vars
 - There is now a dedicated starter report for the voice product line in `docs/VOICE-APP-REPORT.md`
@@ -120,11 +122,15 @@ If the task is about the private voice app, also read `docs/VOICE-APP-REPORT.md`
   private route only, audio-first, mobile-friendly, elegant minimal UI, text responses always visible, browser speech output optional, and recent command history loaded from `voice_commands_log`
 - Voice planner scope:
   heuristics first, then recent-context follow-up resolution, then tool-grounded planning, then execution; the LLM should no longer behave like a blind classifier with no operational memory
+- Voice agenda scope:
+  when the user asks for agenda by relative day or week range, parse to a deterministic day or `agenda_scope` first; do not let `agenda_query` silently fall back to `hoy` just because the LLM omitted a `date_key`
 - Voice TTS scope:
   Cartesia runs server-side so the browser never sees `CARTESIA_API_KEY`; `/voice` should prefer Cartesia audio and fall back to browser speech only on failure
 - Google OAuth cleanup scope:
   remove `generate-token.js` after token generation, remove `open` from dependencies, keep backend runtime in CommonJS, and document the new `agenda40` setup in both `HANDOFF.md` and `CLAUDE.md`
 - WhatsApp confirmation QR follow-up was syntax-checked after making the Bolivia fallback less strict for legacy/manual appointments
+- Voice agenda smoke check against production DB confirmed:
+  `lunes` resolves to `2026-04-06`, `próxima semana` resolves to the range `2026-04-06` to `2026-04-13`, and explicit voice date labels no longer render one day early
 
 ## Known Follow-Ups
 

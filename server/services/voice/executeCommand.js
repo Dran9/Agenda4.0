@@ -30,7 +30,7 @@ function formatDateTime(dateTime) {
 function formatDateKey(dateKey) {
   const [year, month, day] = String(dateKey).split('-').map(Number);
   const label = new Intl.DateTimeFormat('es-BO', {
-    timeZone: 'America/La_Paz',
+    timeZone: 'UTC',
     day: 'numeric',
     month: 'long',
     year: 'numeric',
@@ -40,7 +40,7 @@ function formatDateKey(dateKey) {
 
 function formatMonthYear(month, year) {
   const label = new Intl.DateTimeFormat('es-BO', {
-    timeZone: 'America/La_Paz',
+    timeZone: 'UTC',
     month: 'long',
     year: 'numeric',
   }).format(new Date(Date.UTC(year, month - 1, 1)));
@@ -216,6 +216,7 @@ function buildPendingAction(intent, entities = {}) {
       client_id: entities.client_id ?? null,
       client_name: entities.client_name ?? null,
       date_key: entities.date_key ?? null,
+      agenda_scope: entities.agenda_scope ?? null,
       time_hhmm: entities.time_hhmm ?? null,
       goal_amount: entities.goal_amount ?? null,
       month: entities.month ?? null,
@@ -247,8 +248,89 @@ function buildClientClarificationReply(clientName, matches, pendingAction) {
   };
 }
 
-async function buildAgendaReply(tenantId, dateKey) {
-  const dayKey = dateKey || getTodayContext();
+function resolveAgendaDayKey(entities = {}) {
+  if (entities.date_key) return entities.date_key;
+  if (entities.reminder_date === 'tomorrow') return addDays(getTodayContext(), 1);
+  if (entities.reminder_date === 'today') return getTodayContext();
+  return getTodayContext();
+}
+
+function getWeekRange(weekOffset = 0) {
+  const todayKey = getTodayContext();
+  const [year, month, day] = todayKey.split('-').map(Number);
+  const today = new Date(Date.UTC(year, month - 1, day));
+  const weekday = today.getUTCDay();
+  const diffToMonday = weekday === 0 ? -6 : 1 - weekday;
+  today.setUTCDate(today.getUTCDate() + diffToMonday + (weekOffset * 7));
+  const startKey = today.toISOString().slice(0, 10);
+  const end = new Date(today);
+  end.setUTCDate(end.getUTCDate() + 7);
+  return {
+    startKey,
+    endKey: end.toISOString().slice(0, 10),
+  };
+}
+
+async function buildWeekAgendaReply(tenantId, weekOffset = 0) {
+  const { startKey, endKey } = getWeekRange(weekOffset);
+  const scopeLabel = weekOffset === 0 ? 'esta semana' : 'la próxima semana';
+  const [rows] = await pool.query(
+    `SELECT a.id, a.date_time, a.status, c.first_name, c.last_name,
+            (
+              SELECT p.status
+              FROM payments p
+              WHERE p.appointment_id = a.id AND p.tenant_id = a.tenant_id
+              ORDER BY p.updated_at DESC, p.id DESC
+              LIMIT 1
+            ) AS payment_status
+     FROM appointments a
+     JOIN clients c ON c.id = a.client_id
+     WHERE a.tenant_id = ?
+       AND a.date_time >= ?
+       AND a.date_time < ?
+       AND a.status IN ('Agendada','Confirmada','Reagendada','Completada','No-show')
+     ORDER BY a.date_time ASC
+     LIMIT 20`,
+    [tenantId, `${startKey} 00:00:00`, `${endKey} 00:00:00`]
+  );
+
+  if (!rows.length) {
+    return {
+      status: 'resolved',
+      replyText: `No tienes citas para ${scopeLabel}.`,
+      data: { agenda_scope: weekOffset === 0 ? 'this_week' : 'next_week', total: 0, items: [], week_start: startKey, week_end: endKey },
+    };
+  }
+
+  const lines = rows.map((row) =>
+    `${formatDateTime(row.date_time)}: ${row.first_name} ${row.last_name} (${row.status}${row.payment_status ? `, ${row.payment_status}` : ''})`
+  );
+
+  return {
+    status: 'resolved',
+    replyText: [
+      `Tienes ${rows.length} ${pluralize(rows.length, 'cita', 'citas')} para ${scopeLabel}.`,
+      ...shortList(lines, 8),
+    ].join('\n'),
+    data: {
+      agenda_scope: weekOffset === 0 ? 'this_week' : 'next_week',
+      total: rows.length,
+      items: rows,
+      week_start: startKey,
+      week_end: endKey,
+    },
+  };
+}
+
+async function buildAgendaReply(tenantId, entities = {}) {
+  if (entities.agenda_scope === 'this_week') {
+    return buildWeekAgendaReply(tenantId, 0);
+  }
+  if (entities.agenda_scope === 'next_week') {
+    return buildWeekAgendaReply(tenantId, 1);
+  }
+
+  const dayKey = resolveAgendaDayKey(entities);
   const nextDayKey = addDays(dayKey, 1);
   const relativeLabel = getRelativeDateLabel(dayKey);
   const [rows] = await pool.query(
@@ -277,7 +359,7 @@ async function buildAgendaReply(tenantId, dateKey) {
       replyText: relativeLabel
         ? `No tienes citas para ${relativeLabel}.`
         : `No tienes citas para el ${formatDateKey(dayKey)}.`,
-      data: { date_key: dayKey, total: 0, items: [] },
+      data: { date_key: dayKey, agenda_scope: 'day', total: 0, items: [] },
     };
   }
 
@@ -285,15 +367,15 @@ async function buildAgendaReply(tenantId, dateKey) {
     `${formatDateTime(row.date_time)}: ${row.first_name} ${row.last_name} (${row.status}${row.payment_status ? `, ${row.payment_status}` : ''})`
   );
 
-    return {
-      status: 'resolved',
-      replyText: [
-        relativeLabel
+  return {
+    status: 'resolved',
+    replyText: [
+      relativeLabel
         ? `Tienes ${rows.length} ${pluralize(rows.length, 'cita', 'citas')} para ${relativeLabel}.`
         : `Tienes ${rows.length} ${pluralize(rows.length, 'cita', 'citas')} para el ${formatDateKey(dayKey)}.`,
       ...shortList(lines),
     ].join('\n'),
-    data: { date_key: dayKey, total: rows.length, items: rows },
+    data: { date_key: dayKey, agenda_scope: 'day', total: rows.length, items: rows },
   };
 }
 
@@ -1040,7 +1122,7 @@ async function executeVoiceCommand({ tenantId, parsedCommand }) {
   const { intent, entities = {} } = parsedCommand || {};
 
   if (intent === 'agenda_query') {
-    return buildAgendaReply(tenantId, entities.date_key);
+    return buildAgendaReply(tenantId, entities);
   }
   if (intent === 'pending_payments') {
     return buildPendingPaymentsReply(tenantId);

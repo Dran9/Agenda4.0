@@ -53,6 +53,7 @@ function sanitizeEntities(entities = {}) {
       : null,
     client_name: entities.client_name ? String(entities.client_name).trim() : null,
     date_key: entities.date_key ? String(entities.date_key).trim() : null,
+    agenda_scope: entities.agenda_scope ? normalizeText(entities.agenda_scope) : null,
     time_hhmm: entities.time_hhmm ? String(entities.time_hhmm).trim() : null,
     goal_amount: entities.goal_amount != null && entities.goal_amount !== ''
       ? Number(entities.goal_amount)
@@ -218,18 +219,19 @@ function buildPlannerSystemPrompt(recentSummary) {
     `Debes devolver solo JSON válido. ` +
     `Tienes este contexto reciente:\n${recentSummary}\n` +
     `Intents permitidos: ${SUPPORTED_INTENTS.join(', ')}. ` +
-    `Entities posibles: client_id (number o null), client_name (string o null), date_key (YYYY-MM-DD o null), time_hhmm (HH:MM o null), goal_amount (number o null), month (1-12 o null), year (YYYY o null), reminder_enabled (boolean o null), reminder_date (today|tomorrow|null), weekday_name (lunes|martes|miercoles|jueves|viernes|sabado|domingo|null), morning_mode (keep|off|range|null), morning_start (HH:MM|null), morning_end (HH:MM|null), afternoon_mode (keep|off|range|null), afternoon_start (HH:MM|null), afternoon_end (HH:MM|null). ` +
+    `Entities posibles: client_id (number o null), client_name (string o null), date_key (YYYY-MM-DD o null), agenda_scope (day|this_week|next_week|null), time_hhmm (HH:MM o null), goal_amount (number o null), month (1-12 o null), year (YYYY o null), reminder_enabled (boolean o null), reminder_date (today|tomorrow|null), weekday_name (lunes|martes|miercoles|jueves|viernes|sabado|domingo|null), morning_mode (keep|off|range|null), morning_start (HH:MM|null), morning_end (HH:MM|null), afternoon_mode (keep|off|range|null), afternoon_start (HH:MM|null), afternoon_end (HH:MM|null). ` +
     `Si puedes resolver el comando final directamente, responde en modo final. ` +
     `Si te falta grounding, puedes pedir una sola tool por turno en modo tool. ` +
     `Tools disponibles: ` +
     `search_clients(query), get_client_upcoming_appointments(client_id), get_day_agenda(date_key), get_weekday_availability(weekday_name). ` +
     `Usa client_id cuando puedas resolver un cliente exacto. ` +
     `Aprovecha el contexto reciente para seguir conversaciones como "el de Santa Cruz", "el otro", "sí", "a las 8", "mañana" o "en la tarde nada". ` +
+    `Para agenda, usa agenda_scope=this_week o next_week cuando el usuario pregunte por esta semana o la próxima semana. ` +
     `Si el usuario pide algo fuera del alcance actual o destructivo, usa unknown. ` +
     `Shape exacto: ` +
-    `{"mode":"final","intent":"unknown","confidence":0,"entities":{"client_id":null,"client_name":null,"date_key":null,"time_hhmm":null,"goal_amount":null,"month":null,"year":null,"reminder_enabled":null,"reminder_date":null,"weekday_name":null,"morning_mode":null,"morning_start":null,"morning_end":null,"afternoon_mode":null,"afternoon_start":null,"afternoon_end":null},"reply_hint":"","tool_name":null,"tool_args":null,"reason":""} ` +
+    `{"mode":"final","intent":"unknown","confidence":0,"entities":{"client_id":null,"client_name":null,"date_key":null,"agenda_scope":null,"time_hhmm":null,"goal_amount":null,"month":null,"year":null,"reminder_enabled":null,"reminder_date":null,"weekday_name":null,"morning_mode":null,"morning_start":null,"morning_end":null,"afternoon_mode":null,"afternoon_start":null,"afternoon_end":null},"reply_hint":"","tool_name":null,"tool_args":null,"reason":""} ` +
     `o ` +
-    `{"mode":"tool","intent":"unknown","confidence":0,"entities":{"client_id":null,"client_name":null,"date_key":null,"time_hhmm":null,"goal_amount":null,"month":null,"year":null,"reminder_enabled":null,"reminder_date":null,"weekday_name":null,"morning_mode":null,"morning_start":null,"morning_end":null,"afternoon_mode":null,"afternoon_start":null,"afternoon_end":null},"reply_hint":"","tool_name":"search_clients","tool_args":{"query":"..."}, "reason":"..."}.`
+    `{"mode":"tool","intent":"unknown","confidence":0,"entities":{"client_id":null,"client_name":null,"date_key":null,"agenda_scope":null,"time_hhmm":null,"goal_amount":null,"month":null,"year":null,"reminder_enabled":null,"reminder_date":null,"weekday_name":null,"morning_mode":null,"morning_start":null,"morning_end":null,"afternoon_mode":null,"afternoon_start":null,"afternoon_end":null},"reply_hint":"","tool_name":"search_clients","tool_args":{"query":"..."}, "reason":"..."}.`
   );
 }
 

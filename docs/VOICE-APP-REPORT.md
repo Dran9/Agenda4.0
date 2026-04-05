@@ -36,6 +36,7 @@ Ya existe un backend operativo para voz con:
 - TTS backend vía Cartesia con fallback a `speechSynthesis`
 - ejecución contra la base
 - logging completo
+- agenda day/week queries más robustas: `mañana`, weekdays, `esta semana` y `próxima semana` ya no deberían caer por defecto en `hoy`
 
 Google Calendar, Google Sheets y Google Contacts están nuevamente sanos con el proyecto Google Cloud `agenda40`.
 
@@ -97,6 +98,7 @@ Todos los comandos quedan en `voice_commands_log` con:
 ### Queries
 
 - agenda de hoy / mañana
+- agenda por weekday o rango semanal (`lunes`, `esta semana`, `próxima semana`)
 - pagos pendientes
 - monto pendiente por cobrar
 - sesiones necesarias para llegar a una meta
@@ -208,6 +210,7 @@ El cuello de botella actual no siempre es Groq. Muchas veces el límite vino de:
 - lógica nuestra demasiado rígida
 - falta de mejores heurísticas antes o después del LLM
 - UX que no deja claro lo que el sistema entendió
+- bugs nuestros de normalización temporal; por ejemplo, una `date_key` no debe renderizarse como si fuera medianoche UTC en Bolivia porque eso corre la etiqueta al día anterior
 
 Aun así, próximos upgrades razonables a evaluar:
 

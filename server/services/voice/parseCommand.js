@@ -185,6 +185,47 @@ function detectCreateAppointmentIntent(text) {
   };
 }
 
+function detectAgendaIntent(text) {
+  const normalized = normalizeText(text);
+  const asksAgenda =
+    /\b(que|qué)\s+(citas?\s+)?(tengo|hay)\s+para\b/.test(normalized) ||
+    /\b(citas?|agenda|turnos|sesiones)\b.*\b(hoy|manana|pasado manana|esta semana|proxima semana|siguiente semana|lunes|martes|miercoles|jueves|viernes|sabado|domingo)\b/.test(normalized) ||
+    /\bmu[eé]strame\b.*\b(citas?|agenda)\b/.test(normalized) ||
+    /\bdime\b.*\b(citas?|agenda)\b/.test(normalized);
+
+  if (!asksAgenda) return null;
+  if (/\bcuant[oa]s?\b/.test(normalized)) return null;
+
+  if (/\b(proxima|siguiente)\s+semana\b/.test(normalized)) {
+    return {
+      intent: 'agenda_query',
+      entities: {
+        agenda_scope: 'next_week',
+      },
+    };
+  }
+
+  if (/\besta\s+semana\b/.test(normalized)) {
+    return {
+      intent: 'agenda_query',
+      entities: {
+        agenda_scope: 'this_week',
+      },
+    };
+  }
+
+  const dateKey = resolveRelativeDate(text);
+  if (!dateKey) return null;
+
+  return {
+    intent: 'agenda_query',
+    entities: {
+      date_key: dateKey,
+      agenda_scope: 'day',
+    },
+  };
+}
+
 function addDays(dateKey, days) {
   const [y, m, d] = String(dateKey).split('-').map(Number);
   const dt = new Date(Date.UTC(y, m - 1, d));
@@ -380,6 +421,7 @@ function detectDirectIntent(text) {
   const monthYear = detectMonthYear(text);
   const availabilityIntent = detectAvailabilityIntent(text);
   const createAppointmentIntent = detectCreateAppointmentIntent(text);
+  const agendaIntent = detectAgendaIntent(text);
 
   if (availabilityIntent) return availabilityIntent;
   if (createAppointmentIntent) return createAppointmentIntent;
@@ -407,6 +449,7 @@ function detectDirectIntent(text) {
   if (/\bcuantas\b.*\bcitas\b.*\besta semana\b|\bcitas esta semana\b/.test(normalized)) {
     return { intent: 'appointments_this_week', entities: {} };
   }
+  if (agendaIntent) return agendaIntent;
   if (/\bquienes\b.*\breagend/.test(normalized)) {
     return { intent: 'rescheduled_list', entities: {} };
   }
@@ -486,8 +529,9 @@ async function parseVoiceCommand(inputText, options = {}) {
         `Fecha actual en Bolivia: ${today}. ` +
         `Contexto reciente: ${recentSummary}. ` +
         `Intents permitidos: agenda_query, pending_payments, pending_amount, sessions_to_goal, client_lookup, client_upcoming_appointments, reminder_check, confirmation_check, rescheduled_list, new_clients_count, unconfirmed_tomorrow, confirmed_today, appointments_this_week, create_appointment, reminder_toggle, send_reminders, update_availability, unknown. ` +
-        `Entities posibles: client_id (number o null), client_name (string o null), date_key (YYYY-MM-DD o null), time_hhmm (HH:MM o null), goal_amount (number o null), month (1-12 o null), year (YYYY o null), reminder_enabled (boolean o null), reminder_date (today|tomorrow|null), weekday_name (lunes|martes|miercoles|jueves|viernes|sabado|domingo|null), morning_mode (keep|off|range|null), morning_start (HH:MM|null), morning_end (HH:MM|null), afternoon_mode (keep|off|range|null), afternoon_start (HH:MM|null), afternoon_end (HH:MM|null). ` +
+        `Entities posibles: client_id (number o null), client_name (string o null), date_key (YYYY-MM-DD o null), agenda_scope (day|this_week|next_week|null), time_hhmm (HH:MM o null), goal_amount (number o null), month (1-12 o null), year (YYYY o null), reminder_enabled (boolean o null), reminder_date (today|tomorrow|null), weekday_name (lunes|martes|miercoles|jueves|viernes|sabado|domingo|null), morning_mode (keep|off|range|null), morning_start (HH:MM|null), morning_end (HH:MM|null), afternoon_mode (keep|off|range|null), afternoon_start (HH:MM|null), afternoon_end (HH:MM|null). ` +
         `Convierte fechas relativas como hoy, mañana, pasado mañana, este viernes, el viernes a YYYY-MM-DD. ` +
+        `Si el usuario pregunta por esta semana o la próxima semana, usa agenda_scope=this_week o next_week. ` +
         `Convierte horas como 8, 8 de la mañana, 8 am, 8 y media, 14:30 a HH:MM en formato 24 horas. ` +
         `Si el usuario pregunta por marzo o abril, extrae month y year cuando sea posible. ` +
         `Para disponibilidad, interpreta frases como "jueves solo de 8 a 12 en la mañana, en la tarde nada" usando weekday_name y morning/afternoon modes. ` +
@@ -495,7 +539,7 @@ async function parseVoiceCommand(inputText, options = {}) {
         `Si el contexto reciente muestra una aclaración pendiente, puedes continuarla y completar entidades faltantes. ` +
         `Si el usuario pide una acción no permitida o destructiva, usa unknown. ` +
         `Responde con este shape exacto: ` +
-        `{"intent":"...","confidence":0.0,"entities":{"client_id":null,"client_name":null,"date_key":null,"time_hhmm":null,"goal_amount":null,"month":null,"year":null,"reminder_enabled":null,"reminder_date":null,"weekday_name":null,"morning_mode":null,"morning_start":null,"morning_end":null,"afternoon_mode":null,"afternoon_start":null,"afternoon_end":null},"reply_hint":"..."}`,
+        `{"intent":"...","confidence":0.0,"entities":{"client_id":null,"client_name":null,"date_key":null,"agenda_scope":null,"time_hhmm":null,"goal_amount":null,"month":null,"year":null,"reminder_enabled":null,"reminder_date":null,"weekday_name":null,"morning_mode":null,"morning_start":null,"morning_end":null,"afternoon_mode":null,"afternoon_start":null,"afternoon_end":null},"reply_hint":"..."}`,
     },
     {
       role: 'user',

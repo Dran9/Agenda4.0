@@ -288,6 +288,8 @@ Ver `.env.example` para la lista completa. Se configuran en hPanel de Hostinger.
   `¿Te refieres a Cecilia X o Cecilia Y?`
 - Follow-ups como `el otro`, `el de Santa Cruz`, `sí`, `a las 8` deben intentar reutilizar la aclaración o acción pendiente inmediatamente anterior antes de caer en una nueva pregunta desde cero
 - Antes de pedir “fecha exacta”, el parser debe intentar resolver fechas relativas y días de semana por sí mismo
+- Las consultas de agenda deben resolver también rangos naturales como `esta semana` y `la próxima semana` sin depender de que el LLM invente un `date_key`
+- Las etiquetas de fechas puras en respuestas de voz deben tratarse como fechas calendario, no como instantes zonificados; si dices `8 de abril`, la respuesta no puede mostrar `7 de abril`
 - Si falla la creación de cita por `invalid_grant`, la respuesta debe culpar claramente a Google Calendar/autorización, no al comando del usuario ni al LLM
 - Las consultas sobre disponibilidad no deben ejecutar cambios salvo que haya una instrucción explícita de modificación
 - El cliente nunca debe recibir `CARTESIA_API_KEY`; la reproducción con Cartesia debe pasar por backend y usar `speechSynthesis` solo como fallback

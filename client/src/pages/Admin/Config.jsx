@@ -92,6 +92,31 @@ function formatRuntimeDate(value) {
   }
 }
 
+function formatSchedulerLabel(runtimeKey, runtime) {
+  if (runtime?.label) return runtime.label;
+  const labels = {
+    appointmentReminder: 'Recordatorios de cita',
+    paymentReminder: 'Recordatorios de pago',
+    autoComplete: 'Auto completar sesiones',
+    recurringSync: 'Sync de recurrencia',
+  };
+  return labels[runtimeKey] || runtimeKey;
+}
+
+function formatRuntimeResult(result) {
+  if (!result || typeof result !== 'object') return null;
+  if (result.sent != null || result.skipped != null || result.failed != null) {
+    return `${result.sent ?? 0} enviados, ${result.skipped ?? 0} omitidos, ${result.failed ?? 0} fallidos`;
+  }
+  if (result.completed != null) {
+    return `${result.completed} completadas`;
+  }
+  if (result.created != null || result.already_exists != null || result.no_client_match != null) {
+    return `${result.created ?? 0} creados, ${result.already_exists ?? 0} ya existentes, ${result.no_client_match ?? 0} sin match`;
+  }
+  return JSON.stringify(result);
+}
+
 function normalizeRetentionRules(rawRules) {
   let parsed = rawRules;
   if (typeof parsed === 'string') {
@@ -988,13 +1013,8 @@ export default function Config() {
               <div className="mt-5 space-y-3">
                 <div>
                   <div className="text-xs font-medium text-gray-500 mb-2 uppercase tracking-wide">Estado runtime</div>
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                    {[
-                      { key: 'appointmentReminder', label: 'Citas' },
-                      { key: 'paymentReminder', label: 'Pagos' },
-                      { key: 'autoComplete', label: 'Auto completar' },
-                    ].map(item => {
-                      const runtime = config?._runtime?.schedulers?.[item.key];
+                  <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3">
+                    {Object.entries(config?._runtime?.schedulers || {}).map(([runtimeKey, runtime]) => {
                       const enabled = runtime?.enabled;
                       const statusLabel = enabled === false ? 'Pausado' : enabled === null || enabled === undefined ? 'Iniciando' : 'Activo';
                       const statusClass = enabled === false
@@ -1003,18 +1023,21 @@ export default function Config() {
                           ? 'bg-[#CFE8E9] text-[#4E769B]'
                           : 'bg-[#D9E48B] text-slate-900';
                       return (
-                        <div key={item.key} className="rounded-xl border border-gray-200 p-4 bg-white">
+                        <div key={runtimeKey} className="rounded-xl border border-gray-200 p-4 bg-white">
                           <div className="flex items-center justify-between gap-2 mb-2">
-                            <div className="font-medium text-sm">{item.label}</div>
+                            <div className="font-medium text-sm">{formatSchedulerLabel(runtimeKey, runtime)}</div>
                             <span className={`text-[11px] px-2 py-1 rounded-full ${statusClass}`}>
                               {statusLabel}
                             </span>
+                          </div>
+                          <div className="text-[11px] uppercase tracking-[0.08em] text-gray-400">
+                            Cada {runtime?.intervalMinutes || '—'} min
                           </div>
                           <div className="text-xs text-gray-500">Próxima corrida: {formatRuntimeDate(runtime?.nextRunAt)}</div>
                           <div className="text-xs text-gray-500 mt-1">Última corrida: {formatRuntimeDate(runtime?.lastRunAt)}</div>
                           {runtime?.lastResult ? (
                             <div className="text-xs text-gray-500 mt-2">
-                              Último resultado: {runtime.lastResult.sent ?? runtime.lastResult.completed ?? 0} acciones
+                              Último resultado: {formatRuntimeResult(runtime.lastResult)}
                             </div>
                           ) : null}
                           {runtime?.lastError ? (

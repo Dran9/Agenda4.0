@@ -1,9 +1,11 @@
 const { pool } = require('../db');
 const { checkAndSendReminders, checkAndSendPaymentReminders } = require('../services/reminder');
+const { syncRecurringFromGCal } = require('../services/recurringSync');
 
 let reminderTimer = null;
 let autoCompleteTimer = null;
 let paymentReminderTimer = null;
+let recurringSyncTimer = null;
 
 const schedulerState = {
   appointmentReminder: {
@@ -30,6 +32,16 @@ const schedulerState = {
     label: 'Auto completar sesiones',
     source: 'internal_timer',
     intervalMinutes: 60,
+    enabled: true,
+    nextRunAt: null,
+    lastRunAt: null,
+    lastResult: null,
+    lastError: null,
+  },
+  recurringSync: {
+    label: 'Sync de recurrencia',
+    source: 'internal_timer',
+    intervalMinutes: 1440,
     enabled: true,
     nextRunAt: null,
     lastRunAt: null,
@@ -190,6 +202,44 @@ function startPaymentReminderCron() {
   paymentReminderTimer = setTimeout(run, initialDelay);
 }
 
+function startRecurringSyncCron() {
+  async function scheduleNext() {
+    try {
+      const nowLP = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/La_Paz' }));
+      const target = new Date(nowLP);
+      target.setHours(6, 0, 0, 0);
+
+      if (nowLP >= target) {
+        target.setDate(target.getDate() + 1);
+      }
+
+      const msUntil = target - nowLP;
+      setNextRun('recurringSync', msUntil);
+      recurringSyncTimer = setTimeout(async () => {
+        try {
+          const result = await syncRecurringFromGCal(1);
+          console.log(
+            `[cron] Recurring sync: created=${result.created}, already_exists=${result.already_exists}, no_client_match=${result.no_client_match}`
+          );
+          markSuccess('recurringSync', result, true);
+        } catch (err) {
+          console.error('[cron] Recurring sync error:', err.message);
+          markError('recurringSync', err, true);
+        }
+        scheduleNext();
+      }, msUntil);
+    } catch (err) {
+      console.error('[cron] Recurring sync scheduler error:', err.message);
+      markError('recurringSync', err, true);
+      const delay = 5 * 60 * 1000;
+      setNextRun('recurringSync', delay);
+      recurringSyncTimer = setTimeout(scheduleNext, delay);
+    }
+  }
+
+  scheduleNext();
+}
+
 function stopReminderCron() {
   if (reminderTimer) clearTimeout(reminderTimer);
   reminderTimer = null;
@@ -206,6 +256,12 @@ function stopPaymentReminderCron() {
   if (paymentReminderTimer) clearTimeout(paymentReminderTimer);
   paymentReminderTimer = null;
   schedulerState.paymentReminder.nextRunAt = null;
+}
+
+function stopRecurringSyncCron() {
+  if (recurringSyncTimer) clearTimeout(recurringSyncTimer);
+  recurringSyncTimer = null;
+  schedulerState.recurringSync.nextRunAt = null;
 }
 
 function refreshConfigSchedulers() {
@@ -230,6 +286,8 @@ module.exports = {
   stopAutoCompleteCron,
   startPaymentReminderCron,
   stopPaymentReminderCron,
+  startRecurringSyncCron,
+  stopRecurringSyncCron,
   refreshConfigSchedulers,
   getSchedulerRuntime,
 };

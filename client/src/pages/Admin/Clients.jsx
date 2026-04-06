@@ -1,8 +1,9 @@
 import { useState, useEffect } from 'react';
-import { Plus, Trash2, X, Search, ChevronDown } from 'lucide-react';
+import { Plus, Trash2, X, Search, Repeat } from 'lucide-react';
 import AdminLayout from '../../components/AdminLayout';
 import { api } from '../../utils/api';
 import { useToast, Toast } from '../../hooks/useToast';
+import { formatTimeBolivia, formatWeekdayShort, getBoliviaDateKey } from '../../utils/dates';
 
 const DEFAULT_STATUSES = [
   { name: 'Nuevo', color: '#3B82F6' },
@@ -37,14 +38,36 @@ function statusStyle(color) {
 
 function retentionStyle(status) {
   if (status === 'Con cita') return { backgroundColor: '#DBEAFE', color: '#1D4ED8' };
+  if (status === 'Recurrente') return { backgroundColor: '#DBEAFE', color: '#1D4ED8' };
+  if (status === 'En pausa') return { backgroundColor: '#FEF3C7', color: '#B45309' };
   if (status === 'Al día') return { backgroundColor: '#D1FAE5', color: '#047857' };
   if (status === 'En riesgo') return { backgroundColor: '#FEF3C7', color: '#B45309' };
   if (status === 'Perdido') return { backgroundColor: '#FEE2E2', color: '#B91C1C' };
   return { backgroundColor: '#E5E7EB', color: '#4B5563' };
 }
 
+function buildRecurringForm(schedule, client) {
+  return {
+    day_of_week: schedule?.day_of_week ?? '',
+    time: schedule?.time ?? (client?.last_session ? formatTimeBolivia(client.last_session) : ''),
+    started_at: schedule?.started_at || getBoliviaDateKey(),
+    notes: schedule?.notes || '',
+  };
+}
+
+const WEEKDAY_OPTIONS = [
+  { value: 1, label: 'Lunes' },
+  { value: 2, label: 'Martes' },
+  { value: 3, label: 'Miércoles' },
+  { value: 4, label: 'Jueves' },
+  { value: 5, label: 'Viernes' },
+  { value: 6, label: 'Sábado' },
+  { value: 0, label: 'Domingo' },
+];
+
 export default function Clients() {
   const [clients, setClients] = useState([]);
+  const [recurringSchedules, setRecurringSchedules] = useState([]);
   const [loading, setLoading] = useState(true);
   const { toast, show: showToast } = useToast();
   const [search, setSearch] = useState('');
@@ -59,6 +82,7 @@ export default function Clients() {
 
   useEffect(() => {
     loadClients();
+    loadRecurringSchedules();
     loadConfig();
   }, []);
 
@@ -70,6 +94,15 @@ export default function Clients() {
       console.error(err);
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function loadRecurringSchedules() {
+    try {
+      const data = await api.get('/recurring');
+      setRecurringSchedules(Array.isArray(data) ? data : []);
+    } catch (err) {
+      console.error(err);
     }
   }
 
@@ -132,6 +165,7 @@ export default function Clients() {
       } else {
         setShowCreate(false);
         loadClients();
+        loadRecurringSchedules();
       }
     } catch (err) {
       showToast('Error: ' + err.message, 'error');
@@ -184,6 +218,13 @@ export default function Clients() {
       || (phoneSearch && normalizePhoneInput(c.phone).includes(phoneSearch))
       || c.city?.toLowerCase().includes(s);
   });
+
+  const recurringByClient = new Map();
+  for (const schedule of recurringSchedules) {
+    if (!recurringByClient.has(schedule.client_id)) {
+      recurringByClient.set(schedule.client_id, schedule);
+    }
+  }
 
   return (
     <AdminLayout title="Clientes">
@@ -266,7 +307,20 @@ export default function Clients() {
                     />
                   </td>
                   <td className="p-3 font-medium cursor-pointer hover:text-blue-600" onClick={() => setEditClient(client)}>
-                    {client.first_name}
+                    <div className="space-y-1">
+                      <div>{client.first_name}</div>
+                      {recurringByClient.get(client.id)?.is_active ? (
+                        <div className="space-y-1">
+                          <span className="inline-flex w-fit items-center gap-1 rounded-full bg-blue-100 px-2 py-0.5 text-xs font-semibold text-blue-700">
+                            <Repeat size={12} />
+                            Semanal
+                          </span>
+                          <div className="text-[11px] font-medium text-blue-700">
+                            {formatWeekdayShort(recurringByClient.get(client.id).day_of_week)} {recurringByClient.get(client.id).time}
+                          </div>
+                        </div>
+                      ) : null}
+                    </div>
                   </td>
                   <td className="p-3 cursor-pointer hover:text-blue-600" onClick={() => setEditClient(client)}>
                     {client.last_name}
@@ -388,8 +442,12 @@ export default function Clients() {
       {editClient && (
         <EditClientModal
           client={editClient}
-          onClose={() => { setEditClient(null); loadClients(); }}
+          recurringSchedule={recurringByClient.get(editClient.id) || null}
+          onClose={() => { setEditClient(null); loadClients(); loadRecurringSchedules(); }}
           onSave={handleUpdate}
+          onRecurringChange={async () => {
+            await Promise.all([loadClients(), loadRecurringSchedules()]);
+          }}
           sources={sources}
           statuses={statuses}
           showToast={showToast}
@@ -477,11 +535,114 @@ function CreateClientModal({ onClose, onCreate, saving, sources }) {
   );
 }
 
-function EditClientModal({ client, onClose, onSave, sources, statuses, showToast }) {
+function getRecurringStatusMeta(schedule) {
+  if (!schedule) return null;
+  if (schedule.ended_at) {
+    return { label: 'Finalizada', className: 'bg-gray-100 text-gray-600' };
+  }
+  if (schedule.paused_at) {
+    return { label: 'Pausada', className: 'bg-amber-100 text-amber-700' };
+  }
+  return { label: 'Activa', className: 'bg-blue-100 text-blue-700' };
+}
+
+function EditClientModal({ client, recurringSchedule, onClose, onSave, onRecurringChange, sources, statuses, showToast }) {
   const [form, setForm] = useState({ ...client });
   const [saving, setSaving] = useState(false);
+  const [currentSchedule, setCurrentSchedule] = useState(recurringSchedule);
+  const [recurringForm, setRecurringForm] = useState(buildRecurringForm(recurringSchedule, client));
+  const [savingRecurring, setSavingRecurring] = useState(false);
 
   function set(k, v) { setForm(f => ({ ...f, [k]: v })); }
+  function setRecurringField(k, v) { setRecurringForm(f => ({ ...f, [k]: v })); }
+
+  useEffect(() => {
+    setForm({ ...client });
+  }, [client]);
+
+  useEffect(() => {
+    setCurrentSchedule(recurringSchedule);
+    setRecurringForm(buildRecurringForm(recurringSchedule, client));
+  }, [recurringSchedule, client]);
+
+  const recurringMeta = getRecurringStatusMeta(currentSchedule);
+  const recurringIsActive = currentSchedule && !currentSchedule.ended_at && !currentSchedule.paused_at;
+  const recurringCanEdit = currentSchedule && !currentSchedule.ended_at;
+
+  async function refreshRecurring(nextSchedule) {
+    setCurrentSchedule(nextSchedule);
+    setRecurringForm(buildRecurringForm(nextSchedule, client));
+    if (onRecurringChange) {
+      await onRecurringChange();
+    }
+  }
+
+  async function handleRecurringActivate() {
+    if (recurringForm.day_of_week === '' || !recurringForm.time || !recurringForm.started_at) {
+      showToast('Completa día, hora y fecha de inicio', 'error');
+      return;
+    }
+
+    setSavingRecurring(true);
+    try {
+      const created = await api.post('/recurring', {
+        client_id: client.id,
+        day_of_week: Number(recurringForm.day_of_week),
+        time: recurringForm.time,
+        started_at: recurringForm.started_at,
+        notes: recurringForm.notes || null,
+      });
+      await refreshRecurring(created);
+      showToast('Sesión recurrente activada');
+    } catch (err) {
+      showToast('Error: ' + err.message, 'error');
+    } finally {
+      setSavingRecurring(false);
+    }
+  }
+
+  async function handleRecurringUpdate() {
+    if (!currentSchedule) return;
+    if (recurringForm.day_of_week === '' || !recurringForm.time) {
+      showToast('Completa día y hora', 'error');
+      return;
+    }
+
+    setSavingRecurring(true);
+    try {
+      const updated = await api.put(`/recurring/${currentSchedule.id}`, {
+        day_of_week: Number(recurringForm.day_of_week),
+        time: recurringForm.time,
+        notes: recurringForm.notes || null,
+      });
+      await refreshRecurring(updated);
+      showToast('Sesión recurrente actualizada');
+    } catch (err) {
+      showToast('Error: ' + err.message, 'error');
+    } finally {
+      setSavingRecurring(false);
+    }
+  }
+
+  async function handleRecurringAction(action) {
+    if (!currentSchedule) return;
+    setSavingRecurring(true);
+    try {
+      const updated = await api.put(`/recurring/${currentSchedule.id}/${action}`, {});
+      await refreshRecurring(updated);
+      showToast(
+        action === 'pause'
+          ? 'Sesión recurrente pausada'
+          : action === 'resume'
+            ? 'Sesión recurrente reactivada'
+            : 'Sesión recurrente finalizada'
+      );
+    } catch (err) {
+      showToast('Error: ' + err.message, 'error');
+    } finally {
+      setSavingRecurring(false);
+    }
+  }
 
   async function handleSave() {
     setSaving(true);
@@ -573,6 +734,180 @@ function EditClientModal({ client, onClose, onSave, sources, statuses, showToast
           <Field label="Notas">
             <textarea value={form.notes || ''} onChange={e => set('notes', e.target.value)} rows={2} className="input" />
           </Field>
+
+          <div className="rounded-xl border border-gray-200 p-4">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <div className="text-sm font-semibold text-gray-900">Sesión recurrente</div>
+                <div className="text-xs text-gray-400">Patrón semanal administrado desde la app.</div>
+              </div>
+              {recurringMeta ? (
+                <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${recurringMeta.className}`}>
+                  {recurringMeta.label}
+                </span>
+              ) : (
+                <span className="rounded-full bg-gray-100 px-2.5 py-1 text-xs font-semibold text-gray-500">Sin activar</span>
+              )}
+            </div>
+
+            {currentSchedule ? (
+              <div className="mt-4 space-y-3">
+                <div className="grid grid-cols-2 gap-3 text-sm">
+                  <div>
+                    <div className="text-xs text-gray-400">Inicio</div>
+                    <div className="font-medium text-gray-700">{currentSchedule.started_at || '—'}</div>
+                  </div>
+                  <div>
+                    <div className="text-xs text-gray-400">Último estado</div>
+                    <div className="font-medium text-gray-700">
+                      {currentSchedule.ended_at
+                        ? `Finalizada el ${currentSchedule.ended_at}`
+                        : currentSchedule.paused_at
+                          ? `Pausada desde ${currentSchedule.paused_at}`
+                          : 'Activa ahora'}
+                    </div>
+                  </div>
+                </div>
+
+                {recurringCanEdit ? (
+                  <div className="grid grid-cols-2 gap-3">
+                    <Field label="Día">
+                      <select
+                        value={recurringForm.day_of_week}
+                        onChange={e => setRecurringField('day_of_week', e.target.value)}
+                        className="input"
+                      >
+                        <option value="">Selecciona</option>
+                        {WEEKDAY_OPTIONS.map(option => (
+                          <option key={option.value} value={option.value}>{option.label}</option>
+                        ))}
+                      </select>
+                    </Field>
+                    <Field label="Hora">
+                      <input
+                        type="time"
+                        value={recurringForm.time}
+                        onChange={e => setRecurringField('time', e.target.value)}
+                        className="input"
+                      />
+                    </Field>
+                    <div className="col-span-2">
+                      <Field label="Notas">
+                        <textarea
+                          value={recurringForm.notes}
+                          onChange={e => setRecurringField('notes', e.target.value)}
+                          rows={2}
+                          className="input"
+                        />
+                      </Field>
+                    </div>
+                  </div>
+                ) : null}
+
+                <div className="flex flex-wrap gap-2">
+                  {recurringCanEdit ? (
+                    <button
+                      type="button"
+                      onClick={handleRecurringUpdate}
+                      disabled={savingRecurring}
+                      className="rounded-lg bg-gray-900 px-3 py-2 text-xs font-medium text-white disabled:opacity-40"
+                    >
+                      Guardar recurrencia
+                    </button>
+                  ) : null}
+                  {recurringIsActive ? (
+                    <button
+                      type="button"
+                      onClick={() => handleRecurringAction('pause')}
+                      disabled={savingRecurring}
+                      className="rounded-lg bg-amber-100 px-3 py-2 text-xs font-medium text-amber-700 disabled:opacity-40"
+                    >
+                      Pausar
+                    </button>
+                  ) : null}
+                  {currentSchedule && currentSchedule.paused_at && !currentSchedule.ended_at ? (
+                    <button
+                      type="button"
+                      onClick={() => handleRecurringAction('resume')}
+                      disabled={savingRecurring}
+                      className="rounded-lg bg-blue-100 px-3 py-2 text-xs font-medium text-blue-700 disabled:opacity-40"
+                    >
+                      Reactivar
+                    </button>
+                  ) : null}
+                  {currentSchedule && !currentSchedule.ended_at ? (
+                    <button
+                      type="button"
+                      onClick={() => handleRecurringAction('end')}
+                      disabled={savingRecurring}
+                      className="rounded-lg bg-gray-100 px-3 py-2 text-xs font-medium text-gray-700 disabled:opacity-40"
+                    >
+                      Finalizar
+                    </button>
+                  ) : null}
+                </div>
+              </div>
+            ) : null}
+
+            {(!currentSchedule || currentSchedule.ended_at) ? (
+              <div className="mt-4 space-y-3 border-t border-gray-100 pt-4">
+                <div className="text-sm font-medium text-gray-700">Activar semanal</div>
+                <div className="grid grid-cols-2 gap-3">
+                  <Field label="Día">
+                    <select
+                      value={recurringForm.day_of_week}
+                      onChange={e => setRecurringField('day_of_week', e.target.value)}
+                      className="input"
+                    >
+                      <option value="">Selecciona</option>
+                      {WEEKDAY_OPTIONS.map(option => (
+                        <option key={option.value} value={option.value}>{option.label}</option>
+                      ))}
+                    </select>
+                  </Field>
+                  <Field label="Hora">
+                    <input
+                      type="time"
+                      value={recurringForm.time}
+                      onChange={e => setRecurringField('time', e.target.value)}
+                      className="input"
+                    />
+                  </Field>
+                  <Field label="Fecha de inicio">
+                    <input
+                      type="date"
+                      value={recurringForm.started_at}
+                      onChange={e => setRecurringField('started_at', e.target.value)}
+                      className="input"
+                    />
+                  </Field>
+                  <div className="text-xs text-gray-400">
+                    {client.last_session
+                      ? `Sugerencia tomada de la última sesión: ${formatTimeBolivia(client.last_session)}`
+                      : 'Puedes definir la hora manualmente.'}
+                  </div>
+                  <div className="col-span-2">
+                    <Field label="Notas">
+                      <textarea
+                        value={recurringForm.notes}
+                        onChange={e => setRecurringField('notes', e.target.value)}
+                        rows={2}
+                        className="input"
+                      />
+                    </Field>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleRecurringActivate}
+                  disabled={savingRecurring}
+                  className="rounded-lg bg-blue-600 px-3 py-2 text-xs font-medium text-white disabled:opacity-40"
+                >
+                  Activar semanal
+                </button>
+              </div>
+            ) : null}
+          </div>
 
           {/* Info */}
           <div className="grid grid-cols-3 gap-3 pt-2 border-t border-gray-100 text-xs text-gray-400">

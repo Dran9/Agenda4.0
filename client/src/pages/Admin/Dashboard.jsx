@@ -10,6 +10,7 @@ import {
   Command,
   FileWarning,
   MessageSquareMore,
+  Repeat,
   ShieldCheck,
   Sparkles,
   TrendingUp,
@@ -18,7 +19,7 @@ import {
 } from 'lucide-react';
 import AdminLayout from '../../components/AdminLayout';
 import { api } from '../../utils/api';
-import { formatRelativeTime, formatTimeBolivia } from '../../utils/dates';
+import { formatRelativeTime, formatTimeBolivia, getBoliviaDateKey } from '../../utils/dates';
 import { Toast, useToast } from '../../hooks/useToast';
 import './Preview.css';
 
@@ -29,12 +30,14 @@ const AUTOMATIONS = [
 ];
 
 function toneClasses(tone) {
+  if (tone === 'blue') return 'bg-blue-100 text-blue-700 border-blue-200';
   if (tone === 'rose') return 'bg-rose-100 text-rose-700 border-rose-200';
   if (tone === 'amber') return 'bg-amber-100 text-amber-700 border-amber-200';
   return 'bg-sky-100 text-sky-700 border-sky-200';
 }
 
 function appointmentStatusClasses(state) {
+  if (state === 'Recurrente') return 'bg-blue-100 text-blue-700';
   if (state === 'Confirmada') return 'bg-emerald-100 text-emerald-700';
   if (state === 'Completada') return 'bg-slate-900 text-white';
   if (state === 'Agendada') return 'bg-amber-100 text-amber-700';
@@ -59,6 +62,31 @@ function formatClientStatus(status) {
   return status;
 }
 
+function buildAgendaKey(item) {
+  if (item.type === 'virtual') return `virtual-${item.schedule_id}-${item.date_time}`;
+  return `appointment-${item.id}`;
+}
+
+function mergeTodayAgenda(appointments = [], recurring = []) {
+  const merged = new Map();
+
+  for (const appt of appointments) {
+    merged.set(buildAgendaKey(appt), appt);
+  }
+
+  for (const item of recurring) {
+    if (item.type === 'materialized' && item.id) {
+      const key = `appointment-${item.id}`;
+      if (merged.has(key)) continue;
+      merged.set(key, item);
+      continue;
+    }
+    merged.set(buildAgendaKey(item), item);
+  }
+
+  return [...merged.values()].sort((a, b) => new Date(a.date_time) - new Date(b.date_time));
+}
+
 function PreviewPanel({ eyebrow, title, description, children, className = '', delay = 0 }) {
   return (
     <section
@@ -79,6 +107,7 @@ function PreviewPanel({ eyebrow, title, description, children, className = '', d
 
 export default function Dashboard() {
   const [todayAppts, setTodayAppts] = useState([]);
+  const [analyticsData, setAnalyticsData] = useState(null);
   const [stats, setStats] = useState(null);
   const [payments, setPayments] = useState([]);
   const [conversations, setConversations] = useState([]);
@@ -93,14 +122,17 @@ export default function Dashboard() {
   async function loadDashboard() {
     setLoading(true);
     try {
-      const [appts, analytics, paymentsData, convoData, clientsData] = await Promise.all([
+      const today = getBoliviaDateKey();
+      const [appts, recurring, analytics, paymentsData, convoData, clientsData] = await Promise.all([
         api.get('/appointments/today'),
+        api.get(`/recurring/upcoming?from=${today}&to=${today}`).catch(() => []),
         api.get('/analytics').catch(() => null),
         api.get('/payments?limit=12').catch(() => ({ payments: [] })),
         api.get('/webhook/conversations?limit=6').catch(() => ({ conversations: [] })),
         api.get('/clients').catch(() => []),
       ]);
-      setTodayAppts(appts || []);
+      setTodayAppts(mergeTodayAgenda(appts || [], recurring || []));
+      setAnalyticsData(analytics || null);
       setStats(analytics?.totals || null);
       setPayments(paymentsData?.payments || []);
       setConversations(convoData?.conversations || []);
@@ -124,11 +156,28 @@ export default function Dashboard() {
     }
   }
 
-  async function handleStatusChange(id, status) {
+  async function handleStatusChange(appt, status) {
     try {
-      await api.put(`/appointments/${id}/status`, { status });
-      setTodayAppts((prev) => prev.map((a) => (a.id === id ? { ...a, status } : a)));
-      showToast(`Cita actualizada a ${status}`);
+      let appointmentId = appt.id;
+      if (appt.type === 'virtual') {
+        const materialized = await api.post(`/recurring/${appt.schedule_id}/materialize`, {
+          date: getBoliviaDateKey(appt.date_time),
+        });
+        appointmentId = materialized?.appointment?.id;
+      }
+
+      if (!appointmentId) {
+        throw new Error('No se pudo materializar la sesión recurrente');
+      }
+
+      if (status !== 'Agendada') {
+        await api.put(`/appointments/${appointmentId}/status`, { status });
+      }
+
+      await loadDashboard();
+      showToast(appt.type === 'virtual'
+        ? `Sesión recurrente materializada y actualizada a ${status}`
+        : `Cita actualizada a ${status}`);
     } catch (err) {
       showToast(`Error: ${err.message}`, 'error');
     }
@@ -159,8 +208,9 @@ export default function Dashboard() {
   const todayConfirmedRevenue = todayAppts
     .filter((appt) => appt.payment_status === 'Confirmado')
     .reduce((sum, appt) => sum + Number(appt.payment_amount || 0), 0);
-  const needsConfirmation = todayAppts.filter((appt) => !['Confirmada', 'Completada'].includes(appt.status)).length;
+  const needsConfirmation = todayAppts.filter((appt) => appt.type === 'virtual' || !['Confirmada', 'Completada'].includes(appt.status)).length;
   const weekSessions = Number(stats?.sessions_this_week || 0);
+  const recurringClients = Number(analyticsData?.recurring?.active || 0);
 
   const attentionQueue = [
     mismatches[0] && {
@@ -182,6 +232,7 @@ export default function Dashboard() {
 
   const priorityStrip = [
     { label: 'Sin confirmar', value: String(needsConfirmation), tone: 'amber' },
+    { label: 'Recurrentes', value: String(recurringClients), tone: 'blue' },
     { label: 'Mismatch', value: String(mismatches.length), tone: 'rose' },
     { label: 'En riesgo', value: String(riskClients), tone: 'sky' },
   ];
@@ -259,8 +310,8 @@ export default function Dashboard() {
                   ) : (
                     todayAppts.map((appt, index) => (
                       <div
-                        key={appt.id}
-                        className="group flex flex-col gap-4 rounded-[24px] border border-slate-200/80 bg-[#fcfbf8] px-4 py-4 transition-all duration-200 hover:-translate-y-0.5 hover:border-slate-300 hover:shadow-[0_18px_40px_rgba(15,23,42,0.07)] md:flex-row md:items-center"
+                        key={buildAgendaKey(appt)}
+                        className={`group flex flex-col gap-4 rounded-[24px] border border-slate-200/80 px-4 py-4 transition-all duration-200 hover:-translate-y-0.5 hover:border-slate-300 hover:shadow-[0_18px_40px_rgba(15,23,42,0.07)] md:flex-row md:items-center ${appt.type === 'virtual' ? 'bg-blue-50/60' : 'bg-[#fcfbf8]'}`}
                       >
                         <div className="flex items-center gap-4 md:w-[122px] md:flex-none">
                           <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-[#1f2937] text-sm font-semibold text-white">
@@ -269,15 +320,22 @@ export default function Dashboard() {
                           <div>
                             <div className="text-lg font-semibold tracking-tight text-slate-900">{formatTimeBolivia(appt.date_time)}</div>
                             <div className="text-xs uppercase tracking-[0.18em] text-slate-400">
-                              {appt.session_number ? `sesión ${appt.session_number}` : 'agenda'}
+                              {appt.type === 'virtual'
+                                ? 'recurrente'
+                                : appt.session_number ? `sesión ${appt.session_number}` : 'agenda'}
                             </div>
                           </div>
                         </div>
 
                         <div className="min-w-0 flex-1">
                           <div className="flex flex-wrap items-center gap-2">
-                            <div className="text-base font-semibold text-slate-900">{appt.first_name} {appt.last_name}</div>
-                            <span className={`rounded-full px-2.5 py-1 text-xs font-medium ${appointmentStatusClasses(appt.status)}`}>{appt.status}</span>
+                            <div className="flex items-center gap-2 text-base font-semibold text-slate-900">
+                              {appt.type === 'virtual' ? <Repeat size={15} className="text-blue-600" /> : null}
+                              <span>{appt.first_name} {appt.last_name}</span>
+                            </div>
+                            <span className={`rounded-full px-2.5 py-1 text-xs font-medium ${appointmentStatusClasses(appt.type === 'virtual' ? 'Recurrente' : appt.status)}`}>
+                              {appt.type === 'virtual' ? 'Recurrente' : appt.status}
+                            </span>
                           </div>
                           <div className="mt-1 text-sm text-slate-500">
                             {appt.client_phone || 'Sin teléfono'} {appt.payment_amount ? `• ${formatMoney(appt.payment_amount)}` : ''}
@@ -296,7 +354,7 @@ export default function Dashboard() {
                           <select
                             value=""
                             onChange={(e) => {
-                              if (e.target.value) handleStatusChange(appt.id, e.target.value);
+                              if (e.target.value) handleStatusChange(appt, e.target.value);
                             }}
                             className="rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-600 outline-none transition hover:border-slate-300"
                           >

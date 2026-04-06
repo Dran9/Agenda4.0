@@ -23,6 +23,8 @@ async function deleteCalendarEventIfPresent(eventId) {
 function calculateStatus(client, lastAppt, futureAppt, completedCount) {
   if (client.status_override === 'Archivado') return 'Archivado';
   if (client.status_override) return client.status_override;
+  if (client.has_active_recurring > 0) return 'Recurrente';
+  if (client.has_paused_recurring > 0) return 'En pausa';
   if (completedCount === 0) return 'Nuevo';
   if (futureAppt || (lastAppt && daysSince(lastAppt.date_time) < 21)) {
     return completedCount >= 10 ? 'Recurrente' : 'Activo';
@@ -57,10 +59,12 @@ router.get('/', authMiddleware, async (req, res) => {
         (SELECT MIN(date_time) FROM appointments WHERE client_id = c.id AND tenant_id = ? AND status = 'Completada') as first_session,
         (SELECT MIN(date_time) FROM appointments WHERE client_id = c.id AND tenant_id = ? AND status IN ('Agendada','Confirmada','Reagendada') AND date_time > NOW()) as next_session,
         (SELECT COUNT(*) FROM appointments WHERE client_id = c.id AND tenant_id = ?) as total_appointments,
-        (SELECT COUNT(*) FROM appointments WHERE client_id = c.id AND tenant_id = ? AND status = 'Reagendada') as reschedule_count
+        (SELECT COUNT(*) FROM appointments WHERE client_id = c.id AND tenant_id = ? AND status = 'Reagendada') as reschedule_count,
+        (SELECT COUNT(*) FROM recurring_schedules WHERE client_id = c.id AND tenant_id = ? AND ended_at IS NULL AND paused_at IS NULL) as has_active_recurring,
+        (SELECT COUNT(*) FROM recurring_schedules WHERE client_id = c.id AND tenant_id = ? AND ended_at IS NULL AND paused_at IS NOT NULL) as has_paused_recurring
        FROM clients c WHERE c.tenant_id = ? AND c.deleted_at IS NULL
        ORDER BY c.created_at DESC`,
-      [req.tenantId, req.tenantId, req.tenantId, req.tenantId, req.tenantId, req.tenantId, req.tenantId]
+      [req.tenantId, req.tenantId, req.tenantId, req.tenantId, req.tenantId, req.tenantId, req.tenantId, req.tenantId, req.tenantId]
     );
 
     const [cfgRows] = await pool.query('SELECT retention_rules FROM config WHERE tenant_id = ? LIMIT 1', [req.tenantId]);
@@ -79,6 +83,8 @@ router.get('/', authMiddleware, async (req, res) => {
         lastSession: client.last_session,
         nextAppointment: client.next_session,
         rules: retentionRules,
+        hasActiveRecurring: client.has_active_recurring > 0,
+        hasPausedRecurring: client.has_paused_recurring > 0,
       });
       client.retention_status = retention.status;
       client.days_since_last_session = retention.days_since_last_session;
@@ -117,7 +123,19 @@ router.get('/:id', authMiddleware, async (req, res) => {
       [client.id, req.tenantId]
     );
 
-    res.json({ client, appointments, payments });
+    const [recurringRows] = await pool.query(
+      `SELECT *
+       FROM recurring_schedules
+       WHERE tenant_id = ? AND client_id = ?
+       ORDER BY
+         CASE WHEN ended_at IS NULL AND paused_at IS NULL THEN 0 ELSE 1 END,
+         updated_at DESC,
+         id DESC
+       LIMIT 1`,
+      [req.tenantId, client.id]
+    );
+
+    res.json({ client, appointments, payments, recurring_schedule: recurringRows[0] || null });
   } catch (err) {
     sendServerError(res, req, err, {
       message: 'No se pudo cargar el cliente',

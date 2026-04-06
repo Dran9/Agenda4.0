@@ -2,6 +2,11 @@ const { pool } = require('../db');
 const { listEvents } = require('./calendar');
 const { sendConfirmationTemplate, sendPaymentReminderTemplate } = require('./whatsapp');
 const { normalizePhone, normalizedPhoneSql } = require('../utils/phone');
+const {
+  findRecurringScheduleForEventInstance,
+  getDateKeyInLaPaz,
+  materializeRecurringOccurrence,
+} = require('./recurring');
 
 function pad(d) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
@@ -116,7 +121,33 @@ async function checkAndSendReminders({ date, tenantId, force = false, appointmen
         params
       );
 
-      // Try 2: Fallback — extract phone from event name (format: "$ ✅ Terapia Name - 59172034151")
+      // Try 2: Recurring schedule match — materialize the occurrence before sending
+      if (appts.length === 0) {
+        const dateKey = event.start?.dateTime ? getDateKeyInLaPaz(event.start.dateTime) : null;
+        if (event.recurringEventId && dateKey) {
+          const schedule = await findRecurringScheduleForEventInstance(
+            tenantId || 1,
+            event.recurringEventId,
+            dateKey
+          );
+          if (schedule) {
+            const materialized = await materializeRecurringOccurrence({
+              tenantId: tenantId || 1,
+              scheduleId: schedule.id,
+              date: dateKey,
+              eventInstance: event,
+            });
+            if (materialized?.appointment) {
+              appts = [materialized.appointment];
+              console.log(
+                `[reminder] Matched recurring schedule ${schedule.id} and ${materialized.created ? 'materialized' : 'reused'} appointment ${materialized.appointment.id}`
+              );
+            }
+          }
+        }
+      }
+
+      // Try 3: Fallback — extract phone from event name (format: "$ ✅ Terapia Name - 59172034151")
       if (appts.length === 0) {
         const phoneMatch = summary.match(/-\s*(\d{10,15})\s*$/);
         if (phoneMatch) {
@@ -131,7 +162,6 @@ async function checkAndSendReminders({ date, tenantId, force = false, appointmen
           // Wrap as pseudo-appointment for sending
           if (appts.length > 0) {
             const client = appts[0];
-            const eventStart = event.start?.dateTime || event.start?.date;
             appts = [{
               id: null,
               client_id: client.client_id,

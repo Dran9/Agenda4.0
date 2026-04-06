@@ -3,6 +3,13 @@ const { createBooking } = require('../booking');
 const { getTodayContext } = require('./parseCommand');
 const { checkAndSendReminders } = require('../reminder');
 const { refreshConfigSchedulers } = require('../../cron/scheduler');
+const {
+  createRecurringSchedule,
+  endRecurringSchedule,
+  pauseRecurringSchedule,
+  resumeRecurringSchedule,
+  updateRecurringSchedule,
+} = require('../recurring');
 
 function addDays(dateKey, days) {
   const [y, m, d] = String(dateKey).split('-').map(Number);
@@ -82,7 +89,20 @@ const WEEKDAY_LABELS = {
   domingo: 'domingo',
 };
 
-const WEEKDAY_ORDER = ['lunes', 'martes', 'miercoles', 'jueves', 'viernes', 'sabado', 'domingo'];
+  const WEEKDAY_ORDER = ['lunes', 'martes', 'miercoles', 'jueves', 'viernes', 'sabado', 'domingo'];
+const WEEKDAY_TO_INDEX = {
+  domingo: 0,
+  lunes: 1,
+  martes: 2,
+  miercoles: 3,
+  jueves: 4,
+  viernes: 5,
+  sabado: 6,
+};
+
+function weekdayNameFromIndex(dayIndex) {
+  return Object.keys(WEEKDAY_TO_INDEX).find((key) => WEEKDAY_TO_INDEX[key] === Number(dayIndex)) || 'lunes';
+}
 
 function timeToMinutes(t) {
   const [h, m] = String(t).split(':').map(Number);
@@ -207,6 +227,22 @@ async function resolveClientReference(tenantId, { clientId = null, clientName = 
   if (!matches.length) return { kind: 'none', client: null, matches: [] };
   if (matches.length === 1) return { kind: 'single', client: matches[0], matches };
   return { kind: 'multiple', client: null, matches };
+}
+
+async function findLatestRecurringScheduleForClient(tenantId, clientId) {
+  if (!clientId) return null;
+  const [rows] = await pool.query(
+    `SELECT *
+     FROM recurring_schedules
+     WHERE tenant_id = ? AND client_id = ?
+     ORDER BY
+       CASE WHEN ended_at IS NULL AND paused_at IS NULL THEN 0 ELSE 1 END,
+       updated_at DESC,
+       id DESC
+     LIMIT 1`,
+    [tenantId, clientId]
+  );
+  return rows[0] || null;
 }
 
 function buildPendingAction(intent, entities = {}) {
@@ -1013,6 +1049,276 @@ async function buildCreateAppointmentReply(tenantId, clientName, dateKey, timeHh
   };
 }
 
+async function buildActivateRecurringReply(tenantId, clientName, weekdayName, timeHhmm, clientId = null) {
+  if (!clientName && !clientId) {
+    return {
+      status: 'clarification',
+      replyText: 'Dime el nombre del cliente.',
+      data: {
+        clarification_type: 'missing_fields',
+        pending_action: buildPendingAction('activate_recurring', {
+          client_name: clientName,
+          client_id: clientId,
+          weekday_name: weekdayName,
+          time_hhmm: timeHhmm,
+        }),
+      },
+    };
+  }
+
+  const resolution = await resolveClientReference(tenantId, { clientId, clientName });
+  if (resolution.kind === 'missing') {
+    return {
+      status: 'clarification',
+      replyText: 'Dime el nombre del cliente.',
+      data: {
+        clarification_type: 'missing_fields',
+        pending_action: buildPendingAction('activate_recurring', {
+          client_name: clientName,
+          client_id: clientId,
+          weekday_name: weekdayName,
+          time_hhmm: timeHhmm,
+        }),
+      },
+    };
+  }
+  if (resolution.kind === 'none') {
+    return {
+      status: 'resolved',
+      replyText: `No encontré clientes para "${clientName}".`,
+      data: { total: 0, matches: [] },
+    };
+  }
+  if (resolution.kind === 'multiple') {
+    return buildClientClarificationReply(
+      clientName,
+      resolution.matches,
+      buildPendingAction('activate_recurring', {
+        client_name: clientName,
+        client_id: clientId,
+        weekday_name: weekdayName,
+        time_hhmm: timeHhmm,
+      })
+    );
+  }
+
+  const client = resolution.client;
+  const latestSchedule = await findLatestRecurringScheduleForClient(tenantId, client.id);
+  const dayIndex = weekdayName ? WEEKDAY_TO_INDEX[weekdayName] : null;
+
+  if (!latestSchedule && (dayIndex == null || !timeHhmm)) {
+    return {
+      status: 'clarification',
+      replyText: `¿Qué día y a qué hora es la sesión semanal de ${client.first_name}?`,
+      data: {
+        clarification_type: 'missing_fields',
+        pending_action: buildPendingAction('activate_recurring', {
+          client_name: clientName,
+          client_id: client.id,
+          weekday_name: weekdayName,
+          time_hhmm: timeHhmm,
+        }),
+      },
+    };
+  }
+
+  if (latestSchedule?.ended_at == null && latestSchedule?.paused_at == null) {
+    if (dayIndex != null && timeHhmm && (Number(latestSchedule.day_of_week) !== dayIndex || latestSchedule.time !== timeHhmm)) {
+      const updated = await updateRecurringSchedule(tenantId, latestSchedule.id, {
+        day_of_week: dayIndex,
+        time: timeHhmm,
+        notes: latestSchedule.notes,
+      });
+      return {
+        status: 'resolved',
+        replyText: `Listo, ${client.first_name} ahora tiene sesión semanal los ${WEEKDAY_LABELS[weekdayName]} a las ${updated.time}.`,
+        data: { client, recurring_schedule: updated },
+      };
+    }
+
+    return {
+      status: 'resolved',
+      replyText: `${client.first_name} ya tiene sesión semanal los ${WEEKDAY_LABELS[weekdayNameFromIndex(latestSchedule.day_of_week)]} a las ${latestSchedule.time}.`,
+      data: { client, recurring_schedule: latestSchedule },
+    };
+  }
+
+  if (latestSchedule?.paused_at && !latestSchedule.ended_at) {
+    let updated = latestSchedule;
+    if (dayIndex != null && timeHhmm) {
+      updated = await updateRecurringSchedule(tenantId, latestSchedule.id, {
+        day_of_week: dayIndex,
+        time: timeHhmm,
+        notes: latestSchedule.notes,
+      });
+    }
+    const resumed = await resumeRecurringSchedule(tenantId, latestSchedule.id);
+    return {
+      status: 'resolved',
+      replyText: `Listo, ${client.first_name} volvió a modo semanal los ${WEEKDAY_LABELS[weekdayNameFromIndex(resumed.day_of_week)]} a las ${resumed.time}.`,
+      data: { client, recurring_schedule: resumed },
+    };
+  }
+
+  const created = await createRecurringSchedule(tenantId, {
+    client_id: client.id,
+    day_of_week: dayIndex,
+    time: timeHhmm,
+    started_at: getTodayContext(),
+    notes: 'Activado desde comando de voz',
+  });
+
+  return {
+    status: 'resolved',
+    replyText: `Listo, ${client.first_name} ahora tiene sesión semanal los ${WEEKDAY_LABELS[weekdayName]} a las ${timeHhmm}.`,
+    data: { client, recurring_schedule: created },
+  };
+}
+
+async function buildPauseRecurringReply(tenantId, clientName, clientId = null) {
+  if (!clientName && !clientId) {
+    return {
+      status: 'clarification',
+      replyText: 'Dime el nombre del cliente.',
+      data: {
+        pending_action: buildPendingAction('pause_recurring', { client_name: clientName, client_id: clientId }),
+      },
+    };
+  }
+
+  const resolution = await resolveClientReference(tenantId, { clientId, clientName });
+  if (resolution.kind === 'none') {
+    return { status: 'resolved', replyText: `No encontré clientes para "${clientName}".`, data: { total: 0, matches: [] } };
+  }
+  if (resolution.kind === 'multiple') {
+    return buildClientClarificationReply(
+      clientName,
+      resolution.matches,
+      buildPendingAction('pause_recurring', { client_name: clientName, client_id: clientId })
+    );
+  }
+  if (resolution.kind === 'missing') {
+    return {
+      status: 'clarification',
+      replyText: 'Dime el nombre del cliente.',
+      data: { pending_action: buildPendingAction('pause_recurring', { client_name: clientName, client_id: clientId }) },
+    };
+  }
+
+  const client = resolution.client;
+  const schedule = await findLatestRecurringScheduleForClient(tenantId, client.id);
+  if (!schedule || schedule.ended_at || schedule.paused_at) {
+    return {
+      status: 'resolved',
+      replyText: `${client.first_name} no tiene una recurrencia activa para pausar.`,
+      data: { client, recurring_schedule: schedule },
+    };
+  }
+
+  const paused = await pauseRecurringSchedule(tenantId, schedule.id);
+  return {
+    status: 'resolved',
+    replyText: `Listo, se pausó la recurrencia de ${client.first_name}.`,
+    data: { client, recurring_schedule: paused },
+  };
+}
+
+async function buildResumeRecurringReply(tenantId, clientName, clientId = null) {
+  if (!clientName && !clientId) {
+    return {
+      status: 'clarification',
+      replyText: 'Dime el nombre del cliente.',
+      data: {
+        pending_action: buildPendingAction('resume_recurring', { client_name: clientName, client_id: clientId }),
+      },
+    };
+  }
+
+  const resolution = await resolveClientReference(tenantId, { clientId, clientName });
+  if (resolution.kind === 'none') {
+    return { status: 'resolved', replyText: `No encontré clientes para "${clientName}".`, data: { total: 0, matches: [] } };
+  }
+  if (resolution.kind === 'multiple') {
+    return buildClientClarificationReply(
+      clientName,
+      resolution.matches,
+      buildPendingAction('resume_recurring', { client_name: clientName, client_id: clientId })
+    );
+  }
+  if (resolution.kind === 'missing') {
+    return {
+      status: 'clarification',
+      replyText: 'Dime el nombre del cliente.',
+      data: { pending_action: buildPendingAction('resume_recurring', { client_name: clientName, client_id: clientId }) },
+    };
+  }
+
+  const client = resolution.client;
+  const schedule = await findLatestRecurringScheduleForClient(tenantId, client.id);
+  if (!schedule || schedule.ended_at || !schedule.paused_at) {
+    return {
+      status: 'resolved',
+      replyText: `${client.first_name} no tiene una recurrencia pausada para reactivar.`,
+      data: { client, recurring_schedule: schedule },
+    };
+  }
+
+  const resumed = await resumeRecurringSchedule(tenantId, schedule.id);
+  return {
+    status: 'resolved',
+    replyText: `Listo, se reactivó la recurrencia de ${client.first_name}.`,
+    data: { client, recurring_schedule: resumed },
+  };
+}
+
+async function buildDeactivateRecurringReply(tenantId, clientName, clientId = null) {
+  if (!clientName && !clientId) {
+    return {
+      status: 'clarification',
+      replyText: 'Dime el nombre del cliente.',
+      data: {
+        pending_action: buildPendingAction('deactivate_recurring', { client_name: clientName, client_id: clientId }),
+      },
+    };
+  }
+
+  const resolution = await resolveClientReference(tenantId, { clientId, clientName });
+  if (resolution.kind === 'none') {
+    return { status: 'resolved', replyText: `No encontré clientes para "${clientName}".`, data: { total: 0, matches: [] } };
+  }
+  if (resolution.kind === 'multiple') {
+    return buildClientClarificationReply(
+      clientName,
+      resolution.matches,
+      buildPendingAction('deactivate_recurring', { client_name: clientName, client_id: clientId })
+    );
+  }
+  if (resolution.kind === 'missing') {
+    return {
+      status: 'clarification',
+      replyText: 'Dime el nombre del cliente.',
+      data: { pending_action: buildPendingAction('deactivate_recurring', { client_name: clientName, client_id: clientId }) },
+    };
+  }
+
+  const client = resolution.client;
+  const schedule = await findLatestRecurringScheduleForClient(tenantId, client.id);
+  if (!schedule || schedule.ended_at) {
+    return {
+      status: 'resolved',
+      replyText: `${client.first_name} no tiene una recurrencia activa o pausada para desactivar.`,
+      data: { client, recurring_schedule: schedule },
+    };
+  }
+
+  const ended = await endRecurringSchedule(tenantId, schedule.id);
+  return {
+    status: 'resolved',
+    replyText: `Listo, se desactivó la recurrencia de ${client.first_name}.`,
+    data: { client, recurring_schedule: ended },
+  };
+}
+
 async function buildUpdateAvailabilityReply(tenantId, entities) {
   const weekdayName = entities.weekday_name;
   if (!weekdayName || !WEEKDAY_LABELS[weekdayName]) {
@@ -1169,13 +1475,25 @@ async function executeVoiceCommand({ tenantId, parsedCommand }) {
   if (intent === 'create_appointment') {
     return buildCreateAppointmentReply(tenantId, entities.client_name, entities.date_key, entities.time_hhmm, entities.client_id);
   }
+  if (intent === 'activate_recurring') {
+    return buildActivateRecurringReply(tenantId, entities.client_name, entities.weekday_name, entities.time_hhmm, entities.client_id);
+  }
+  if (intent === 'deactivate_recurring') {
+    return buildDeactivateRecurringReply(tenantId, entities.client_name, entities.client_id);
+  }
+  if (intent === 'pause_recurring') {
+    return buildPauseRecurringReply(tenantId, entities.client_name, entities.client_id);
+  }
+  if (intent === 'resume_recurring') {
+    return buildResumeRecurringReply(tenantId, entities.client_name, entities.client_id);
+  }
   if (intent === 'update_availability') {
     return buildUpdateAvailabilityReply(tenantId, entities);
   }
 
   return {
     status: 'clarification',
-    replyText: 'Todavía no puedo hacer eso. Por ahora consulta agenda, pendientes, metas, clientes, confirmaciones, recordatorios, reagendados, nuevos por mes, crea citas para clientes existentes o ajusta recordatorios y disponibilidad.',
+    replyText: 'Todavía no puedo hacer eso. Por ahora consulta agenda, pendientes, metas, clientes, confirmaciones, recordatorios, reagendados, nuevos por mes, crea citas para clientes existentes, activa o pausa recurrencias y ajusta recordatorios y disponibilidad.',
     data: {
       supported_intents: [
         'agenda_query',
@@ -1194,6 +1512,10 @@ async function executeVoiceCommand({ tenantId, parsedCommand }) {
         'confirmed_today',
         'appointments_this_week',
         'create_appointment',
+        'activate_recurring',
+        'deactivate_recurring',
+        'pause_recurring',
+        'resume_recurring',
         'update_availability',
       ],
     },

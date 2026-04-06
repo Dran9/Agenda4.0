@@ -56,7 +56,7 @@ async function withAdvisoryLock(lockName, timeoutSeconds, callback) {
   }
 }
 
-// Schema: 11 tables, multi-tenant from day 1
+// Schema: 12 tables, multi-tenant from day 1
 async function initializeDatabase() {
   const conn = await pool.getConnection();
   try {
@@ -136,7 +136,34 @@ async function initializeDatabase() {
       )
     `);
 
-    // 4. config (one row per tenant)
+    // 4. recurring_schedules
+    await conn.query(`
+      CREATE TABLE IF NOT EXISTS recurring_schedules (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        tenant_id INT NOT NULL,
+        client_id INT NOT NULL,
+        day_of_week TINYINT NOT NULL,
+        time VARCHAR(5) NOT NULL,
+        duration INT DEFAULT 60,
+        gcal_recurring_event_id VARCHAR(255),
+        source_appointment_id INT DEFAULT NULL,
+        started_at DATE NOT NULL,
+        paused_at DATE DEFAULT NULL,
+        ended_at DATE DEFAULT NULL,
+        notes TEXT,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        KEY idx_tenant (tenant_id),
+        KEY idx_client (client_id),
+        KEY idx_active (tenant_id, ended_at, paused_at),
+        KEY idx_gcal_recurring (gcal_recurring_event_id),
+        FOREIGN KEY (tenant_id) REFERENCES tenants(id),
+        FOREIGN KEY (client_id) REFERENCES clients(id) ON DELETE CASCADE,
+        FOREIGN KEY (source_appointment_id) REFERENCES appointments(id) ON DELETE SET NULL
+      )
+    `);
+
+    // 5. config (one row per tenant)
     await conn.query(`
       CREATE TABLE IF NOT EXISTS config (
         id INT AUTO_INCREMENT PRIMARY KEY,
@@ -181,7 +208,7 @@ async function initializeDatabase() {
       )
     `);
 
-    // 5. payments
+    // 6. payments
     await conn.query(`
       CREATE TABLE IF NOT EXISTS payments (
         id INT AUTO_INCREMENT PRIMARY KEY,
@@ -209,7 +236,7 @@ async function initializeDatabase() {
       )
     `);
 
-    // 6. deductions
+    // 7. deductions
     await conn.query(`
       CREATE TABLE IF NOT EXISTS deductions (
         id INT AUTO_INCREMENT PRIMARY KEY,
@@ -223,7 +250,7 @@ async function initializeDatabase() {
       )
     `);
 
-    // 7. financial_goals
+    // 8. financial_goals
     await conn.query(`
       CREATE TABLE IF NOT EXISTS financial_goals (
         id INT AUTO_INCREMENT PRIMARY KEY,
@@ -240,7 +267,7 @@ async function initializeDatabase() {
       )
     `);
 
-    // 8. files (QR, receipts, logos — MySQL BLOB)
+    // 9. files (QR, receipts, logos — MySQL BLOB)
     await conn.query(`
       CREATE TABLE IF NOT EXISTS files (
         id INT AUTO_INCREMENT PRIMARY KEY,
@@ -257,7 +284,7 @@ async function initializeDatabase() {
       )
     `);
 
-    // 9. webhooks_log (activity + reminder dedup)
+    // 10. webhooks_log (activity + reminder dedup)
     await conn.query(`
       CREATE TABLE IF NOT EXISTS webhooks_log (
         id INT AUTO_INCREMENT PRIMARY KEY,
@@ -278,7 +305,7 @@ async function initializeDatabase() {
       )
     `);
 
-    // 10. wa_conversations (WhatsApp inbox)
+    // 11. wa_conversations (WhatsApp inbox)
     await conn.query(`
       CREATE TABLE IF NOT EXISTS wa_conversations (
         id INT AUTO_INCREMENT PRIMARY KEY,
@@ -302,7 +329,7 @@ async function initializeDatabase() {
       )
     `);
 
-    // 11. voice_commands_log (admin voice/text shortcut audit)
+    // 12. voice_commands_log (admin voice/text shortcut audit)
     await conn.query(`
       CREATE TABLE IF NOT EXISTS voice_commands_log (
         id INT AUTO_INCREMENT PRIMARY KEY,
@@ -351,6 +378,7 @@ async function initializeDatabase() {
     await conn.query(`ALTER TABLE config ADD COLUMN IF NOT EXISTS whatsapp_template_language VARCHAR(10) DEFAULT 'es'`).catch(() => {});
     await conn.query(`ALTER TABLE appointments MODIFY COLUMN status ENUM('Agendada','Confirmada','Reagendada','Cancelada','Completada','No-show') DEFAULT 'Agendada'`).catch(() => {});
     await conn.query(`ALTER TABLE appointments ADD COLUMN IF NOT EXISTS booking_context JSON DEFAULT NULL`).catch(() => {});
+    await conn.query(`ALTER TABLE appointments ADD COLUMN IF NOT EXISTS source_schedule_id INT DEFAULT NULL`).catch(() => {});
     // wa_conversations: add image/document types + metadata column for OCR data
     await conn.query(`ALTER TABLE wa_conversations MODIFY COLUMN message_type ENUM('text','button_reply','template','auto_reply','image','document') NOT NULL`).catch(() => {});
     await conn.query(`ALTER TABLE wa_conversations ADD COLUMN IF NOT EXISTS metadata JSON DEFAULT NULL`).catch(() => {});
@@ -378,7 +406,7 @@ async function initializeDatabase() {
        WHERE slug = 'daniel' AND COALESCE(domain, '') <> 'agenda.danielmaclean.com'`
     ).catch(() => {});
 
-    console.log('[DB] All 11 tables initialized');
+    console.log('[DB] All 12 tables initialized');
   } finally {
     conn.release();
   }

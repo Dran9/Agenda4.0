@@ -34,10 +34,34 @@ function daysSince(dateTime) {
   return Math.floor((Date.now() - date.getTime()) / (1000 * 60 * 60 * 24));
 }
 
-function calculateRetentionStatus({ frequency, completedSessions, lastSession, nextAppointment, rules }) {
+function calculateRetentionStatus({
+  frequency,
+  completedSessions,
+  lastSession,
+  nextAppointment,
+  rules,
+  hasActiveRecurring = false,
+  hasPausedRecurring = false,
+}) {
   const normalizedRules = normalizeRetentionRules(rules);
   const thresholds = normalizedRules[frequency] || normalizedRules.Semanal;
   const daysSinceLastSession = daysSince(lastSession);
+
+  if (hasActiveRecurring) {
+    return {
+      status: 'Recurrente',
+      days_since_last_session: daysSinceLastSession,
+      thresholds,
+    };
+  }
+
+  if (hasPausedRecurring) {
+    return {
+      status: 'En pausa',
+      days_since_last_session: daysSinceLastSession,
+      thresholds,
+    };
+  }
 
   if (!completedSessions) {
     return {

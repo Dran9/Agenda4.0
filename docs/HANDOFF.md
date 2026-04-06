@@ -8,10 +8,13 @@ If the task is about the private voice app, also read `docs/VOICE-APP-REPORT.md`
 
 ## Last Updated
 
-- Date: 2026-04-04
+- Date: 2026-04-06
 - Branch: `main`
-- Commit: `4a7dc45`
-- Summary: Google OAuth was re-grounded on the new `agenda40` Google Cloud project and is now working again across Calendar, Sheets, and Contacts
+- Commit: `10b4ce4` (base commit; recurring work is currently local and uncommitted)
+- Summary: recurring schedules were implemented end to end with lazy materialization, reminder integration, admin UI support, analytics, and voice controls
+- Recurring follow-up: materializing a recurring occurrence now reuses the Google Calendar instance ID when the occurrence already comes from a recurring series, instead of creating a duplicate event
+- Recurring sync follow-up: a daily 06:00 BOT cron now scans the next 14 days of GCal for recurring therapy events and can auto-create missing `recurring_schedules`
+- Recurring lifecycle follow-up: pause/end inside the app does not automatically delete the master recurring event in Google Calendar; the app simply stops materializing/sending reminders for that schedule
 - UI follow-up: reschedule screen copy now injects the client name in the banner, "already booked" title, and trust message
 - CI follow-up: GitHub `Frontend Guard` was failing because `client/dist` was out of sync with source; local `lint` and `build` passed, but `git diff --exit-code -- client/dist` failed
 - OCR follow-up: destination validation must depend on exact matches against whitelisted destination accounts after stripping separators
@@ -42,6 +45,14 @@ If the task is about the private voice app, also read `docs/VOICE-APP-REPORT.md`
 - WhatsApp webhook client resolution now matches by normalized phone
 - Payment receipt matching now matches by normalized phone
 - Reminder matching fallback now matches by normalized phone
+- Recurring schedules now exist as first-class operational data:
+  `recurring_schedules` stores the weekly pattern and `appointments.source_schedule_id` links materialized occurrences back to that pattern
+- New recurring admin API exists at `/api/recurring`
+- Dashboard `/Hoy` now mixes real appointments with same-day virtual recurring sessions and materializes a virtual session automatically when the admin changes its status
+- Clients UI now shows a weekly badge plus day/time for active recurring clients and lets admin activate, edit, pause, resume, or end the schedule from the client modal
+- Analytics now exposes recurring totals, paused/ended counts, 90-day churn, and projected monthly recurring revenue
+- Voice admin now supports `activate_recurring`, `pause_recurring`, `resume_recurring`, and `deactivate_recurring`
+- Reminder flow now tries recurring matching before the old phone-summary fallback so recurring sessions become real appointments before WhatsApp sends
 - Payment success WhatsApp reply is being simplified to `✅ Pago recibido correctamente, ¡Gracias!`
 - Automatic QR follow-up after reminder confirmation no longer depends strictly on `booking_context`; for Bolivian clients, legacy/manual appointments without location metadata should still receive the correct QR by fee
 - Voice Shortcut MVP is now being added as a separate backend module with Groq transcription, token auth, and audit logging
@@ -70,22 +81,39 @@ If the task is about the private voice app, also read `docs/VOICE-APP-REPORT.md`
 - `server/routes/booking.js`
 - `server/routes/webhook.js`
 - `server/routes/voice.js`
+- `server/routes/recurring.js`
 - `server/routes/payments.js`
 - `server/services/reminder.js`
+- `server/services/recurring.js`
+- `server/services/recurringSync.js`
 - `server/services/messageContext.js`
 - `server/services/voice/cartesia.js`
 - `server/services/voice/context.js`
 - `server/services/voice/planner.js`
 - `server/services/voice/parseCommand.js`
 - `server/services/voice/executeCommand.js`
+- `server/services/calendar.js`
+- `server/services/retention.js`
+- `server/cron/scheduler.js`
+- `server/db.js`
+- `server/index.js`
+- `server/routes/analytics.js`
 - `client/src/pages/VoiceAssistant.jsx`
+- `client/src/pages/Admin/Analytics.jsx`
+- `client/src/pages/Admin/Appointments.jsx`
 - `client/src/pages/Admin/Clients.jsx`
+- `client/src/pages/Admin/Dashboard.jsx`
+- `client/src/utils/dates.js`
 
 ## Important Decisions
 
 - We did not run any aggressive migration over old client data
 - We did not merge existing clients automatically
 - The current fix is forward-safe: new writes and comparisons should use canonical phone format
+- Recurring implementation scope:
+  lazy materialization was chosen over infinite appointment rows
+  recurring reminders materialize on demand
+  app-side pause/end does not destructively edit Google Calendar master series
 - Never push automatically. Ask the user explicitly before every push.
 - Untracked mockup files were intentionally not committed:
   `Skills/`, `ocr-sample.png`, `ocr-sample-2.png`
@@ -93,12 +121,25 @@ If the task is about the private voice app, also read `docs/VOICE-APP-REPORT.md`
 ## Validation Done
 
 - Backend syntax check passed with `node --check` on all touched server files
+- Additional backend syntax checks passed for:
+  `server/services/recurring.js`
+  `server/routes/recurring.js`
+  `server/services/reminder.js`
+  `server/services/calendar.js`
+  `server/routes/analytics.js`
+  `server/routes/clients.js`
+  `server/cron/scheduler.js`
+  `server/services/voice/parseCommand.js`
+  `server/services/voice/executeCommand.js`
+  `server/services/voice/planner.js`
 - No real client build was available from root `package.json`
   current `build` script is a no-op placeholder
 - Frontend guard diagnosis:
   `npm run lint` passed with warnings only
   `npm run build` passed
   failure source was the committed `client/dist` being stale
+- Client build passed after recurring changes and refreshed `client/dist`
+- Client lint passed with warnings only; no new lint errors were introduced by the recurring work
 - OCR destination validation was tightened:
   valid destination now requires an exact whitelisted destination account after stripping spaces and hyphens; recipient names are display-only
 - BNB parsing was tightened:
@@ -139,6 +180,9 @@ If the task is about the private voice app, also read `docs/VOICE-APP-REPORT.md`
 - Optional: add automated tests for phone normalization across booking, clients, and webhook flows
 - Optional: add unique enforcement strategy for legacy environments if old data becomes real instead of mockup
 - Optional: if desired, standardize punctuation in personalized UI copy across the rest of `BookingFlow.jsx`
+- Optional: add a DB-level unique constraint for recurring materializations if legacy data is first cleaned; for now duplication is prevented with advisory locks plus existence checks
+- Optional: decide whether pausing/finalizing in app should also patch or cancel the master recurring event in Google Calendar after a human-reviewed UX decision
+- Optional: add a small recurring trend chart in Analytics if monthly series visibility becomes commercially useful
 
 ## Useful Commands
 

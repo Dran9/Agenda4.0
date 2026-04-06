@@ -6,7 +6,7 @@ const fs = require('fs');
 const rateLimit = require('express-rate-limit');
 
 const { initializeDatabase } = require('./db');
-const { startReminderCron, startAutoCompleteCron, startPaymentReminderCron } = require('./cron/scheduler');
+const { startReminderCron, startAutoCompleteCron, startPaymentReminderCron, startRecurringSyncCron } = require('./cron/scheduler');
 const { isTrustedDevMode } = require('./utils/devmode');
 const { sendServerError } = require('./utils/httpErrors');
 
@@ -21,6 +21,7 @@ const webhookRoutes = require('./routes/webhook');
 const analyticsRoutes = require('./routes/analytics');
 const paymentsRoutes = require('./routes/payments');
 const voiceRoutes = require('./routes/voice');
+const recurringRoutes = require('./routes/recurring');
 
 const app = express();
 app.set('trust proxy', 1);
@@ -58,6 +59,7 @@ app.use('/api/webhook', webhookRoutes);
 app.use('/api/analytics', analyticsRoutes);
 app.use('/api/payments', paymentsRoutes);
 app.use('/api/voice', voiceRoutes);
+app.use('/api/recurring', recurringRoutes);
 
 // ─── Admin reminder trigger (protected) ─────────────────────────
 app.get('/api/admin/test-reminder', authMiddleware, async (req, res) => {
@@ -175,6 +177,7 @@ async function start() {
     startReminderCron();
     startPaymentReminderCron();
     startAutoCompleteCron();
+    startRecurringSyncCron();
     app.listen(PORT, () => {
       console.log(`Agenda Daniel MacLean running on port ${PORT}`);
     });

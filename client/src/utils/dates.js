@@ -1,5 +1,24 @@
 // Date formatting helpers for Bolivia timezone
 
+export function getBoliviaDateKey(dateInput = new Date()) {
+  const date = new Date(dateInput);
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/La_Paz',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(date);
+  const year = parts.find((part) => part.type === 'year')?.value;
+  const month = parts.find((part) => part.type === 'month')?.value;
+  const day = parts.find((part) => part.type === 'day')?.value;
+  return `${year}-${month}-${day}`;
+}
+
+export function formatWeekdayShort(dayOfWeek) {
+  const labels = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'];
+  return labels[Number(dayOfWeek)] || '—';
+}
+
 export function formatDateBolivia(dateStr) {
   const date = new Date(dateStr);
   return date.toLocaleDateString('es-BO', {

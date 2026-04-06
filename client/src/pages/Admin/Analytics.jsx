@@ -35,6 +35,9 @@ export default function Analytics() {
 
   const t = data.totals;
   const csd = data.client_status_distribution || {};
+  const recurring = data.recurring || {};
+  const recurringMonthly = Number(recurring.projected_monthly_recurring || 0);
+  const recurringChurnRate = Number(recurring.churn_rate || 0);
 
   return (
     <AdminLayout title="Analytics">
@@ -57,6 +60,24 @@ export default function Analytics() {
             color="text-green-600"
           />
         </div>
+
+        <Card title="Recurrencia y retención" subtitle="Base recurrente activa, pausas y churn reciente">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <KPICard label="Recurrentes activos" value={recurring.active || 0} color="text-blue-600" />
+            <KPICard label="Pausados" value={recurring.paused || 0} color="text-yellow-600" />
+            <KPICard
+              label="Churn (90d)"
+              value={`${recurring.churned_90d || 0} · ${Math.round(recurringChurnRate * 100)}%`}
+              color={recurringChurnRate > 0.15 ? 'text-red-600' : 'text-gray-900'}
+            />
+            <KPICard label="MRR proyectado" value={`Bs ${recurringMonthly.toLocaleString('es-BO', { maximumFractionDigits: 0 })}`} color="text-sky-600" />
+          </div>
+          <div className="mt-4 grid gap-3 md:grid-cols-3">
+            <MiniStat label="Total historico" value={recurring.total || 0} color="#1D4ED8" />
+            <MiniStat label="Finalizados" value={recurring.ended || 0} color="#6B7280" />
+            <MiniStat label="Base churn" value={(recurring.active || 0) + (recurring.churned_90d || 0)} color="#0F766E" />
+          </div>
+        </Card>
 
         {/* Sessions by Week */}
         {data.sessions_by_week.length > 0 && (

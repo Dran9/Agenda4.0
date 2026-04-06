@@ -138,8 +138,16 @@ function extractClientNameForCreate(text) {
 
   if (!candidate) return null;
 
+  return trimClientCandidate(candidate);
+}
+
+function trimClientCandidate(candidate) {
+  if (!candidate) return null;
+
   const cutPatterns = [
     /\s+para\s+el\s+/i,
+    /\s+los\s+(lunes|martes|miercoles|miércoles|jueves|viernes|sabado|sábado|domingo)\b/i,
+    /\s+de\s+(lunes|martes|miercoles|miércoles|jueves|viernes|sabado|sábado|domingo)\b/i,
     /\s+el\s+(lunes|martes|miercoles|miércoles|jueves|viernes|sabado|sábado|domingo)\b/i,
     /\s+este\s+(lunes|martes|miercoles|miércoles|jueves|viernes|sabado|sábado|domingo)\b/i,
     /\s+hoy\b/i,
@@ -161,6 +169,43 @@ function extractClientNameForCreate(text) {
 
   const trimmed = candidate.slice(0, endIndex).replace(/[,.]+$/, '').trim();
   return trimmed || null;
+}
+
+function extractClientNameForRecurring(text, mode) {
+  const original = String(text || '').trim();
+  let candidate = '';
+
+  if (mode === 'activate') {
+    const afterActivate = original.match(/(?:activar\s+(?:semanal|recurrencia)\s+(?:para|de)\s+)(.+)$/i);
+    if (afterActivate?.[1]) {
+      candidate = afterActivate[1];
+    } else {
+      const modeRepeat = original.match(/^(.+?)\s+entra\s+a\s+modo\s+repetir$/i);
+      if (modeRepeat?.[1]) candidate = modeRepeat[1];
+    }
+  }
+
+  if (mode === 'deactivate') {
+    const afterDeactivate = original.match(/(?:desactivar\s+recurrencia\s+de\s+)(.+)$/i);
+    if (afterDeactivate?.[1]) {
+      candidate = afterDeactivate[1];
+    } else {
+      const modeRepeat = original.match(/^(.+?)\s+sale\s+de\s+modo\s+repetir$/i);
+      if (modeRepeat?.[1]) candidate = modeRepeat[1];
+    }
+  }
+
+  if (mode === 'pause') {
+    const pauseMatch = original.match(/(?:pausar\s+recurrencia\s+de\s+)(.+)$/i);
+    if (pauseMatch?.[1]) candidate = pauseMatch[1];
+  }
+
+  if (mode === 'resume') {
+    const resumeMatch = original.match(/(?:reactivar\s+(?:a\s+)?)(.+)$/i);
+    if (resumeMatch?.[1]) candidate = resumeMatch[1];
+  }
+
+  return trimClientCandidate(candidate);
 }
 
 function detectCreateAppointmentIntent(text) {
@@ -224,6 +269,50 @@ function detectAgendaIntent(text) {
       agenda_scope: 'day',
     },
   };
+}
+
+function detectRecurringIntent(text) {
+  const normalized = normalizeText(text);
+
+  if (/\b(entra a modo repetir|activar semanal|activar recurrencia)\b/.test(normalized)) {
+    return {
+      intent: 'activate_recurring',
+      entities: {
+        client_name: extractClientNameForRecurring(text, 'activate'),
+        weekday_name: findWeekdayName(text),
+        time_hhmm: extractNaturalTime(text),
+      },
+    };
+  }
+
+  if (/\b(sale de modo repetir|desactivar recurrencia)\b/.test(normalized)) {
+    return {
+      intent: 'deactivate_recurring',
+      entities: {
+        client_name: extractClientNameForRecurring(text, 'deactivate'),
+      },
+    };
+  }
+
+  if (/\bpausar recurrencia\b/.test(normalized)) {
+    return {
+      intent: 'pause_recurring',
+      entities: {
+        client_name: extractClientNameForRecurring(text, 'pause'),
+      },
+    };
+  }
+
+  if (/\breactivar\b/.test(normalized)) {
+    return {
+      intent: 'resume_recurring',
+      entities: {
+        client_name: extractClientNameForRecurring(text, 'resume'),
+      },
+    };
+  }
+
+  return null;
 }
 
 function addDays(dateKey, days) {
@@ -422,8 +511,10 @@ function detectDirectIntent(text) {
   const availabilityIntent = detectAvailabilityIntent(text);
   const createAppointmentIntent = detectCreateAppointmentIntent(text);
   const agendaIntent = detectAgendaIntent(text);
+  const recurringIntent = detectRecurringIntent(text);
 
   if (availabilityIntent) return availabilityIntent;
+  if (recurringIntent) return recurringIntent;
   if (createAppointmentIntent) return createAppointmentIntent;
   if (/\bdesactivar recordatorios\b|\bapagar recordatorios\b/.test(normalized)) {
     return { intent: 'reminder_toggle', entities: { reminder_enabled: false } };
@@ -528,7 +619,7 @@ async function parseVoiceCommand(inputText, options = {}) {
         `Debes devolver solo JSON válido, sin markdown ni explicación. ` +
         `Fecha actual en Bolivia: ${today}. ` +
         `Contexto reciente: ${recentSummary}. ` +
-        `Intents permitidos: agenda_query, pending_payments, pending_amount, sessions_to_goal, client_lookup, client_upcoming_appointments, reminder_check, confirmation_check, rescheduled_list, new_clients_count, unconfirmed_tomorrow, confirmed_today, appointments_this_week, create_appointment, reminder_toggle, send_reminders, update_availability, unknown. ` +
+        `Intents permitidos: agenda_query, pending_payments, pending_amount, sessions_to_goal, client_lookup, client_upcoming_appointments, reminder_check, confirmation_check, rescheduled_list, new_clients_count, unconfirmed_tomorrow, confirmed_today, appointments_this_week, create_appointment, activate_recurring, deactivate_recurring, pause_recurring, resume_recurring, reminder_toggle, send_reminders, update_availability, unknown. ` +
         `Entities posibles: client_id (number o null), client_name (string o null), date_key (YYYY-MM-DD o null), agenda_scope (day|this_week|next_week|null), time_hhmm (HH:MM o null), goal_amount (number o null), month (1-12 o null), year (YYYY o null), reminder_enabled (boolean o null), reminder_date (today|tomorrow|null), weekday_name (lunes|martes|miercoles|jueves|viernes|sabado|domingo|null), morning_mode (keep|off|range|null), morning_start (HH:MM|null), morning_end (HH:MM|null), afternoon_mode (keep|off|range|null), afternoon_start (HH:MM|null), afternoon_end (HH:MM|null). ` +
         `Convierte fechas relativas como hoy, mañana, pasado mañana, este viernes, el viernes a YYYY-MM-DD. ` +
         `Si el usuario pregunta por esta semana o la próxima semana, usa agenda_scope=this_week o next_week. ` +

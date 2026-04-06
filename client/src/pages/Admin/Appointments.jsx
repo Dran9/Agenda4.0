@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Trash2, Search, BellRing, RotateCcw, ArrowUpDown } from 'lucide-react';
+import { Trash2, Search, BellRing, RotateCcw, ArrowUpDown, Repeat } from 'lucide-react';
 import AdminLayout from '../../components/AdminLayout';
 import { api } from '../../utils/api';
 import { useToast, Toast } from '../../hooks/useToast';
@@ -344,7 +344,12 @@ export default function Appointments() {
                         className="w-4 h-4 accent-black rounded"
                       />
                     </td>
-                    <td className="p-3 capitalize whitespace-nowrap">{formatDateBolivia(appt.date_time)}</td>
+                    <td className="p-3 capitalize whitespace-nowrap">
+                      <div className="flex items-center gap-2">
+                        {appt.source_schedule_id ? <Repeat size={14} className="text-blue-500" /> : null}
+                        <span>{formatDateBolivia(appt.date_time)}</span>
+                      </div>
+                    </td>
                     <td className="p-3 font-medium whitespace-nowrap">{formatTimeBolivia(appt.date_time)}</td>
                     <td className="p-3 whitespace-nowrap">{appt.first_name} {appt.last_name}</td>
                     <td className="p-3 whitespace-nowrap">

@@ -23,6 +23,8 @@ router.get('/', authMiddleware, async (req, res) => {
       [recentActivity],
       [configRows],
       [retentionClients],
+      [recurringCounts],
+      [recurringChurn],
     ] = await Promise.all([
       // Totals
       pool.query(`
@@ -84,12 +86,16 @@ router.get('/', authMiddleware, async (req, res) => {
             WHEN c.status_override IS NOT NULL THEN 0
             WHEN completed = 0 THEN 1 ELSE 0 END) as nuevos,
           SUM(CASE
+            WHEN COALESCE(active_recurring, 0) > 0 THEN 0
             WHEN (future_appt > 0 OR last_completed > DATE_SUB(NOW(), INTERVAL 21 DAY)) AND completed < 10 THEN 1 ELSE 0 END) as activos,
           SUM(CASE
+            WHEN COALESCE(active_recurring, 0) > 0 THEN 1
             WHEN (future_appt > 0 OR last_completed > DATE_SUB(NOW(), INTERVAL 21 DAY)) AND completed >= 10 THEN 1 ELSE 0 END) as recurrentes,
           SUM(CASE
+            WHEN COALESCE(paused_recurring, 0) > 0 THEN 1
             WHEN last_completed BETWEEN DATE_SUB(NOW(), INTERVAL 56 DAY) AND DATE_SUB(NOW(), INTERVAL 21 DAY) AND future_appt = 0 THEN 1 ELSE 0 END) as en_pausa,
           SUM(CASE
+            WHEN COALESCE(active_recurring, 0) > 0 OR COALESCE(paused_recurring, 0) > 0 THEN 0
             WHEN last_completed < DATE_SUB(NOW(), INTERVAL 56 DAY) AND future_appt = 0 AND completed > 0 THEN 1 ELSE 0 END) as inactivos
         FROM clients c
         LEFT JOIN (
@@ -104,8 +110,16 @@ router.get('/', authMiddleware, async (req, res) => {
           FROM appointments WHERE status IN ('Agendada','Confirmada','Reagendada') AND date_time > NOW()
           GROUP BY client_id
         ) f ON f.client_id = c.id
+        LEFT JOIN (
+          SELECT client_id,
+            SUM(CASE WHEN ended_at IS NULL AND paused_at IS NULL THEN 1 ELSE 0 END) AS active_recurring,
+            SUM(CASE WHEN ended_at IS NULL AND paused_at IS NOT NULL THEN 1 ELSE 0 END) AS paused_recurring
+          FROM recurring_schedules
+          WHERE tenant_id = ?
+          GROUP BY client_id
+        ) rs ON rs.client_id = c.id
         WHERE c.tenant_id = ? AND c.deleted_at IS NULL
-      `, [t]),
+      `, [t, t]),
 
       // Recent activity (last 10 appointments)
       pool.query(`
@@ -121,13 +135,35 @@ router.get('/', authMiddleware, async (req, res) => {
         SELECT c.id, c.frequency,
           (SELECT COUNT(*) FROM appointments WHERE client_id = c.id AND tenant_id = ? AND status = 'Completada') as completed_sessions,
           (SELECT MAX(date_time) FROM appointments WHERE client_id = c.id AND tenant_id = ? AND status = 'Completada') as last_session,
-          (SELECT MIN(date_time) FROM appointments WHERE client_id = c.id AND tenant_id = ? AND status IN ('Agendada','Confirmada','Reagendada') AND date_time > NOW()) as next_session
+          (SELECT MIN(date_time) FROM appointments WHERE client_id = c.id AND tenant_id = ? AND status IN ('Agendada','Confirmada','Reagendada') AND date_time > NOW()) as next_session,
+          (SELECT COUNT(*) FROM recurring_schedules WHERE client_id = c.id AND tenant_id = ? AND ended_at IS NULL AND paused_at IS NULL) as has_active_recurring,
+          (SELECT COUNT(*) FROM recurring_schedules WHERE client_id = c.id AND tenant_id = ? AND ended_at IS NULL AND paused_at IS NOT NULL) as has_paused_recurring
         FROM clients c
         WHERE c.tenant_id = ? AND c.deleted_at IS NULL
-      `, [t, t, t, t]),
+      `, [t, t, t, t, t, t]),
+
+      pool.query(`
+        SELECT
+          COUNT(*) as total_recurring,
+          SUM(CASE WHEN ended_at IS NULL AND paused_at IS NULL THEN 1 ELSE 0 END) as active_recurring,
+          SUM(CASE WHEN paused_at IS NOT NULL AND ended_at IS NULL THEN 1 ELSE 0 END) as paused_recurring,
+          SUM(CASE WHEN ended_at IS NOT NULL THEN 1 ELSE 0 END) as ended_recurring,
+          COALESCE(SUM(CASE WHEN ended_at IS NULL AND paused_at IS NULL THEN c.fee ELSE 0 END), 0) * 4.33 as projected_monthly_recurring
+        FROM recurring_schedules rs
+        JOIN clients c ON c.id = rs.client_id AND c.tenant_id = rs.tenant_id
+        WHERE rs.tenant_id = ?
+      `, [t]),
+
+      pool.query(`
+        SELECT
+          COUNT(*) as churned_90d,
+          (SELECT COUNT(*) FROM recurring_schedules WHERE tenant_id = ? AND ended_at IS NULL AND paused_at IS NULL) as active_now
+        FROM recurring_schedules
+        WHERE tenant_id = ? AND ended_at IS NOT NULL AND ended_at >= DATE_SUB(CURDATE(), INTERVAL 90 DAY)
+      `, [t, t]),
     ]);
 
-    const retentionDistribution = { nuevo: 0, con_cita: 0, al_dia: 0, en_riesgo: 0, perdido: 0 };
+    const retentionDistribution = { nuevo: 0, con_cita: 0, recurrente: 0, en_pausa: 0, al_dia: 0, en_riesgo: 0, perdido: 0 };
     for (const client of retentionClients) {
       const retention = calculateRetentionStatus({
         frequency: client.frequency,
@@ -135,13 +171,30 @@ router.get('/', authMiddleware, async (req, res) => {
         lastSession: client.last_session,
         nextAppointment: client.next_session,
         rules: configRows[0]?.retention_rules || null,
+        hasActiveRecurring: client.has_active_recurring > 0,
+        hasPausedRecurring: client.has_paused_recurring > 0,
       });
       if (retention.status === 'Nuevo') retentionDistribution.nuevo++;
       else if (retention.status === 'Con cita') retentionDistribution.con_cita++;
+      else if (retention.status === 'Recurrente') retentionDistribution.recurrente++;
+      else if (retention.status === 'En pausa') retentionDistribution.en_pausa++;
       else if (retention.status === 'Al día') retentionDistribution.al_dia++;
       else if (retention.status === 'En riesgo') retentionDistribution.en_riesgo++;
       else if (retention.status === 'Perdido') retentionDistribution.perdido++;
     }
+
+    const churned90d = Number(recurringChurn[0]?.churned_90d || 0);
+    const activeNow = Number(recurringChurn[0]?.active_now || 0);
+    const churnBase = activeNow + churned90d;
+    const recurring = {
+      total: Number(recurringCounts[0]?.total_recurring || 0),
+      active: Number(recurringCounts[0]?.active_recurring || 0),
+      paused: Number(recurringCounts[0]?.paused_recurring || 0),
+      ended: Number(recurringCounts[0]?.ended_recurring || 0),
+      churned_90d: churned90d,
+      churn_rate: churnBase > 0 ? churned90d / churnBase : 0,
+      projected_monthly_recurring: Number(recurringCounts[0]?.projected_monthly_recurring || 0),
+    };
 
     res.json({
       totals: totals[0],
@@ -153,6 +206,7 @@ router.get('/', authMiddleware, async (req, res) => {
       client_status_distribution: clientsByStatus[0] || {},
       retention_distribution: retentionDistribution,
       recent_activity: recentActivity,
+      recurring,
     });
   } catch (err) {
     sendServerError(res, req, err, {

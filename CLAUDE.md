@@ -200,6 +200,39 @@ Ver `.env.example` para la lista completa. Se configuran en hPanel de Hostinger.
   - estado `Producción` del OAuth consent screen
   - que Hostinger esté usando las credenciales nuevas
 
+## Estado recurrentes (2026-04-06)
+- Ya existe soporte de `recurring_schedules` con materialización lazy:
+  la app guarda el patrón semanal y solo crea `appointments` cuando hay interacción real
+- Esquema nuevo:
+  `recurring_schedules` + `appointments.source_schedule_id`
+- API admin nueva:
+  `GET/POST/PUT /api/recurring`
+  `PUT /api/recurring/:id/pause`
+  `PUT /api/recurring/:id/resume`
+  `PUT /api/recurring/:id/end`
+  `GET /api/recurring/upcoming`
+  `POST /api/recurring/:id/materialize`
+- Regla crítica:
+  si la ocurrencia ya viene de una serie recurrente en Google Calendar, al materializar NO se crea otro evento en GCal
+  se reutiliza el `event.id` de esa instancia para evitar duplicados
+- Solo se crea un evento individual nuevo en GCal cuando el schedule fue manual y no tiene `gcal_recurring_event_id`
+- Recordatorios:
+  `server/services/reminder.js` ahora intenta matchear recurrencia antes del fallback por teléfono
+  así las sesiones recurrentes quedan materializadas antes de enviar WhatsApp
+- Sync diario:
+  `server/cron/scheduler.js` ahora corre un sync de recurrencia a las 06:00 BOT
+  lee 14 días de GCal y puede auto-crear schedules faltantes por `recurringEventId`
+- Dashboard/Clientes/Analytics/Citas:
+  ya muestran recurrencia activa, sesiones virtuales del día, KPI recurrentes y el ícono de repeat en citas materializadas
+- Voz:
+  el shortcut/admin voice ya puede activar, pausar, reactivar y desactivar recurrencias
+- Decisión operativa importante:
+  pausar/finalizar en la app NO elimina automáticamente la serie maestra en Google Calendar
+  la app deja de materializar y recordar esa recurrencia, pero no hace una acción destructiva en GCal por detrás
+- Riesgo conocido:
+  la idempotencia de materialización se protege con advisory lock + verificación previa
+  todavía no hay un `UNIQUE KEY` duro para ocurrencias recurrentes en la tabla `appointments`
+
 ## Regla de documentación operativa
 - Al cerrar una tarea importante, actualizar SIEMPRE ambos archivos:
   - `docs/HANDOFF.md`

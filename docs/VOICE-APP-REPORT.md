@@ -115,11 +115,30 @@ Todos los comandos quedan en `voice_commands_log` con:
 ### Actions
 
 - crear cita para cliente existente
+- activar recurrencia semanal
+- consultar si un cliente está en recurrencia
+- pausar, reactivar o desactivar recurrencia
 - activar recordatorios
 - desactivar recordatorios
 - mandar recordatorios hoy
 - mandar recordatorios mañana
 - cambiar disponibilidad por día, mañana y tarde
+
+### Recurrence Voice Phrases
+
+- `Fulano pasa a modo recurrencia`
+- `Fulano pasa a recurrencia`
+- `Fulano está en recurrencia`
+
+Cuando voz activa una recurrencia y detecta una próxima cita individual futura del cliente, usa esa cita como fuente:
+
+- deriva día y hora si el comando no los dijo explícitamente
+- convierte el evento individual en Google Calendar en una serie semanal
+- guarda el `gcal_recurring_event_id` en `recurring_schedules`
+
+Si no existe una cita fuente convertible, la app crea una serie nueva en Google Calendar y deja la recurrencia activa en backend.
+
+Si Google Calendar no confirma la serie, voz ya no responde falso positivo: devuelve una advertencia explícita.
 
 ### Intelligence Already Added
 
@@ -170,8 +189,20 @@ La respuesta hablada todavía no tiene calidad suficiente para ser “la experie
 - Esta app es privada, solo para Daniel
 - No tocar el flujo público del booking por culpa de experimentos de voz
 - Si Google devuelve `invalid_grant`, la respuesta debe culpar a Google auth claramente
+- Si una activación de recurrencia no logró confirmarse en Google Calendar, la respuesta debe decirlo claramente
 - Las consultas sobre disponibilidad no deben mutar disponibilidad
 - Para acciones sensibles, pedir aclaración o confirmación humana cuando haya ambigüedad
+
+## GCal Interop
+
+Además del comando por voz, la recurrencia también puede nacer directamente en Google Calendar:
+
+- el cron `recurringSync` corre a las 06:00 BOT
+- revisa 14 días hacia adelante con `singleEvents: true`
+- agrupa por `recurringEventId`
+- si detecta una serie de terapia con cliente matcheable, puede crear el `recurring_schedule` faltante en la app
+
+No es realtime. El modelo operativo actual es sync diario, no webhook de Google Calendar.
 
 ## Environment
 

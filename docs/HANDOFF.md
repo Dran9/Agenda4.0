@@ -10,11 +10,15 @@ If the task is about the private voice app, also read `docs/VOICE-APP-REPORT.md`
 
 - Date: 2026-04-06
 - Branch: `main`
-- Commit: `10b4ce4` (base commit; recurring work is currently local and uncommitted)
-- Summary: recurring schedules were implemented end to end with lazy materialization, reminder integration, admin UI support, analytics, and voice controls
+- Commit: `f6a8cf5` (base pushed commit before the latest voice/GCal follow-up)
+- Summary: recurring schedules were implemented end to end with lazy materialization, reminder integration, admin UI support, analytics, and voice controls; latest local follow-up adds stronger voice phrasing coverage plus GCal conversion from the source appointment
 - Recurring follow-up: materializing a recurring occurrence now reuses the Google Calendar instance ID when the occurrence already comes from a recurring series, instead of creating a duplicate event
 - Recurring sync follow-up: a daily 06:00 BOT cron now scans the next 14 days of GCal for recurring therapy events and can auto-create missing `recurring_schedules`
 - Recurring lifecycle follow-up: pause/end inside the app does not automatically delete the master recurring event in Google Calendar; the app simply stops materializing/sending reminders for that schedule
+- Voice recurring follow-up: the parser now recognizes `Fulano pasa a modo recurrencia`, `Fulano pasa a recurrencia`, and `Fulano está en recurrencia`
+- Voice GCal follow-up: activating recurrence from voice now uses the client’s next standalone future appointment as source when possible and converts that Google Calendar event into a weekly recurring series instead of always creating a separate master event
+- Voice status follow-up: voice can now answer whether a client is actively in recurrence, paused, ended, or not recurrent at all
+- Voice integration follow-up: if recurrence is activated in the app but Google Calendar does not confirm the recurring series, voice now answers with an explicit warning instead of a false success
 - UI follow-up: reschedule screen copy now injects the client name in the banner, "already booked" title, and trust message
 - CI follow-up: GitHub `Frontend Guard` was failing because `client/dist` was out of sync with source; local `lint` and `build` passed, but `git diff --exit-code -- client/dist` failed
 - OCR follow-up: destination validation must depend on exact matches against whitelisted destination accounts after stripping separators
@@ -52,7 +56,10 @@ If the task is about the private voice app, also read `docs/VOICE-APP-REPORT.md`
 - Clients UI now shows a weekly badge plus day/time for active recurring clients and lets admin activate, edit, pause, resume, or end the schedule from the client modal
 - Analytics now exposes recurring totals, paused/ended counts, 90-day churn, and projected monthly recurring revenue
 - Voice admin now supports `activate_recurring`, `pause_recurring`, `resume_recurring`, and `deactivate_recurring`
+- Voice admin now also supports `recurring_status`
 - Reminder flow now tries recurring matching before the old phone-summary fallback so recurring sessions become real appointments before WhatsApp sends
+- Voice activation of recurrence now prefers converting the next standalone future appointment in Google Calendar into a weekly recurring event
+- If recurrence is changed manually in Google Calendar, the daily `recurringSync` cron can import it back into the app from `recurringEventId`
 - Payment success WhatsApp reply is being simplified to `✅ Pago recibido correctamente, ¡Gracias!`
 - Automatic QR follow-up after reminder confirmation no longer depends strictly on `booking_context`; for Bolivian clients, legacy/manual appointments without location metadata should still receive the correct QR by fee
 - Voice Shortcut MVP is now being added as a separate backend module with Groq transcription, token auth, and audit logging
@@ -72,6 +79,8 @@ If the task is about the private voice app, also read `docs/VOICE-APP-REPORT.md`
 
 ## Files Changed In Latest Work
 
+- `CLAUDE.md`
+- `docs/HANDOFF.md`
 - `server/utils/phone.js`
 - `server/middleware/validate.js`
 - `server/routes/clients.js`
@@ -92,6 +101,7 @@ If the task is about the private voice app, also read `docs/VOICE-APP-REPORT.md`
 - `server/services/voice/planner.js`
 - `server/services/voice/parseCommand.js`
 - `server/services/voice/executeCommand.js`
+- `docs/VOICE-APP-REPORT.md`
 - `server/services/calendar.js`
 - `server/services/retention.js`
 - `server/cron/scheduler.js`
@@ -114,6 +124,9 @@ If the task is about the private voice app, also read `docs/VOICE-APP-REPORT.md`
   lazy materialization was chosen over infinite appointment rows
   recurring reminders materialize on demand
   app-side pause/end does not destructively edit Google Calendar master series
+- Voice recurring scope:
+  activation by voice should convert the client’s next standalone future Google Calendar event into a weekly recurrence when possible
+  if no suitable source appointment exists, voice may still create a new recurring series
 - Never push automatically. Ask the user explicitly before every push.
 - Untracked mockup files were intentionally not committed:
   `Skills/`, `ocr-sample.png`, `ocr-sample-2.png`
@@ -132,6 +145,10 @@ If the task is about the private voice app, also read `docs/VOICE-APP-REPORT.md`
   `server/services/voice/parseCommand.js`
   `server/services/voice/executeCommand.js`
   `server/services/voice/planner.js`
+- Voice parser smoke check passed locally for:
+  `Juan Perez pasa a modo recurrencia`
+  `Juan Perez pasa a recurrencia`
+  `Juan Perez esta en recurrencia`
 - No real client build was available from root `package.json`
   current `build` script is a no-op placeholder
 - Frontend guard diagnosis:

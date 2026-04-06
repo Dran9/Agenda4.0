@@ -145,7 +145,7 @@ async function getDefaultDuration(tenantId, conn = pool) {
 async function getSourceAppointment(tenantId, sourceAppointmentId, conn = pool) {
   if (!sourceAppointmentId) return null;
   const [rows] = await conn.query(
-    `SELECT id, client_id, duration
+    `SELECT id, client_id, duration, date_time, gcal_event_id, source_schedule_id
      FROM appointments
      WHERE tenant_id = ? AND id = ?
      LIMIT 1`,
@@ -233,8 +233,9 @@ async function syncAppointmentArtifacts(appointment, client) {
   }
 }
 
-async function createOrUpdateRecurringEvent(schedule, client, dayOfWeek, time, duration) {
-  const startDateKey = getNextOccurrenceDateKey(schedule.started_at, dayOfWeek);
+async function createOrUpdateRecurringEvent(schedule, client, dayOfWeek, time, duration, sourceAppointment = null) {
+  const startedAt = sourceAppointment?.date_time ? getDateKeyInLaPaz(sourceAppointment.date_time) : schedule.started_at;
+  const startDateKey = getNextOccurrenceDateKey(startedAt, dayOfWeek);
   const endTime = buildEndTime(time, duration);
   const recurrenceRule = `RRULE:FREQ=WEEKLY;BYDAY=${BYDAY_MAP[Number(dayOfWeek)]}`;
   const payload = {
@@ -247,6 +248,16 @@ async function createOrUpdateRecurringEvent(schedule, client, dayOfWeek, time, d
 
   if (schedule.gcal_recurring_event_id) {
     return updateEvent(CALENDAR_ID(), schedule.gcal_recurring_event_id, {
+      summary: payload.summary,
+      description: payload.description,
+      startDateTime: payload.startDateTime,
+      endDateTime: payload.endDateTime,
+      recurrence: [payload.recurrenceRule],
+    });
+  }
+
+  if (sourceAppointment?.gcal_event_id) {
+    return updateEvent(CALENDAR_ID(), sourceAppointment.gcal_event_id, {
       summary: payload.summary,
       description: payload.description,
       startDateTime: payload.startDateTime,
@@ -300,11 +311,15 @@ async function createRecurringSchedule(tenantId, data = {}) {
   await ensureNoActiveScheduleForClient(tenantId, clientId);
 
   let duration = await getDefaultDuration(tenantId);
+  let sourceAppointment = null;
   if (sourceAppointmentId) {
-    const sourceAppointment = await getSourceAppointment(tenantId, sourceAppointmentId);
+    sourceAppointment = await getSourceAppointment(tenantId, sourceAppointmentId);
     if (!sourceAppointment) throw recurringError(404, 'source_appointment_id inválido');
     if (Number(sourceAppointment.client_id) !== clientId) {
       throw recurringError(400, 'La cita fuente no pertenece al cliente');
+    }
+    if (sourceAppointment.source_schedule_id) {
+      throw recurringError(409, 'La cita fuente ya pertenece a otra recurrencia');
     }
     duration = Number(sourceAppointment.duration || duration || 60);
   }
@@ -324,12 +339,28 @@ async function createRecurringSchedule(tenantId, data = {}) {
       [tenantId, clientId]
     );
 
+    if (sourceAppointmentId) {
+      await conn.query(
+        `UPDATE appointments
+         SET source_schedule_id = ?
+         WHERE tenant_id = ? AND id = ?`,
+        [result.insertId, tenantId, sourceAppointmentId]
+      );
+    }
+
     return result.insertId;
   });
 
   const schedule = await getRecurringSchedule(tenantId, created);
   try {
-    const recurringEvent = await createOrUpdateRecurringEvent(schedule, client, dayOfWeek, time, schedule.duration);
+    const recurringEvent = await createOrUpdateRecurringEvent(
+      schedule,
+      client,
+      dayOfWeek,
+      time,
+      schedule.duration,
+      sourceAppointment
+    );
     await pool.query(
       `UPDATE recurring_schedules
        SET gcal_recurring_event_id = ?

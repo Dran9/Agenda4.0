@@ -225,10 +225,23 @@ Ver `.env.example` para la lista completa. Se configuran en hPanel de Hostinger.
 - Dashboard/Clientes/Analytics/Citas:
   ya muestran recurrencia activa, sesiones virtuales del día, KPI recurrentes y el ícono de repeat en citas materializadas
 - Voz:
-  el shortcut/admin voice ya puede activar, pausar, reactivar y desactivar recurrencias
+  el shortcut/admin voice ya puede activar, consultar, pausar, reactivar y desactivar recurrencias
+  frases soportadas de forma directa:
+  `Fulano pasa a modo recurrencia`
+  `Fulano pasa a recurrencia`
+  `Fulano está en recurrencia`
+- Regla de activación por voz:
+  si el cliente tiene una próxima cita individual futura, la activación por voz toma esa cita como fuente
+  y convierte ese evento de Google Calendar en una serie semanal
+  si no hay cita fuente convertible, crea la serie semanal nueva en GCal y deja la recurrencia activa en la app
+- Seguridad operativa de voz:
+  si la app activa la recurrencia pero Google Calendar no confirma la serie, la respuesta de voz lo avisa explícitamente
 - Decisión operativa importante:
   pausar/finalizar en la app NO elimina automáticamente la serie maestra en Google Calendar
   la app deja de materializar y recordar esa recurrencia, pero no hace una acción destructiva en GCal por detrás
+- Sync desde Google Calendar:
+  si conviertes la sesión a repetitiva directamente en GCal, el cron `recurringSync` la puede leer y crear el `recurring_schedule`
+  el sync no es realtime; corre a las 06:00 BOT y revisa los próximos 14 días
 - Riesgo conocido:
   la idempotencia de materialización se protege con advisory lock + verificación previa
   todavía no hay un `UNIQUE KEY` duro para ocurrencias recurrentes en la tabla `appointments`

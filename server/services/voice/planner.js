@@ -18,6 +18,7 @@ const SUPPORTED_INTENTS = [
   'appointments_this_week',
   'create_appointment',
   'activate_recurring',
+  'recurring_status',
   'deactivate_recurring',
   'pause_recurring',
   'resume_recurring',

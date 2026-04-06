@@ -180,8 +180,13 @@ function extractClientNameForRecurring(text, mode) {
     if (afterActivate?.[1]) {
       candidate = afterActivate[1];
     } else {
-      const modeRepeat = original.match(/^(.+?)\s+entra\s+a\s+modo\s+repetir$/i);
-      if (modeRepeat?.[1]) candidate = modeRepeat[1];
+      const modeRepeat = original.match(/^(.+?)\s+entra\s+a\s+modo\s+repetir\b/i);
+      if (modeRepeat?.[1]) {
+        candidate = modeRepeat[1];
+      } else {
+        const modeRecurring = original.match(/^(.+?)\s+(?:entra\s+a\s+modo\s+recurrencia|pasa\s+a\s+modo\s+recurrencia|pasa\s+a\s+recurrencia)\b/i);
+        if (modeRecurring?.[1]) candidate = modeRecurring[1];
+      }
     }
   }
 
@@ -203,6 +208,11 @@ function extractClientNameForRecurring(text, mode) {
   if (mode === 'resume') {
     const resumeMatch = original.match(/(?:reactivar\s+(?:a\s+)?)(.+)$/i);
     if (resumeMatch?.[1]) candidate = resumeMatch[1];
+  }
+
+  if (mode === 'status') {
+    const recurringStatus = original.match(/^(.+?)\s+esta\s+en\s+(?:modo\s+)?recurrencia\b/i);
+    if (recurringStatus?.[1]) candidate = recurringStatus[1];
   }
 
   return trimClientCandidate(candidate);
@@ -274,7 +284,7 @@ function detectAgendaIntent(text) {
 function detectRecurringIntent(text) {
   const normalized = normalizeText(text);
 
-  if (/\b(entra a modo repetir|activar semanal|activar recurrencia)\b/.test(normalized)) {
+  if (/\b(entra a modo repetir|entra a modo recurrencia|activar semanal|activar recurrencia|pasa a modo recurrencia|pasa a recurrencia)\b/.test(normalized)) {
     return {
       intent: 'activate_recurring',
       entities: {
@@ -308,6 +318,15 @@ function detectRecurringIntent(text) {
       intent: 'resume_recurring',
       entities: {
         client_name: extractClientNameForRecurring(text, 'resume'),
+      },
+    };
+  }
+
+  if (/\b(esta en recurrencia|esta en modo recurrencia)\b/.test(normalized)) {
+    return {
+      intent: 'recurring_status',
+      entities: {
+        client_name: extractClientNameForRecurring(text, 'status'),
       },
     };
   }
@@ -619,7 +638,7 @@ async function parseVoiceCommand(inputText, options = {}) {
         `Debes devolver solo JSON válido, sin markdown ni explicación. ` +
         `Fecha actual en Bolivia: ${today}. ` +
         `Contexto reciente: ${recentSummary}. ` +
-        `Intents permitidos: agenda_query, pending_payments, pending_amount, sessions_to_goal, client_lookup, client_upcoming_appointments, reminder_check, confirmation_check, rescheduled_list, new_clients_count, unconfirmed_tomorrow, confirmed_today, appointments_this_week, create_appointment, activate_recurring, deactivate_recurring, pause_recurring, resume_recurring, reminder_toggle, send_reminders, update_availability, unknown. ` +
+        `Intents permitidos: agenda_query, pending_payments, pending_amount, sessions_to_goal, client_lookup, client_upcoming_appointments, reminder_check, confirmation_check, rescheduled_list, new_clients_count, unconfirmed_tomorrow, confirmed_today, appointments_this_week, create_appointment, activate_recurring, recurring_status, deactivate_recurring, pause_recurring, resume_recurring, reminder_toggle, send_reminders, update_availability, unknown. ` +
         `Entities posibles: client_id (number o null), client_name (string o null), date_key (YYYY-MM-DD o null), agenda_scope (day|this_week|next_week|null), time_hhmm (HH:MM o null), goal_amount (number o null), month (1-12 o null), year (YYYY o null), reminder_enabled (boolean o null), reminder_date (today|tomorrow|null), weekday_name (lunes|martes|miercoles|jueves|viernes|sabado|domingo|null), morning_mode (keep|off|range|null), morning_start (HH:MM|null), morning_end (HH:MM|null), afternoon_mode (keep|off|range|null), afternoon_start (HH:MM|null), afternoon_end (HH:MM|null). ` +
         `Convierte fechas relativas como hoy, mañana, pasado mañana, este viernes, el viernes a YYYY-MM-DD. ` +
         `Si el usuario pregunta por esta semana o la próxima semana, usa agenda_scope=this_week o next_week. ` +

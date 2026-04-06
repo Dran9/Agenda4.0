@@ -55,6 +55,48 @@ function buildRecurringForm(schedule, client) {
   };
 }
 
+function recurringPriority(schedule) {
+  if (!schedule) return 99;
+  if (!schedule.ended_at && !schedule.paused_at) return 0;
+  if (schedule.paused_at && !schedule.ended_at) return 1;
+  return 2;
+}
+
+function pickRecurringSchedule(current, candidate) {
+  if (!current) return candidate;
+  const currentPriority = recurringPriority(current);
+  const candidatePriority = recurringPriority(candidate);
+  if (candidatePriority !== currentPriority) {
+    return candidatePriority < currentPriority ? candidate : current;
+  }
+  return new Date(candidate.updated_at || 0) > new Date(current.updated_at || 0) ? candidate : current;
+}
+
+function getRecurringFieldMeta(schedule) {
+  if (!schedule || schedule.ended_at) {
+    return {
+      label: '—',
+      detail: '',
+      className: 'border-gray-200 bg-white text-gray-400',
+    };
+  }
+
+  const detail = `${formatWeekdayShort(schedule.day_of_week)} ${schedule.time}${schedule.started_at ? ` · desde ${schedule.started_at}` : ''}`;
+  if (schedule.paused_at) {
+    return {
+      label: 'Pausada',
+      detail,
+      className: 'border-amber-200 bg-amber-50 text-amber-700',
+    };
+  }
+
+  return {
+    label: 'Recurrente',
+    detail,
+    className: 'border-blue-200 bg-blue-50 text-blue-700',
+  };
+}
+
 const WEEKDAY_OPTIONS = [
   { value: 1, label: 'Lunes' },
   { value: 2, label: 'Martes' },
@@ -79,6 +121,7 @@ export default function Clients() {
   const [newStatus, setNewStatus] = useState('');
   const [newSource, setNewSource] = useState('');
   const [saving, setSaving] = useState(false);
+  const [savingRecurringClientId, setSavingRecurringClientId] = useState(null);
 
   useEffect(() => {
     loadClients();
@@ -208,6 +251,35 @@ export default function Clients() {
     });
   }
 
+  async function handleRecurringQuickAction(client, schedule, action) {
+    if (action === 'open') {
+      setEditClient(client);
+      return;
+    }
+    if (!schedule?.id) {
+      setEditClient(client);
+      return;
+    }
+    if (action === 'end' && !confirm(`Quitar la recurrencia de ${client.first_name} ${client.last_name}?`)) return;
+
+    setSavingRecurringClientId(client.id);
+    try {
+      await api.put(`/recurring/${schedule.id}/${action}`, {});
+      await Promise.all([loadClients(), loadRecurringSchedules()]);
+      showToast(
+        action === 'pause'
+          ? 'Recurrencia pausada'
+          : action === 'resume'
+            ? 'Recurrencia reactivada'
+            : 'Recurrencia quitada'
+      );
+    } catch (err) {
+      showToast('Error: ' + err.message, 'error');
+    } finally {
+      setSavingRecurringClientId(null);
+    }
+  }
+
   const filtered = clients.filter(c => {
     if (!search) return true;
     const s = search.toLowerCase();
@@ -221,9 +293,10 @@ export default function Clients() {
 
   const recurringByClient = new Map();
   for (const schedule of recurringSchedules) {
-    if (!recurringByClient.has(schedule.client_id)) {
-      recurringByClient.set(schedule.client_id, schedule);
-    }
+    recurringByClient.set(
+      schedule.client_id,
+      pickRecurringSchedule(recurringByClient.get(schedule.client_id), schedule)
+    );
   }
 
   return (
@@ -287,6 +360,7 @@ export default function Clients() {
                 <th className="text-left p-3 font-medium">Ciudad</th>
                 <th className="text-left p-3 font-medium">País</th>
                 <th className="text-left p-3 font-medium">Zona horaria</th>
+                <th className="text-left p-3 font-medium min-w-[200px]">Recurrencia</th>
                 <th className="text-left p-3 font-medium">Status</th>
                 <th className="text-left p-3 font-medium">Retención</th>
                 <th className="text-left p-3 font-medium">Sesiones</th>
@@ -296,7 +370,10 @@ export default function Clients() {
               </tr>
             </thead>
             <tbody>
-              {filtered.map(client => (
+              {filtered.map(client => {
+                const recurringSchedule = recurringByClient.get(client.id) || null;
+                const recurringMeta = getRecurringFieldMeta(recurringSchedule);
+                return (
                 <tr key={client.id} className="border-b border-gray-50 hover:bg-gray-50">
                   <td className="p-3">
                     <input
@@ -307,20 +384,7 @@ export default function Clients() {
                     />
                   </td>
                   <td className="p-3 font-medium cursor-pointer hover:text-blue-600" onClick={() => setEditClient(client)}>
-                    <div className="space-y-1">
-                      <div>{client.first_name}</div>
-                      {recurringByClient.get(client.id)?.is_active ? (
-                        <div className="space-y-1">
-                          <span className="inline-flex w-fit items-center gap-1 rounded-full bg-blue-100 px-2 py-0.5 text-xs font-semibold text-blue-700">
-                            <Repeat size={12} />
-                            Semanal
-                          </span>
-                          <div className="text-[11px] font-medium text-blue-700">
-                            {formatWeekdayShort(recurringByClient.get(client.id).day_of_week)} {recurringByClient.get(client.id).time}
-                          </div>
-                        </div>
-                      ) : null}
-                    </div>
+                    {client.first_name}
                   </td>
                   <td className="p-3 cursor-pointer hover:text-blue-600" onClick={() => setEditClient(client)}>
                     {client.last_name}
@@ -333,6 +397,34 @@ export default function Clients() {
                   <td className="p-3 text-gray-600">{client.city || '-'}</td>
                   <td className="p-3 text-gray-600">{client.country || '-'}</td>
                   <td className="p-3 text-gray-500 text-xs">{(client.timezone || 'America/La_Paz').replace('America/', '')}</td>
+                  <td className="p-3">
+                    <div className="space-y-1">
+                      <select
+                        value=""
+                        onChange={e => handleRecurringQuickAction(client, recurringSchedule, e.target.value)}
+                        disabled={savingRecurringClientId === client.id}
+                        className={`min-w-[170px] rounded-full border px-2.5 py-1 text-xs font-semibold ${recurringMeta.className}`}
+                      >
+                        <option value="" disabled>{recurringMeta.label}</option>
+                        <option value="open">{recurringSchedule && !recurringSchedule.ended_at ? 'Abrir ficha' : 'Configurar recurrencia'}</option>
+                        {recurringSchedule && !recurringSchedule.ended_at && !recurringSchedule.paused_at ? (
+                          <option value="pause">Pausar recurrencia</option>
+                        ) : null}
+                        {recurringSchedule?.paused_at && !recurringSchedule.ended_at ? (
+                          <option value="resume">Reactivar recurrencia</option>
+                        ) : null}
+                        {recurringSchedule && !recurringSchedule.ended_at ? (
+                          <option value="end">Quitar recurrencia</option>
+                        ) : null}
+                      </select>
+                      {recurringMeta.detail ? (
+                        <div className="inline-flex items-center gap-1 text-[11px] font-medium text-gray-500">
+                          <Repeat size={11} className="text-gray-400" />
+                          <span>{recurringMeta.detail}</span>
+                        </div>
+                      ) : null}
+                    </div>
+                  </td>
                   <td className="p-3">
                     <select
                       value={client.status_override || client.calculated_status || ''}
@@ -392,9 +484,9 @@ export default function Clients() {
                     </button>
                   </td>
                 </tr>
-              ))}
+              )})}
               {filtered.length === 0 && (
-                <tr><td colSpan={13} className="p-8 text-center text-gray-400">Sin resultados</td></tr>
+                <tr><td colSpan={14} className="p-8 text-center text-gray-400">Sin resultados</td></tr>
               )}
             </tbody>
           </table>

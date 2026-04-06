@@ -224,6 +224,9 @@ Ver `.env.example` para la lista completa. Se configuran en hPanel de Hostinger.
   lee 14 días de GCal y puede auto-crear schedules faltantes por `recurringEventId`
 - Dashboard/Clientes/Analytics/Citas:
   ya muestran recurrencia activa, sesiones virtuales del día, KPI recurrentes y el ícono de repeat en citas materializadas
+  clientes y citas ahora tienen una columna explícita `Recurrencia`
+  ahí se ve `—`, `Recurrente` o `Pausada`, junto al patrón semanal y la fecha de inicio
+  desde ese campo se puede pausar, reactivar o quitar la recurrencia sin entrar a automatizaciones
 - Voz:
   el shortcut/admin voice ya puede activar, consultar, pausar, reactivar y desactivar recurrencias
   frases soportadas de forma directa:

@@ -12,6 +12,7 @@ If the task is about the private voice app, also read `docs/VOICE-APP-REPORT.md`
 - Branch: `main`
 - Commit: `f6a8cf5` (base pushed commit before the latest voice/GCal follow-up)
 - Summary: recurring schedules were implemented end to end with lazy materialization, reminder integration, admin UI support, analytics, and voice controls; latest local follow-up adds stronger voice phrasing coverage plus GCal conversion from the source appointment
+- UI follow-up: Clients and Appointments now expose a visible `Recurrencia` field/column with quick manual actions, instead of leaving recurrence implied by badges or backend runtime only
 - Recurring follow-up: materializing a recurring occurrence now reuses the Google Calendar instance ID when the occurrence already comes from a recurring series, instead of creating a duplicate event
 - Recurring sync follow-up: a daily 06:00 BOT cron now scans the next 14 days of GCal for recurring therapy events and can auto-create missing `recurring_schedules`
 - Recurring lifecycle follow-up: pause/end inside the app does not automatically delete the master recurring event in Google Calendar; the app simply stops materializing/sending reminders for that schedule
@@ -54,6 +55,9 @@ If the task is about the private voice app, also read `docs/VOICE-APP-REPORT.md`
 - New recurring admin API exists at `/api/recurring`
 - Dashboard `/Hoy` now mixes real appointments with same-day virtual recurring sessions and materializes a virtual session automatically when the admin changes its status
 - Clients UI now shows a weekly badge plus day/time for active recurring clients and lets admin activate, edit, pause, resume, or end the schedule from the client modal
+- Clients UI now also shows an explicit `Recurrencia` column in the main table:
+  `—` when there is no active recurrence, `Recurrente` or `Pausada` when it exists, plus quick dropdown actions to open the client, pause, reactivate, or quitar recurrencia
+- Appointments UI now also shows an explicit `Recurrencia` column tied to the client’s current schedule, with quick dropdown actions to pause, reactivate, or quitar recurrencia directly from the appointments list
 - Analytics now exposes recurring totals, paused/ended counts, 90-day churn, and projected monthly recurring revenue
 - Voice admin now supports `activate_recurring`, `pause_recurring`, `resume_recurring`, and `deactivate_recurring`
 - Voice admin now also supports `recurring_status`

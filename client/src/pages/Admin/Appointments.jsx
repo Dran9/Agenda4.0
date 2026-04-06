@@ -3,7 +3,7 @@ import { Trash2, Search, BellRing, RotateCcw, ArrowUpDown, Repeat } from 'lucide
 import AdminLayout from '../../components/AdminLayout';
 import { api } from '../../utils/api';
 import { useToast, Toast } from '../../hooks/useToast';
-import { formatDateBolivia, formatTimeBolivia } from '../../utils/dates';
+import { formatDateBolivia, formatTimeBolivia, formatWeekdayShort } from '../../utils/dates';
 
 function formatReceiptAmount(amount) {
   if (amount == null) return '—';
@@ -106,18 +106,66 @@ function getBoliviaDateKey(dateStr) {
   return `${year}-${month}-${day}`;
 }
 
+function recurringPriority(schedule) {
+  if (!schedule) return 99;
+  if (!schedule.ended_at && !schedule.paused_at) return 0;
+  if (schedule.paused_at && !schedule.ended_at) return 1;
+  return 2;
+}
+
+function pickRecurringSchedule(current, candidate) {
+  if (!current) return candidate;
+  const currentPriority = recurringPriority(current);
+  const candidatePriority = recurringPriority(candidate);
+  if (candidatePriority !== currentPriority) {
+    return candidatePriority < currentPriority ? candidate : current;
+  }
+  return new Date(candidate.updated_at || 0) > new Date(current.updated_at || 0) ? candidate : current;
+}
+
+function getRecurringFieldMeta(schedule) {
+  if (!schedule || schedule.ended_at) {
+    return {
+      label: '—',
+      detail: '',
+      className: 'border-gray-200 bg-white text-gray-400',
+    };
+  }
+
+  const detail = `${formatWeekdayShort(schedule.day_of_week)} ${schedule.time}${schedule.started_at ? ` · desde ${schedule.started_at}` : ''}`;
+  if (schedule.paused_at) {
+    return {
+      label: 'Pausada',
+      detail,
+      className: 'border-amber-200 bg-amber-50 text-amber-700',
+    };
+  }
+
+  return {
+    label: 'Recurrente',
+    detail,
+    className: 'border-blue-200 bg-blue-50 text-blue-700',
+  };
+}
+
 export default function Appointments() {
   const [appointments, setAppointments] = useState([]);
+  const [recurringSchedules, setRecurringSchedules] = useState([]);
   const [loading, setLoading] = useState(true);
   const { toast, show: showToast } = useToast();
   const [filters, setFilters] = useState({ status: '', from: '', to: '', search: '', sort: 'date:desc' });
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
   const [selected, setSelected] = useState(new Set());
+  const [savingRecurringClientId, setSavingRecurringClientId] = useState(null);
 
   useEffect(() => {
     fetchAppointments();
   }, [page, filters]);
+
+  useEffect(() => {
+    loadRecurringSchedules();
+  }, []);
 
   async function fetchAppointments() {
     setLoading(true);
@@ -139,6 +187,15 @@ export default function Appointments() {
       console.error(err);
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function loadRecurringSchedules() {
+    try {
+      const data = await api.get('/recurring');
+      setRecurringSchedules(Array.isArray(data) ? data : []);
+    } catch (err) {
+      console.error(err);
     }
   }
 
@@ -239,6 +296,36 @@ export default function Appointments() {
     });
   }
 
+  async function handleRecurringQuickAction(appt, schedule, action) {
+    if (!schedule?.id) return;
+    if (action === 'end' && !confirm(`Quitar la recurrencia de ${appt.first_name} ${appt.last_name}?`)) return;
+
+    setSavingRecurringClientId(appt.client_id);
+    try {
+      await api.put(`/recurring/${schedule.id}/${action}`, {});
+      await Promise.all([fetchAppointments(), loadRecurringSchedules()]);
+      showToast(
+        action === 'pause'
+          ? 'Recurrencia pausada'
+          : action === 'resume'
+            ? 'Recurrencia reactivada'
+            : 'Recurrencia quitada'
+      );
+    } catch (err) {
+      showToast('Error: ' + err.message, 'error');
+    } finally {
+      setSavingRecurringClientId(null);
+    }
+  }
+
+  const recurringByClient = new Map();
+  for (const schedule of recurringSchedules) {
+    recurringByClient.set(
+      schedule.client_id,
+      pickRecurringSchedule(recurringByClient.get(schedule.client_id), schedule)
+    );
+  }
+
   return (
     <AdminLayout title="Citas">
       <Toast toast={toast} />
@@ -325,6 +412,7 @@ export default function Appointments() {
                   <th className="text-left p-3 font-medium min-w-[90px]">Hora</th>
                   <th className="text-left p-3 font-medium min-w-[220px]">Cliente</th>
                   <th className="text-left p-3 font-medium min-w-[170px]">Teléfono</th>
+                  <th className="text-left p-3 font-medium min-w-[210px]">Recurrencia</th>
                   <th className="text-left p-3 font-medium min-w-[110px]">Registro</th>
                   <th className="text-left p-3 font-medium min-w-[150px]">Status</th>
                   <th className="text-left p-3 font-medium min-w-[340px]">Pago</th>
@@ -334,7 +422,10 @@ export default function Appointments() {
                 </tr>
               </thead>
               <tbody>
-                {appointments.map(appt => (
+                {appointments.map(appt => {
+                  const recurringSchedule = recurringByClient.get(appt.client_id) || null;
+                  const recurringMeta = getRecurringFieldMeta(recurringSchedule);
+                  return (
                   <tr key={appt.id} className="border-b border-gray-50 hover:bg-gray-50">
                     <td className="p-3">
                       <input
@@ -356,6 +447,33 @@ export default function Appointments() {
                       <a href={`https://wa.me/${appt.client_phone}`} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">
                         {appt.client_phone}
                       </a>
+                    </td>
+                    <td className="p-3 align-top">
+                      <div className="space-y-1">
+                        <select
+                          value=""
+                          onChange={e => handleRecurringQuickAction(appt, recurringSchedule, e.target.value)}
+                          disabled={!recurringSchedule || recurringSchedule.ended_at || savingRecurringClientId === appt.client_id}
+                          className={`min-w-[170px] rounded-full border px-2.5 py-1 text-xs font-semibold ${recurringMeta.className}`}
+                        >
+                          <option value="" disabled>{recurringMeta.label}</option>
+                          {recurringSchedule && !recurringSchedule.ended_at && !recurringSchedule.paused_at ? (
+                            <option value="pause">Pausar recurrencia</option>
+                          ) : null}
+                          {recurringSchedule?.paused_at && !recurringSchedule.ended_at ? (
+                            <option value="resume">Reactivar recurrencia</option>
+                          ) : null}
+                          {recurringSchedule && !recurringSchedule.ended_at ? (
+                            <option value="end">Quitar recurrencia</option>
+                          ) : null}
+                        </select>
+                        {recurringMeta.detail ? (
+                          <div className="inline-flex items-center gap-1 text-[11px] font-medium text-gray-500">
+                            <Repeat size={11} className="text-gray-400" />
+                            <span>{recurringMeta.detail}</span>
+                          </div>
+                        ) : null}
+                      </div>
                     </td>
                     <td className="p-3 text-xs text-gray-400 whitespace-nowrap">{formatRegistro(appt.created_at)}</td>
                     <td className="p-3 align-top">
@@ -429,9 +547,9 @@ export default function Appointments() {
                       </button>
                     </td>
                   </tr>
-                ))}
+                )})}
                 {appointments.length === 0 && (
-                  <tr><td colSpan={11} className="p-8 text-center text-gray-400">Sin citas</td></tr>
+                  <tr><td colSpan={12} className="p-8 text-center text-gray-400">Sin citas</td></tr>
                 )}
               </tbody>
             </table>

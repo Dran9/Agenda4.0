@@ -1,8 +1,9 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Target, TrendingUp, ChevronLeft, ChevronRight, Eye } from 'lucide-react';
 import AdminLayout from '../../components/AdminLayout';
 import { api } from '../../utils/api';
 import { useToast, Toast } from '../../hooks/useToast';
+import useAdminEvents from '../../hooks/useAdminEvents';
 
 const MONTHS = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
 
@@ -41,9 +42,11 @@ export default function Finance() {
   const [year, setYear] = useState(now.getFullYear());
   const [month, setMonth] = useState(now.getMonth() + 1);
 
-  useEffect(() => {
-    loadData();
-  }, [year, month]);
+  const refreshData = useCallback(() => loadData(), [year, month]);
+  useEffect(() => { loadData(); }, [year, month]);
+
+  // Real-time updates via SSE
+  useAdminEvents(['payment:change'], refreshData);
 
   async function loadData() {
     setLoading(true);

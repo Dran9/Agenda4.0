@@ -439,6 +439,21 @@ async function endRecurringSchedule(tenantId, scheduleId) {
   const schedule = await getRecurringSchedule(tenantId, scheduleId);
   if (!schedule) throw recurringError(404, 'Sesión recurrente no encontrada');
 
+  // Remove recurrence from GCal master event (best effort, never blocks)
+  if (schedule.gcal_recurring_event_id) {
+    try {
+      await deleteEvent(CALENDAR_ID(), schedule.gcal_recurring_event_id);
+      console.log(`[recurring] Deleted GCal recurring series ${schedule.gcal_recurring_event_id} for schedule ${scheduleId}`);
+    } catch (gcalErr) {
+      // 404/410 = already gone, that's fine
+      if ([404, 410].includes(gcalErr.code || gcalErr.status)) {
+        console.log(`[recurring] GCal series already gone for schedule ${scheduleId}`);
+      } else {
+        console.error(`[recurring] Failed to delete GCal series for schedule ${scheduleId}:`, gcalErr.message);
+      }
+    }
+  }
+
   await pool.query(
     `UPDATE recurring_schedules
      SET ended_at = CURDATE()

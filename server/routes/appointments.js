@@ -3,6 +3,7 @@ const { pool } = require('../db');
 const { authMiddleware } = require('../middleware/auth');
 const { deleteEvent } = require('../services/calendar');
 const { sendServerError } = require('../utils/httpErrors');
+const { broadcast } = require('../services/adminEvents');
 
 const router = Router();
 const CALENDAR_ID = () => process.env.CALENDAR_ID || 'danielmacleann@gmail.com';
@@ -118,6 +119,8 @@ router.put('/:id/status', authMiddleware, async (req, res) => {
       return res.status(404).json({ error: 'Cita no encontrada' });
     }
 
+    broadcast('appointment:change', { id: Number(req.params.id), action: 'status', status }, req.tenantId);
+
     // If completed, create pending payment
     if (status === 'Completada') {
       const [appt] = await pool.query(
@@ -204,6 +207,7 @@ router.delete('/:id', authMiddleware, async (req, res) => {
 
     await pool.query('DELETE FROM payments WHERE appointment_id = ? AND tenant_id = ?', [req.params.id, req.tenantId]);
     await pool.query('DELETE FROM appointments WHERE id = ? AND tenant_id = ?', [req.params.id, req.tenantId]);
+    broadcast('appointment:change', { id: Number(req.params.id), action: 'deleted' }, req.tenantId);
     res.json({ success: true });
   } catch (err) {
     sendServerError(res, req, err, {

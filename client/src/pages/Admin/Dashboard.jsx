@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import {
   Activity,
   ArrowUpRight,
@@ -21,6 +21,7 @@ import AdminLayout from '../../components/AdminLayout';
 import { api } from '../../utils/api';
 import { formatRelativeTime, formatTimeBolivia, getBoliviaDateKey } from '../../utils/dates';
 import { Toast, useToast } from '../../hooks/useToast';
+import useAdminEvents from '../../hooks/useAdminEvents';
 import './Preview.css';
 
 const AUTOMATIONS = [
@@ -115,9 +116,14 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(true);
   const { toast, show: showToast } = useToast();
 
-  useEffect(() => {
-    loadDashboard();
-  }, []);
+  const refreshDashboard = useCallback(() => loadDashboard(), []);
+  useEffect(() => { loadDashboard(); }, []);
+
+  // Real-time updates via SSE
+  useAdminEvents(
+    ['appointment:change', 'recurring:change', 'payment:change', 'client:change'],
+    refreshDashboard,
+  );
 
   async function loadDashboard() {
     setLoading(true);

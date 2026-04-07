@@ -269,9 +269,10 @@ Ver `.env.example` para la lista completa. Se configuran en hPanel de Hostinger.
   pantalla completa en `/admin/quick-actions` con buscador, 6 acciones y feedback visual
   es el primer ítem del sidebar (antes de "Hoy")
   backend en `server/routes/quickActions.js` con 6 endpoints protegidos
-- Decisión operativa importante:
-  pausar/finalizar en la app NO elimina automáticamente la serie maestra en Google Calendar
-  la app deja de materializar y recordar esa recurrencia, pero no hace una acción destructiva en GCal por detrás
+- Decisión operativa actualizada:
+  finalizar (`end`) una recurrencia ahora SÍ elimina la serie maestra en Google Calendar (best-effort, no bloquea si falla)
+  pausar una recurrencia NO toca Google Calendar (intencional — la app deja de materializar y recordar pero no destruye la serie)
+  Quick Actions cancel con `end_recurring=true` ahora llama al servicio `endRecurringSchedule()` en vez de SQL directo, así la eliminación de GCal ocurre también desde Comandos
 - Sync desde Google Calendar:
   si conviertes la sesión a repetitiva directamente en GCal, el cron `recurringSync` la puede leer y crear el `recurring_schedule`
   el sync no es realtime; corre a las 06:00 BOT y revisa los próximos 14 días
@@ -279,6 +280,22 @@ Ver `.env.example` para la lista completa. Se configuran en hPanel de Hostinger.
   la idempotencia de materialización se protege con advisory lock + verificación previa
   `recurring_schedules` ya tiene UNIQUE KEY `(tenant_id, client_id, day_of_week, time, started_at)`
   todavía no hay un UNIQUE KEY duro para ocurrencias recurrentes en la tabla `appointments`
+
+## Estado SSE / Real-time Admin (2026-04-07)
+- El admin ahora se actualiza en tiempo real sin refresh manual, usando Server-Sent Events (SSE)
+- Endpoint SSE: `GET /api/admin/events` — conexión persistente protegida por JWT
+- El auth middleware ahora acepta `?token=` como query param además del header `Authorization: Bearer`, porque `EventSource` del browser no puede enviar headers custom
+- Servicio: `server/services/adminEvents.js` — broadcast por tenant, heartbeat cada 25s, cleanup automático al desconectar
+- Eventos emitidos:
+  - `appointment:change` — creación, cambio de status, eliminación, confirmación por WhatsApp, reagendamiento, materialización de recurrencia
+  - `recurring:change` — crear, actualizar, pausar, reactivar, finalizar, cancelar desde Quick Actions
+  - `payment:change` — cambio manual de status, confirmación/mismatch automática por OCR
+  - `client:change` — nuevo cliente por booking público, cambio de arancel desde Quick Actions
+- Hook frontend: `client/src/hooks/useAdminEvents.js` — debounce 400ms, reconexión exponencial, cleanup al desmontar
+- Páginas conectadas: Dashboard, Appointments, Clients, Finance, Quick Actions
+- SSE se emite desde: booking.js, appointments.js, recurring.js, quickActions.js, webhook.js, payments.js
+- No usar SSE para el flujo público de booking ni para el webhook de WhatsApp (esos no son admin)
+- Importante: Hostinger tiene LiteSpeed; el header `X-Accel-Buffering: no` ya se envía para evitar buffering
 
 ## Regla de documentación operativa
 - Al cerrar una tarea importante, actualizar SIEMPRE ambos archivos:

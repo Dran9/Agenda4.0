@@ -8,15 +8,17 @@ If the task is about the private voice app, also read `docs/VOICE-APP-REPORT.md`
 
 ## Last Updated
 
-- Date: 2026-04-06
+- Date: 2026-04-07
 - Branch: `main`
-- Commit: `c92c612`
-- Summary: Quick Actions command center added (mobile-first, 6 actions, WhatsApp integration); 3 critical recurring bugs fixed (eventStart undefined, UNIQUE constraint, MRR frequency); Comandos moved to first sidebar position
+- Commit: `9ee8997`
+- Summary: SSE real-time admin updates added; GCal recurring series now deleted when ending recurrence from admin or Quick Actions; Quick Actions cancel route now uses service function instead of direct SQL
 - UI follow-up: Clients and Appointments now expose a visible `Recurrencia` field/column with quick manual actions, instead of leaving recurrence implied by badges or backend runtime only
 - UI follow-up 2: recurrence no longer depends on opening the full client popup; there is now a dedicated short recurrence modal
 - Recurring follow-up: materializing a recurring occurrence now reuses the Google Calendar instance ID when the occurrence already comes from a recurring series, instead of creating a duplicate event
 - Recurring sync follow-up: a daily 06:00 BOT cron now scans the next 14 days of GCal for recurring therapy events and can auto-create missing `recurring_schedules`
-- Recurring lifecycle follow-up: pause/end inside the app does not automatically delete the master recurring event in Google Calendar; the app simply stops materializing/sending reminders for that schedule
+- Recurring lifecycle update: ending a recurring schedule now deletes the GCal master recurring series (best-effort, never blocks); pausing still does NOT touch GCal (intentional — the app just stops materializing/sending reminders)
+- SSE follow-up: admin pages now auto-refresh via Server-Sent Events when data changes — no manual refresh needed for appointments, clients, recurring, payments, or dashboard
+- Quick Actions fix: cancel route now calls `endRecurringSchedule()` service instead of direct SQL, so GCal deletion also happens from Quick Actions
 - Voice recurring follow-up: the parser now recognizes `Fulano pasa a modo recurrencia`, `Fulano pasa a recurrencia`, and `Fulano está en recurrencia`
 - Voice recurring follow-up 2: the parser now also recognizes `Fulano entra en recurrencia`
 - Voice GCal follow-up: activating recurrence from voice now prefers the client’s latest standalone completed appointment as source, then falls back to the next standalone future appointment
@@ -75,6 +77,12 @@ If the task is about the private voice app, also read `docs/VOICE-APP-REPORT.md`
 - Reminder flow now tries recurring matching before the old phone-summary fallback so recurring sessions become real appointments before WhatsApp sends
 - Voice activation of recurrence now prefers converting the latest standalone completed appointment in Google Calendar into a weekly recurring event, then falls back to the next standalone future appointment
 - If recurrence is changed manually in Google Calendar, the daily `recurringSync` cron can import it back into the app from `recurringEventId`
+- Admin pages now auto-refresh via SSE (Server-Sent Events):
+  `GET /api/admin/events` is a persistent SSE connection that broadcasts `appointment:change`, `recurring:change`, `payment:change`, `client:change`
+  Dashboard, Appointments, Clients, Finance, and Quick Actions all listen and auto-reload on relevant events
+  SSE heartbeat every 25s keeps the connection alive through proxies
+  The auth middleware now also accepts `?token=` query param so EventSource (which cannot set custom headers) can authenticate
+- Ending a recurring schedule from the admin (via `/api/recurring/:id/end`, Quick Actions cancel, or voice) now also deletes the GCal master recurring series
 - Payment success WhatsApp reply is being simplified to `✅ Pago recibido correctamente, ¡Gracias!`
 - Automatic QR follow-up after reminder confirmation no longer depends strictly on `booking_context`; for Bolivian clients, legacy/manual appointments without location metadata should still receive the correct QR by fee
 - Voice Shortcut MVP is now being added as a separate backend module with Groq transcription, token auth, and audit logging
@@ -92,15 +100,24 @@ If the task is about the private voice app, also read `docs/VOICE-APP-REPORT.md`
 - There is now a dedicated starter report for the voice product line in `docs/VOICE-APP-REPORT.md`
 - WhatsApp QR follow-up after `CONFIRM_NOW` now records explicit `enviado`, `skipped`, and `error` entries in `webhooks_log` to diagnose cases where the client says the QR never arrived
 
-## Files Changed In Latest Work (Quick Actions + Bug Fixes)
+## Files Changed In Latest Work (SSE + GCal Recurring Fix)
 
-- `server/routes/quickActions.js` (NEW — 6 endpoints for command center)
-- `server/index.js` (mount /api/quick-actions route)
-- `server/db.js` (UNIQUE KEY migration for recurring_schedules)
-- `server/routes/analytics.js` (MRR respects client frequency)
-- `server/services/reminder.js` (fix eventStart undefined in Try 3)
-- `client/src/pages/Admin/QuickActions.jsx` (full rewrite — mobile-first command center)
-- `client/src/components/AdminLayout.jsx` (Comandos moved to first sidebar position)
+- `server/services/adminEvents.js` (NEW — SSE broadcast service with tenant isolation)
+- `server/services/recurring.js` (endRecurringSchedule now deletes GCal master series)
+- `server/middleware/auth.js` (accept ?token= query param for EventSource SSE)
+- `server/index.js` (mount SSE endpoint /api/admin/events)
+- `server/routes/quickActions.js` (cancel now calls endRecurringSchedule service + broadcasts)
+- `server/routes/appointments.js` (broadcast on status change and delete)
+- `server/routes/recurring.js` (broadcast on create/update/pause/resume/end/materialize)
+- `server/routes/booking.js` (broadcast on book and reschedule)
+- `server/routes/webhook.js` (broadcast on CONFIRM_NOW and payment auto-match)
+- `server/routes/payments.js` (broadcast on manual payment status change)
+- `client/src/hooks/useAdminEvents.js` (NEW — SSE React hook with debounce + reconnect)
+- `client/src/pages/Admin/Dashboard.jsx` (wired SSE auto-refresh)
+- `client/src/pages/Admin/Appointments.jsx` (wired SSE auto-refresh)
+- `client/src/pages/Admin/Clients.jsx` (wired SSE auto-refresh)
+- `client/src/pages/Admin/Finance.jsx` (wired SSE auto-refresh)
+- `client/src/pages/Admin/QuickActions.jsx` (wired SSE auto-refresh)
 - `client/dist/` (rebuilt)
 - `CLAUDE.md`
 - `docs/HANDOFF.md`
@@ -123,7 +140,12 @@ If the task is about the private voice app, also read `docs/VOICE-APP-REPORT.md`
 
 ## Validation Done
 
-- Backend syntax check passed with `node --check` on all touched server files
+- Backend syntax check passed with `node --check` on all 9 touched server files (SSE + GCal fix):
+  `server/services/adminEvents.js`, `server/middleware/auth.js`, `server/index.js`,
+  `server/routes/quickActions.js`, `server/routes/appointments.js`, `server/routes/recurring.js`,
+  `server/routes/booking.js`, `server/routes/webhook.js`, `server/routes/payments.js`
+- Frontend build passed after wiring `useAdminEvents` hook into Dashboard, Appointments, Clients, Finance, QuickActions
+- Previous backend syntax check passed with `node --check` on all touched server files
 - Additional backend syntax checks passed for:
   `server/services/recurring.js`
   `server/routes/recurring.js`
@@ -193,10 +215,10 @@ If the task is about the private voice app, also read `docs/VOICE-APP-REPORT.md`
 - Optional: add unique enforcement strategy for legacy environments if old data becomes real instead of mockup
 - Optional: if desired, standardize punctuation in personalized UI copy across the rest of `BookingFlow.jsx`
 - Optional: add a DB-level unique constraint for recurring materializations if legacy data is first cleaned; for now duplication is prevented with advisory locks plus existence checks
-- Optional: decide whether pausing/finalizing in app should also patch or cancel the master recurring event in Google Calendar after a human-reviewed UX decision
+- DONE: ending recurrence now deletes GCal series; pausing intentionally does NOT
+- DONE: SSE real-time admin updates — Dashboard, Appointments, Clients, Finance, Quick Actions all auto-refresh
 - Optional: add a small recurring trend chart in Analytics if monthly series visibility becomes commercially useful
 - Optional: create WhatsApp templates (Meta-approved) for cancel notification and no-show notification instead of using free-form text messages
-- Optional: add real-time updates (SSE or WebSocket) to admin so actions from Quick Actions reflect immediately without page refresh
 
 ## Useful Commands
 

@@ -13,6 +13,7 @@ const { verifyPublicRescheduleToken, verifyPublicFeeToken } = require('../servic
 const { isTrustedDevMode } = require('../utils/devmode');
 const { sendServerError } = require('../utils/httpErrors');
 const { normalizePhone } = require('../utils/phone');
+const { broadcast } = require('../services/adminEvents');
 
 const router = Router();
 
@@ -130,6 +131,7 @@ router.post('/admin/book', authMiddleware, validate(adminBookingSchema), async (
 
     const result = await createBooking(client, date_time, tenantId);
     if (result.error) return res.status(result.status).json({ error: result.error });
+    broadcast('appointment:change', { id: result.appointment_id, action: 'created', source: 'admin' }, tenantId);
     return res.json(result);
   } catch (err) {
     sendServerError(res, req, err, {
@@ -186,6 +188,8 @@ router.post('/book', bookingLimiter, validate(publicBookingSchema), async (req, 
       const newClient = await createClient(phone, onboarding, tenantId, null, feeOverride);
       const result = await createBooking(newClient, date_time, tenantId, bookingContext);
       if (result.error) return res.status(result.status).json({ error: result.error });
+      broadcast('appointment:change', { id: result.appointment_id, action: 'created', source: 'public' }, tenantId);
+      broadcast('client:change', { id: newClient.id, action: 'created' }, tenantId);
       return res.json({ status: 'booked', ...result });
     }
 
@@ -204,6 +208,7 @@ router.post('/book', bookingLimiter, validate(publicBookingSchema), async (req, 
     }
     const result = await createBooking(client, date_time, tenantId, bookingContext);
     if (result.error) return res.status(result.status).json({ error: result.error });
+    broadcast('appointment:change', { id: result.appointment_id, action: 'created', source: 'public' }, tenantId);
     return res.json({ status: 'booked', ...result });
   } catch (err) {
     sendServerError(res, req, err, {
@@ -220,6 +225,7 @@ router.post('/admin/reschedule', authMiddleware, validate(adminRescheduleSchema)
     const tenantId = req.tenantId;
     const result = await rescheduleAppointment(client_id, old_appointment_id, date_time, tenantId);
     if (result.error) return res.status(result.status).json({ error: result.error });
+    broadcast('appointment:change', { action: 'rescheduled', source: 'admin' }, tenantId);
     res.json(result);
   } catch (err) {
     sendServerError(res, req, err, {
@@ -275,6 +281,7 @@ router.post('/reschedule', bookingLimiter, validate(publicRescheduleSchema), asy
 
     const result = await rescheduleAppointment(decoded.clientId, decoded.appointmentId, date_time, tenantId, bookingContext);
     if (result.error) return res.status(result.status).json({ error: result.error });
+    broadcast('appointment:change', { action: 'rescheduled', source: 'public' }, tenantId);
     res.json(result);
   } catch (err) {
     sendServerError(res, req, err, {

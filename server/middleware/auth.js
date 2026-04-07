@@ -2,11 +2,14 @@ const jwt = require('jsonwebtoken');
 
 function authMiddleware(req, res, next) {
   const authHeader = req.headers.authorization;
-  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+  // EventSource (SSE) cannot send custom headers, so also accept ?token=…
+  const token = (authHeader && authHeader.startsWith('Bearer '))
+    ? authHeader.split(' ')[1]
+    : req.query?.token || null;
+
+  if (!token) {
     return res.status(401).json({ error: 'Token requerido' });
   }
-
-  const token = authHeader.split(' ')[1];
   try {
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
     req.tenantId = decoded.tenantId;

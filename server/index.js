@@ -46,6 +46,7 @@ const clientLimiter = rateLimit({
 // ─── Reminder trigger (admin) ────────────────────────────────────
 const { checkAndSendReminders, checkAndSendPaymentReminders } = require('./services/reminder');
 const { authMiddleware } = require('./middleware/auth');
+const { sseHandler, connectedCount } = require('./services/adminEvents');
 
 // ─── Mount routes ────────────────────────────────────────────────
 app.use('/api', bookingRoutes);  // booking routes handle their own limiting
@@ -62,6 +63,9 @@ app.use('/api/payments', paymentsRoutes);
 app.use('/api/voice', voiceRoutes);
 app.use('/api/recurring', recurringRoutes);
 app.use('/api/quick-actions', quickActionsRoutes);
+
+// ─── Admin SSE stream (protected) ───────────────────────────────
+app.get('/api/admin/events', authMiddleware, sseHandler);
 
 // ─── Admin reminder trigger (protected) ─────────────────────────
 app.get('/api/admin/test-reminder', authMiddleware, async (req, res) => {

@@ -8,6 +8,7 @@ const { buildCalendarSummary } = require('../services/calendarSummary');
 const { google } = require('googleapis');
 const { sendServerError } = require('../utils/httpErrors');
 const { normalizePhone, normalizedPhoneSql } = require('../utils/phone');
+const { broadcast } = require('../services/adminEvents');
 
 const router = Router();
 
@@ -88,6 +89,7 @@ router.put('/:id/status', authMiddleware, async (req, res) => {
     // Update GCal event summary with $ prefix
     await updateGCalPaymentPrefix(req.params.id, req.tenantId, status === 'Confirmado');
 
+    broadcast('payment:change', { id: Number(req.params.id), action: 'status', status }, req.tenantId);
     res.json({ success: true });
   } catch (err) {
     sendServerError(res, req, err, {

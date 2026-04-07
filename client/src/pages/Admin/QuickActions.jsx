@@ -16,6 +16,7 @@ import AdminLayout from '../../components/AdminLayout';
 import RecurringQuickModal from '../../components/RecurringQuickModal';
 import { api } from '../../utils/api';
 import { useToast, Toast } from '../../hooks/useToast';
+import useAdminEvents from '../../hooks/useAdminEvents';
 import { formatWeekdayShort, formatTimeBolivia, formatDateBolivia } from '../../utils/dates';
 
 // ─── Constants ────────────────────────────────────────────────────
@@ -67,6 +68,19 @@ export default function QuickActions() {
     searchRef.current?.focus();
     api.get('/config').then(setConfig).catch(() => {});
   }, []);
+
+  // Real-time updates via SSE — refresh search results if query is active
+  const refreshSearch = useCallback(() => {
+    if (query.trim().length >= 2) {
+      api.get(`/quick-actions/clients?q=${encodeURIComponent(query.trim())}`)
+        .then(setResults)
+        .catch(() => {});
+    }
+  }, [query]);
+  useAdminEvents(
+    ['appointment:change', 'recurring:change', 'client:change', 'payment:change'],
+    refreshSearch,
+  );
 
   // Debounced search
   const handleSearch = useCallback((value) => {
@@ -234,9 +248,8 @@ export default function QuickActions() {
 
   async function refreshClient(clientId) {
     try {
-      const data = await api.get(`/quick-actions/clients?q=`);
-      const updated = data.find((c) => c.id === clientId);
-      if (updated) setSelectedClient(updated);
+      const updated = await api.get(`/quick-actions/clients/${clientId}`);
+      if (updated?.id) setSelectedClient(updated);
     } catch (_) {}
   }
 
@@ -636,7 +649,13 @@ export default function QuickActions() {
         open={recurringModalOpen}
         clientName={selectedClient ? `${selectedClient.first_name} ${selectedClient.last_name}` : ''}
         schedule={null}
-        sourceAppointment={selectedClient?.next_appointment_id ? { id: selectedClient.next_appointment_id, date_time: selectedClient.next_appointment } : null}
+        sourceAppointment={
+          selectedClient?.last_completed_id
+            ? { id: selectedClient.last_completed_id, date_time: selectedClient.last_completed_date }
+            : selectedClient?.next_appointment_id
+              ? { id: selectedClient.next_appointment_id, date_time: selectedClient.next_appointment }
+              : null
+        }
         saving={recurringSaving}
         onClose={() => setRecurringModalOpen(false)}
         onSubmit={handleRecurringSubmit}
@@ -670,16 +689,20 @@ function ActionPanel({
 
   // Recurring has its own UI
   if (actionId === 'recurring') {
-    const hasRecurring = client.has_recurring > 0;
+    const hasActive = client.has_recurring > 0;
+    const hasPaused = client.has_paused_recurring > 0;
+    const hasAny = hasActive || hasPaused;
     return (
       <div className="space-y-3">
         <p className="text-sm text-slate-600">
-          {hasRecurring
+          {hasActive
             ? `${client.first_name} tiene sesión semanal los ${formatWeekdayShort(client.recurring_day)} a las ${client.recurring_time}.`
-            : `${client.first_name} no tiene sesión recurrente activa.`}
+            : hasPaused
+              ? `${client.first_name} tiene recurrencia pausada (${formatWeekdayShort(client.recurring_day)} a las ${client.recurring_time}).`
+              : `${client.first_name} no tiene sesión recurrente activa.`}
         </p>
         <div className="flex flex-wrap gap-2">
-          {!hasRecurring && (
+          {!hasAny && (
             <button
               type="button"
               onClick={onRecurringActivate}
@@ -689,7 +712,7 @@ function ActionPanel({
               Activar semanal
             </button>
           )}
-          {hasRecurring && (
+          {hasActive && (
             <>
               <button
                 type="button"
@@ -698,6 +721,26 @@ function ActionPanel({
                 className="rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 active:scale-[0.97] disabled:opacity-60"
               >
                 {loading ? <Loader2 size={14} className="animate-spin" /> : 'Pausar'}
+              </button>
+              <button
+                type="button"
+                onClick={onRecurringEnd}
+                disabled={loading}
+                className="rounded-xl border border-red-200 bg-white px-4 py-2.5 text-sm font-semibold text-red-600 transition hover:bg-red-50 active:scale-[0.97] disabled:opacity-60"
+              >
+                Finalizar
+              </button>
+            </>
+          )}
+          {hasPaused && (
+            <>
+              <button
+                type="button"
+                onClick={onRecurringResume}
+                disabled={loading}
+                className="rounded-xl bg-violet-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-violet-700 active:scale-[0.97] disabled:opacity-60"
+              >
+                {loading ? <Loader2 size={14} className="animate-spin" /> : 'Reactivar'}
               </button>
               <button
                 type="button"

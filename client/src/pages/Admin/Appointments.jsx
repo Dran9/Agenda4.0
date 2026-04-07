@@ -1,9 +1,10 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Trash2, Search, BellRing, RotateCcw, ArrowUpDown, Repeat } from 'lucide-react';
 import AdminLayout from '../../components/AdminLayout';
 import RecurringQuickModal from '../../components/RecurringQuickModal';
 import { api } from '../../utils/api';
 import { useToast, Toast } from '../../hooks/useToast';
+import useAdminEvents from '../../hooks/useAdminEvents';
 import { formatDateBolivia, formatTimeBolivia, formatWeekdayShort } from '../../utils/dates';
 
 function formatReceiptAmount(amount) {
@@ -162,13 +163,19 @@ export default function Appointments() {
   const [recurringModal, setRecurringModal] = useState(null);
   const [loadingRecurringModal, setLoadingRecurringModal] = useState(false);
 
-  useEffect(() => {
+  const refreshAll = useCallback(() => {
     fetchAppointments();
+    loadRecurringSchedules();
   }, [page, filters]);
 
-  useEffect(() => {
-    loadRecurringSchedules();
-  }, []);
+  useEffect(() => { fetchAppointments(); }, [page, filters]);
+  useEffect(() => { loadRecurringSchedules(); }, []);
+
+  // Real-time updates via SSE
+  useAdminEvents(
+    ['appointment:change', 'recurring:change', 'payment:change'],
+    refreshAll,
+  );
 
   async function fetchAppointments() {
     setLoading(true);

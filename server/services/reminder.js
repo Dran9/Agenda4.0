@@ -149,6 +149,31 @@ async function checkAndSendReminders({ date, tenantId, force = false, appointmen
 
       // Try 3: Fallback — extract phone from event name (format: "$ ✅ Terapia Name - 59172034151")
       if (appts.length === 0) {
+        // If this is a recurring GCal instance, check if its schedule is paused/ended.
+        // If so, skip — pausing in the app must be authoritative even though GCal series survives.
+        if (event.recurringEventId) {
+          const effectiveTenant = tenantId || 1;
+          const [pausedRows] = await pool.query(
+            `SELECT id FROM recurring_schedules
+             WHERE tenant_id = ? AND gcal_recurring_event_id = ?
+               AND ended_at IS NULL AND paused_at IS NOT NULL
+             LIMIT 1`,
+            [effectiveTenant, event.recurringEventId]
+          );
+          const [endedRows] = await pool.query(
+            `SELECT id FROM recurring_schedules
+             WHERE tenant_id = ? AND gcal_recurring_event_id = ?
+               AND ended_at IS NOT NULL
+             LIMIT 1`,
+            [effectiveTenant, event.recurringEventId]
+          );
+          if (pausedRows.length > 0 || endedRows.length > 0) {
+            console.log(`[reminder] Skipping recurring GCal event ${event.id} — schedule paused or ended in app`);
+            skipped++;
+            continue;
+          }
+        }
+
         const phoneMatch = summary.match(/-\s*(\d{10,15})\s*$/);
         if (phoneMatch) {
           const phone = normalizePhone(phoneMatch[1]);

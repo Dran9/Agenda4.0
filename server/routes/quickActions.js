@@ -4,6 +4,8 @@ const { authMiddleware } = require('../middleware/auth');
 const { sendTextMessage } = require('../services/whatsapp');
 const { sendServerError } = require('../utils/httpErrors');
 const { normalizePhone } = require('../utils/phone');
+const { endRecurringSchedule } = require('../services/recurring');
+const { broadcast } = require('../services/adminEvents');
 
 const router = Router();
 
@@ -66,23 +68,36 @@ router.get('/clients', authMiddleware, async (req, res) => {
            AND a2.status IN ('Agendada','Confirmada','Reagendada')
            AND a2.date_time > NOW()
          ORDER BY a2.date_time ASC LIMIT 1) as next_appointment_id,
+        (SELECT a3.id FROM appointments a3
+         WHERE a3.client_id = c.id AND a3.tenant_id = ?
+           AND a3.status = 'Completada'
+         ORDER BY a3.date_time DESC LIMIT 1) as last_completed_id,
+        (SELECT a3.date_time FROM appointments a3
+         WHERE a3.client_id = c.id AND a3.tenant_id = ?
+           AND a3.status = 'Completada'
+         ORDER BY a3.date_time DESC LIMIT 1) as last_completed_date,
         (SELECT COUNT(*) FROM recurring_schedules rs
          WHERE rs.client_id = c.id AND rs.tenant_id = ?
            AND rs.ended_at IS NULL AND rs.paused_at IS NULL) as has_recurring,
+        (SELECT COUNT(*) FROM recurring_schedules rs
+         WHERE rs.client_id = c.id AND rs.tenant_id = ?
+           AND rs.ended_at IS NULL AND rs.paused_at IS NOT NULL) as has_paused_recurring,
         (SELECT rs2.day_of_week FROM recurring_schedules rs2
          WHERE rs2.client_id = c.id AND rs2.tenant_id = ?
-           AND rs2.ended_at IS NULL AND rs2.paused_at IS NULL
+           AND rs2.ended_at IS NULL
+         ORDER BY CASE WHEN rs2.paused_at IS NULL THEN 0 ELSE 1 END
          LIMIT 1) as recurring_day,
         (SELECT rs2.time FROM recurring_schedules rs2
          WHERE rs2.client_id = c.id AND rs2.tenant_id = ?
-           AND rs2.ended_at IS NULL AND rs2.paused_at IS NULL
+           AND rs2.ended_at IS NULL
+         ORDER BY CASE WHEN rs2.paused_at IS NULL THEN 0 ELSE 1 END
          LIMIT 1) as recurring_time,
         (SELECT COUNT(*) FROM appointments WHERE client_id = c.id AND tenant_id = ? AND status = 'Completada') as completed_sessions
        FROM clients c
        WHERE ${where}
        ORDER BY c.first_name ASC
        LIMIT 20`,
-      [t, t, t, t, t, t, ...params]
+      [t, t, t, t, t, t, t, t, t, ...params]
     );
 
     res.json(clients);
@@ -90,6 +105,63 @@ router.get('/clients', authMiddleware, async (req, res) => {
     sendServerError(res, req, err, {
       message: 'No se pudieron buscar clientes',
       logLabel: 'quick-actions search',
+    });
+  }
+});
+
+// ─── GET /api/quick-actions/clients/:id — single client refresh ──
+router.get('/clients/:id', authMiddleware, async (req, res) => {
+  try {
+    const t = req.tenantId;
+    const clientId = Number(req.params.id);
+
+    const [clients] = await pool.query(
+      `SELECT c.id, c.first_name, c.last_name, c.phone, c.fee, c.frequency, c.city,
+        (SELECT MIN(a2.date_time) FROM appointments a2
+         WHERE a2.client_id = c.id AND a2.tenant_id = ?
+           AND a2.status IN ('Agendada','Confirmada','Reagendada')
+           AND a2.date_time > NOW()) as next_appointment,
+        (SELECT a2.id FROM appointments a2
+         WHERE a2.client_id = c.id AND a2.tenant_id = ?
+           AND a2.status IN ('Agendada','Confirmada','Reagendada')
+           AND a2.date_time > NOW()
+         ORDER BY a2.date_time ASC LIMIT 1) as next_appointment_id,
+        (SELECT a3.id FROM appointments a3
+         WHERE a3.client_id = c.id AND a3.tenant_id = ?
+           AND a3.status = 'Completada'
+         ORDER BY a3.date_time DESC LIMIT 1) as last_completed_id,
+        (SELECT a3.date_time FROM appointments a3
+         WHERE a3.client_id = c.id AND a3.tenant_id = ?
+           AND a3.status = 'Completada'
+         ORDER BY a3.date_time DESC LIMIT 1) as last_completed_date,
+        (SELECT COUNT(*) FROM recurring_schedules rs
+         WHERE rs.client_id = c.id AND rs.tenant_id = ?
+           AND rs.ended_at IS NULL AND rs.paused_at IS NULL) as has_recurring,
+        (SELECT COUNT(*) FROM recurring_schedules rs
+         WHERE rs.client_id = c.id AND rs.tenant_id = ?
+           AND rs.ended_at IS NULL AND rs.paused_at IS NOT NULL) as has_paused_recurring,
+        (SELECT rs2.day_of_week FROM recurring_schedules rs2
+         WHERE rs2.client_id = c.id AND rs2.tenant_id = ?
+           AND rs2.ended_at IS NULL
+         ORDER BY CASE WHEN rs2.paused_at IS NULL THEN 0 ELSE 1 END
+         LIMIT 1) as recurring_day,
+        (SELECT rs2.time FROM recurring_schedules rs2
+         WHERE rs2.client_id = c.id AND rs2.tenant_id = ?
+           AND rs2.ended_at IS NULL
+         ORDER BY CASE WHEN rs2.paused_at IS NULL THEN 0 ELSE 1 END
+         LIMIT 1) as recurring_time,
+        (SELECT COUNT(*) FROM appointments WHERE client_id = c.id AND tenant_id = ? AND status = 'Completada') as completed_sessions
+       FROM clients c
+       WHERE c.id = ? AND c.tenant_id = ? AND c.deleted_at IS NULL`,
+      [t, t, t, t, t, t, t, t, t, clientId, t]
+    );
+
+    if (clients.length === 0) return res.status(404).json({ error: 'Cliente no encontrado' });
+    res.json(clients[0]);
+  } catch (err) {
+    sendServerError(res, req, err, {
+      message: 'No se pudo cargar el cliente',
+      logLabel: 'quick-actions client-detail',
     });
   }
 });
@@ -165,14 +237,11 @@ router.post('/cancel', authMiddleware, async (req, res) => {
       actions.push({ type: 'appointment_cancelled', appointment_id: appt.id });
     }
 
-    // End recurring schedule if requested
+    // End recurring schedule if requested (uses service function → also deletes GCal series)
     if (end_recurring) {
       const schedule = await getActiveRecurring(client_id, req.tenantId);
       if (schedule) {
-        await pool.query(
-          'UPDATE recurring_schedules SET ended_at = CURDATE() WHERE id = ? AND tenant_id = ?',
-          [schedule.id, req.tenantId]
-        );
+        await endRecurringSchedule(req.tenantId, schedule.id);
         actions.push({ type: 'recurring_ended', schedule_id: schedule.id });
       }
     }
@@ -196,6 +265,8 @@ router.post('/cancel', authMiddleware, async (req, res) => {
       [req.tenantId, JSON.stringify({ actions, end_recurring }), client_id]
     );
 
+    broadcast('appointment:change', { action: 'cancelled', client_id }, req.tenantId);
+    if (end_recurring) broadcast('recurring:change', { action: 'ended', client_id }, req.tenantId);
     res.json({ success: true, actions, had_appointment: !!appt });
   } catch (err) {
     sendServerError(res, req, err, {
@@ -256,6 +327,7 @@ router.post('/noshow', authMiddleware, async (req, res) => {
       [req.tenantId, JSON.stringify({ actions }), client_id, appt.id]
     );
 
+    broadcast('appointment:change', { id: appt.id, action: 'noshow' }, req.tenantId);
     res.json({ success: true, actions, appointment_id: appt.id });
   } catch (err) {
     sendServerError(res, req, err, {
@@ -277,6 +349,7 @@ router.post('/update-fee', authMiddleware, async (req, res) => {
       [parseInt(fee, 10), client_id, req.tenantId]
     );
 
+    broadcast('client:change', { id: client_id, action: 'fee_updated', fee: parseInt(fee, 10) }, req.tenantId);
     res.json({ success: true, fee: parseInt(fee, 10) });
   } catch (err) {
     sendServerError(res, req, err, {

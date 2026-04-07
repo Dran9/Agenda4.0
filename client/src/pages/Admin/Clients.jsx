@@ -1,9 +1,10 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Plus, Trash2, X, Search, Repeat } from 'lucide-react';
 import AdminLayout from '../../components/AdminLayout';
 import RecurringQuickModal from '../../components/RecurringQuickModal';
 import { api } from '../../utils/api';
 import { useToast, Toast } from '../../hooks/useToast';
+import useAdminEvents from '../../hooks/useAdminEvents';
 import { formatTimeBolivia, formatWeekdayShort, getBoliviaDateKey } from '../../utils/dates';
 
 const DEFAULT_STATUSES = [
@@ -126,11 +127,22 @@ export default function Clients() {
   const [recurringModal, setRecurringModal] = useState(null);
   const [loadingRecurringModal, setLoadingRecurringModal] = useState(false);
 
+  const refreshAll = useCallback(() => {
+    loadClients();
+    loadRecurringSchedules();
+  }, []);
+
   useEffect(() => {
     loadClients();
     loadRecurringSchedules();
     loadConfig();
   }, []);
+
+  // Real-time updates via SSE
+  useAdminEvents(
+    ['client:change', 'recurring:change', 'appointment:change'],
+    refreshAll,
+  );
 
   async function loadClients() {
     try {

@@ -5,6 +5,7 @@ const { getOperationalContext, classifyIncomingMessage, buildClassificationMetad
 const { buildCalendarSummary, hasCalendarPaymentMarker, stripCalendarMarkers } = require('../services/calendarSummary');
 const { sendServerError } = require('../utils/httpErrors');
 const { normalizePhone, normalizedPhoneSql } = require('../utils/phone');
+const { broadcast } = require('../services/adminEvents');
 
 const router = Router();
 const CALENDAR_ID = () => process.env.CALENDAR_ID || process.env.GOOGLE_CALENDAR_ID || 'danielmacleann@gmail.com';
@@ -364,6 +365,7 @@ router.post('/', async (req, res) => {
                     `UPDATE appointments SET status = 'Confirmada', confirmed_at = NOW() WHERE id = ? AND tenant_id = ?`,
                     [appts[0].id, tenantId]
                   );
+                  broadcast('appointment:change', { id: appts[0].id, action: 'confirmed', source: 'whatsapp' }, tenantId);
                 }
               }
             }
@@ -773,6 +775,7 @@ router.post('/', async (req, res) => {
                             console.error(`[webhook] Payment reply failed:`, replyErr.message);
                           }
 
+                          broadcast('payment:change', { id: bestMatch.id, action: 'confirmed', source: 'ocr' }, tenantId);
                           console.log(`[webhook] Payment ${bestMatch.id} auto-confirmed via OCR for client ${clientId}`);
                         } else {
                           // Validation failed → Mismatch
@@ -799,6 +802,7 @@ router.post('/', async (req, res) => {
                             console.error(`[webhook] Payment mismatch reply failed:`, replyErr.message);
                           }
 
+                          broadcast('payment:change', { id: bestMatch.id, action: 'mismatch', source: 'ocr' }, tenantId);
                           console.log(`[webhook] Payment ${bestMatch.id} MISMATCH: ${buildMismatchNotes(problems)}`);
                         }
                       } else {

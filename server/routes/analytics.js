@@ -148,7 +148,14 @@ router.get('/', authMiddleware, async (req, res) => {
           SUM(CASE WHEN ended_at IS NULL AND paused_at IS NULL THEN 1 ELSE 0 END) as active_recurring,
           SUM(CASE WHEN paused_at IS NOT NULL AND ended_at IS NULL THEN 1 ELSE 0 END) as paused_recurring,
           SUM(CASE WHEN ended_at IS NOT NULL THEN 1 ELSE 0 END) as ended_recurring,
-          COALESCE(SUM(CASE WHEN ended_at IS NULL AND paused_at IS NULL THEN c.fee ELSE 0 END), 0) * 4.33 as projected_monthly_recurring
+          COALESCE(SUM(CASE WHEN ended_at IS NULL AND paused_at IS NULL THEN c.fee * (
+            CASE c.frequency
+              WHEN 'Semanal' THEN 4.33
+              WHEN 'Quincenal' THEN 2.17
+              WHEN 'Mensual' THEN 1
+              ELSE 4.33
+            END
+          ) ELSE 0 END), 0) as projected_monthly_recurring
         FROM recurring_schedules rs
         JOIN clients c ON c.id = rs.client_id AND c.tenant_id = rs.tenant_id
         WHERE rs.tenant_id = ?

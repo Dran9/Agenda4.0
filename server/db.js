@@ -405,6 +405,10 @@ async function initializeDatabase() {
        SET domain = 'agenda.danielmaclean.com'
        WHERE slug = 'daniel' AND COALESCE(domain, '') <> 'agenda.danielmaclean.com'`
     ).catch(() => {});
+    // Prevent duplicate active recurring schedules per client
+    await conn.query(
+      `ALTER TABLE recurring_schedules ADD UNIQUE KEY unique_active_client (tenant_id, client_id, day_of_week, time, started_at)`
+    ).catch(() => {});
 
     console.log('[DB] All 12 tables initialized');
   } finally {

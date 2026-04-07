@@ -162,13 +162,14 @@ async function checkAndSendReminders({ date, tenantId, force = false, appointmen
           // Wrap as pseudo-appointment for sending
           if (appts.length > 0) {
             const client = appts[0];
+            const eventDateTime = event.start?.dateTime || event.start?.date;
             appts = [{
               id: null,
               client_id: client.client_id,
               phone: client.phone,
               first_name: client.first_name,
               tenant_id: client.tenant_id || 1,
-              date_time: eventStart,
+              date_time: eventDateTime,
             }];
             console.log(`[reminder] Matched by phone from event name: ${phone}`);
           }

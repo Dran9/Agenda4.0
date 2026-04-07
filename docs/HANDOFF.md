@@ -10,8 +10,8 @@ If the task is about the private voice app, also read `docs/VOICE-APP-REPORT.md`
 
 - Date: 2026-04-06
 - Branch: `main`
-- Commit: `f6a8cf5` (base pushed commit before the latest voice/GCal follow-up)
-- Summary: recurring schedules were implemented end to end with lazy materialization, reminder integration, admin UI support, analytics, and voice controls; latest local follow-up adds stronger voice phrasing coverage plus GCal conversion from the source appointment
+- Commit: `c92c612`
+- Summary: Quick Actions command center added (mobile-first, 6 actions, WhatsApp integration); 3 critical recurring bugs fixed (eventStart undefined, UNIQUE constraint, MRR frequency); Comandos moved to first sidebar position
 - UI follow-up: Clients and Appointments now expose a visible `Recurrencia` field/column with quick manual actions, instead of leaving recurrence implied by badges or backend runtime only
 - UI follow-up 2: recurrence no longer depends on opening the full client popup; there is now a dedicated short recurrence modal
 - Recurring follow-up: materializing a recurring occurrence now reuses the Google Calendar instance ID when the occurrence already comes from a recurring series, instead of creating a duplicate event
@@ -22,7 +22,13 @@ If the task is about the private voice app, also read `docs/VOICE-APP-REPORT.md`
 - Voice GCal follow-up: activating recurrence from voice now prefers the client’s latest standalone completed appointment as source, then falls back to the next standalone future appointment
 - Voice status follow-up: voice can now answer whether a client is actively in recurrence, paused, ended, or not recurrent at all
 - Voice integration follow-up: if recurrence is activated in the app but Google Calendar does not confirm the recurring series, voice now answers with an explicit warning instead of a false success
-- Navigation follow-up: sidebar now includes a placeholder `/admin/quick-actions` entry reserved for future admin command shortcuts
+- Quick Actions follow-up: `/admin/quick-actions` is now a full command center (not a placeholder); it is the first sidebar item
+- Quick Actions scope: 6 client actions (reschedule link, cancel, no-show, reminder, recurring, fee change), instant search, WhatsApp integration, result feedback panel, quick settings toggle
+- Quick Actions backend: `server/routes/quickActions.js` with 6 auth-protected endpoints, all logged to `webhooks_log`
+- Bug fix: `eventStart` undefined in `reminder.js` Try 3 fallback replaced with `event.start?.dateTime || event.start?.date`
+- Bug fix: UNIQUE KEY `(tenant_id, client_id, day_of_week, time, started_at)` added to `recurring_schedules` as migration
+- Bug fix: MRR calculation in analytics now respects `clients.frequency` (Semanal=4.33, Quincenal=2.17, Mensual=1) instead of hardcoded ×4.33
+- Safety tag: `pre-recurring-fixes` tag created at commit `be55f34` as rollback point before bug fixes
 - UI follow-up: reschedule screen copy now injects the client name in the banner, "already booked" title, and trust message
 - CI follow-up: GitHub `Frontend Guard` was failing because `client/dist` was out of sync with source; local `lint` and `build` passed, but `git diff --exit-code -- client/dist` failed
 - OCR follow-up: destination validation must depend on exact matches against whitelisted destination accounts after stripping separators
@@ -86,45 +92,18 @@ If the task is about the private voice app, also read `docs/VOICE-APP-REPORT.md`
 - There is now a dedicated starter report for the voice product line in `docs/VOICE-APP-REPORT.md`
 - WhatsApp QR follow-up after `CONFIRM_NOW` now records explicit `enviado`, `skipped`, and `error` entries in `webhooks_log` to diagnose cases where the client says the QR never arrived
 
-## Files Changed In Latest Work
+## Files Changed In Latest Work (Quick Actions + Bug Fixes)
 
+- `server/routes/quickActions.js` (NEW — 6 endpoints for command center)
+- `server/index.js` (mount /api/quick-actions route)
+- `server/db.js` (UNIQUE KEY migration for recurring_schedules)
+- `server/routes/analytics.js` (MRR respects client frequency)
+- `server/services/reminder.js` (fix eventStart undefined in Try 3)
+- `client/src/pages/Admin/QuickActions.jsx` (full rewrite — mobile-first command center)
+- `client/src/components/AdminLayout.jsx` (Comandos moved to first sidebar position)
+- `client/dist/` (rebuilt)
 - `CLAUDE.md`
 - `docs/HANDOFF.md`
-- `server/utils/phone.js`
-- `server/middleware/validate.js`
-- `server/routes/clients.js`
-- `server/services/booking.js`
-- `server/routes/config.js`
-- `server/services/publicBookingToken.js`
-- `server/routes/booking.js`
-- `server/routes/webhook.js`
-- `server/routes/voice.js`
-- `server/routes/recurring.js`
-- `server/routes/payments.js`
-- `server/services/reminder.js`
-- `server/services/recurring.js`
-- `server/services/recurringSync.js`
-- `server/services/messageContext.js`
-- `server/services/voice/cartesia.js`
-- `server/services/voice/context.js`
-- `server/services/voice/planner.js`
-- `server/services/voice/parseCommand.js`
-- `server/services/voice/executeCommand.js`
-- `docs/VOICE-APP-REPORT.md`
-- `server/services/calendar.js`
-- `server/services/retention.js`
-- `server/cron/scheduler.js`
-- `server/db.js`
-- `server/index.js`
-- `server/routes/analytics.js`
-- `client/src/pages/VoiceAssistant.jsx`
-- `client/src/pages/Admin/Analytics.jsx`
-- `client/src/pages/Admin/Appointments.jsx`
-- `client/src/pages/Admin/Clients.jsx`
-- `client/src/pages/Admin/QuickActions.jsx`
-- `client/src/pages/Admin/Dashboard.jsx`
-- `client/src/components/RecurringQuickModal.jsx`
-- `client/src/utils/dates.js`
 
 ## Important Decisions
 
@@ -216,6 +195,8 @@ If the task is about the private voice app, also read `docs/VOICE-APP-REPORT.md`
 - Optional: add a DB-level unique constraint for recurring materializations if legacy data is first cleaned; for now duplication is prevented with advisory locks plus existence checks
 - Optional: decide whether pausing/finalizing in app should also patch or cancel the master recurring event in Google Calendar after a human-reviewed UX decision
 - Optional: add a small recurring trend chart in Analytics if monthly series visibility becomes commercially useful
+- Optional: create WhatsApp templates (Meta-approved) for cancel notification and no-show notification instead of using free-form text messages
+- Optional: add real-time updates (SSE or WebSocket) to admin so actions from Quick Actions reflect immediately without page refresh
 
 ## Useful Commands
 

@@ -200,6 +200,27 @@ Ver `.env.example` para la lista completa. Se configuran en hPanel de Hostinger.
   - estado `Producción` del OAuth consent screen
   - que Hostinger esté usando las credenciales nuevas
 
+## Estado Quick Actions / Comandos (2026-04-06)
+- Nueva pantalla `/admin/quick-actions` — ahora es la primera entrada en el sidebar
+- Diseño mobile-first: buscador instantáneo de clientes con autocomplete (debounced 220ms)
+- 6 acciones contextuales por cliente:
+  - **Reagendar**: envía WhatsApp con link `?r=phone` para que el cliente reagende solo
+  - **Cancelar**: cancela próxima cita + opción de finalizar recurrencia + opción de avisar por WhatsApp
+  - **No-show**: marca inasistencia + opción de avisar por WhatsApp
+  - **Recordatorio**: fuerza envío de reminder WhatsApp a ese cliente específico
+  - **Recurrencia**: activar (abre modal con día/hora manual), pausar, finalizar
+  - **Arancel**: cambiar fee inline con input numérico
+- Panel de resultado con feedback visual (verde éxito / rojo error) después de cada acción
+- Sección colapsable de ajustes rápidos (toggle recordatorios, ver ventana de agenda, estado cobro automático)
+- Backend: `server/routes/quickActions.js` con 6 endpoints protegidos por auth, todos loguean a `webhooks_log`
+- Cada acción de WhatsApp usa `sendTextMessage()` (texto libre), no templates (los templates de Meta requieren aprobación previa)
+
+## Bugs corregidos en recurring schedules (2026-04-06)
+- **`eventStart` undefined en reminder.js**: el Try 3 (fallback por teléfono) usaba una variable que no existía. Cambiado a `event.start?.dateTime || event.start?.date`. Sin esto, el reminder crasheaba al matchear por teléfono.
+- **UNIQUE KEY en recurring_schedules**: agregado `UNIQUE KEY (tenant_id, client_id, day_of_week, time, started_at)` como migración en db.js. Sin esto, requests concurrentes podían crear schedules duplicados.
+- **MRR asumía frecuencia semanal**: el cálculo `SUM(fee) * 4.33` ahora respeta `clients.frequency` — Semanal=4.33, Quincenal=2.17, Mensual=1.
+- Tag de seguridad `pre-recurring-fixes` creado en commit `be55f34` antes de los fixes.
+
 ## Estado recurrentes (2026-04-06)
 - Ya existe soporte de `recurring_schedules` con materialización lazy:
   la app guarda el patrón semanal y solo crea `appointments` cuando hay interacción real
@@ -245,8 +266,9 @@ Ver `.env.example` para la lista completa. Se configuran en hPanel de Hostinger.
 - Seguridad operativa de voz:
   si la app activa la recurrencia pero Google Calendar no confirma la serie, la respuesta de voz lo avisa explícitamente
 - Comandos rápidos:
-  ya existe la entrada lateral `/admin/quick-actions` como placeholder operativo
-  por ahora solo documenta que ahí vivirá después la capa de acciones rápidas tipo poner en recurrencia, borrar, cancelar o cambiar status
+  pantalla completa en `/admin/quick-actions` con buscador, 6 acciones y feedback visual
+  es el primer ítem del sidebar (antes de "Hoy")
+  backend en `server/routes/quickActions.js` con 6 endpoints protegidos
 - Decisión operativa importante:
   pausar/finalizar en la app NO elimina automáticamente la serie maestra en Google Calendar
   la app deja de materializar y recordar esa recurrencia, pero no hace una acción destructiva en GCal por detrás
@@ -255,7 +277,8 @@ Ver `.env.example` para la lista completa. Se configuran en hPanel de Hostinger.
   el sync no es realtime; corre a las 06:00 BOT y revisa los próximos 14 días
 - Riesgo conocido:
   la idempotencia de materialización se protege con advisory lock + verificación previa
-  todavía no hay un `UNIQUE KEY` duro para ocurrencias recurrentes en la tabla `appointments`
+  `recurring_schedules` ya tiene UNIQUE KEY `(tenant_id, client_id, day_of_week, time, started_at)`
+  todavía no hay un UNIQUE KEY duro para ocurrencias recurrentes en la tabla `appointments`
 
 ## Regla de documentación operativa
 - Al cerrar una tarea importante, actualizar SIEMPRE ambos archivos:

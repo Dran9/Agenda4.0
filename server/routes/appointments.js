@@ -1,7 +1,11 @@
 const { Router } = require('express');
-const { pool } = require('../db');
+const { pool, withTransaction } = require('../db');
 const { authMiddleware } = require('../middleware/auth');
 const { deleteEvent } = require('../services/calendar');
+const {
+  isSlotClaimConflictError,
+  syncSlotClaimsForStatusTransition,
+} = require('../services/appointmentSlotClaims');
 const { sendServerError } = require('../utils/httpErrors');
 const { broadcast } = require('../services/adminEvents');
 
@@ -103,46 +107,62 @@ router.put('/:id/status', authMiddleware, async (req, res) => {
     const valid = ['Agendada', 'Confirmada', 'Reagendada', 'Cancelada', 'Completada', 'No-show'];
     if (!valid.includes(status)) return res.status(400).json({ error: 'Status inválido' });
 
-    const [updateResult] = await pool.query(
-      `UPDATE appointments
-       SET status = ?,
-           confirmed_at = CASE
-             WHEN ? = 'Confirmada' THEN COALESCE(confirmed_at, NOW())
-             WHEN ? IN ('Agendada', 'Reagendada', 'Cancelada', 'No-show') THEN NULL
-             ELSE confirmed_at
-           END
-       WHERE id = ? AND tenant_id = ?`,
-      [status, status, status, req.params.id, req.tenantId]
-    );
+    const result = await withTransaction(async (conn) => {
+      const [appointments] = await conn.query(
+        `SELECT a.*, c.fee
+         FROM appointments a
+         JOIN clients c ON c.id = a.client_id
+         WHERE a.id = ? AND a.tenant_id = ?
+         LIMIT 1`,
+        [req.params.id, req.tenantId]
+      );
 
-    if (updateResult.affectedRows === 0) {
+      if (appointments.length === 0) return { notFound: true };
+
+      const appointment = appointments[0];
+
+      await conn.query(
+        `UPDATE appointments
+         SET status = ?,
+             confirmed_at = CASE
+               WHEN ? = 'Confirmada' THEN COALESCE(confirmed_at, NOW())
+               WHEN ? IN ('Agendada', 'Reagendada', 'Cancelada', 'No-show') THEN NULL
+               ELSE confirmed_at
+             END
+         WHERE id = ? AND tenant_id = ?`,
+        [status, status, status, req.params.id, req.tenantId]
+      );
+
+      await syncSlotClaimsForStatusTransition(conn, appointment, status);
+
+      if (status === 'Completada') {
+        const [existing] = await conn.query(
+          'SELECT id FROM payments WHERE appointment_id = ? AND tenant_id = ?',
+          [req.params.id, req.tenantId]
+        );
+        if (existing.length === 0) {
+          await conn.query(
+            `INSERT INTO payments (tenant_id, client_id, appointment_id, amount, status)
+             VALUES (?, ?, ?, ?, 'Pendiente')`,
+            [req.tenantId, appointment.client_id, req.params.id, appointment.fee || 250]
+          );
+        }
+      }
+
+      return { notFound: false };
+    });
+
+    if (result.notFound) {
       return res.status(404).json({ error: 'Cita no encontrada' });
     }
 
     broadcast('appointment:change', { id: Number(req.params.id), action: 'status', status }, req.tenantId);
 
-    // If completed, create pending payment
-    if (status === 'Completada') {
-      const [appt] = await pool.query(
-        'SELECT a.*, c.fee FROM appointments a JOIN clients c ON a.client_id = c.id WHERE a.id = ? AND a.tenant_id = ?',
-        [req.params.id, req.tenantId]
-      );
-      if (appt.length > 0) {
-        const [existing] = await pool.query(
-          'SELECT id FROM payments WHERE appointment_id = ? AND tenant_id = ?', [req.params.id, req.tenantId]
-        );
-        if (existing.length === 0) {
-          await pool.query(
-            `INSERT INTO payments (tenant_id, client_id, appointment_id, amount, status)
-             VALUES (?, ?, ?, ?, 'Pendiente')`,
-            [req.tenantId, appt[0].client_id, req.params.id, appt[0].fee || 250]
-          );
-        }
-      }
-    }
-
     res.json({ success: true });
   } catch (err) {
+    if (isSlotClaimConflictError(err)) {
+      return res.status(409).json({ error: 'El horario ya no está disponible' });
+    }
     sendServerError(res, req, err, {
       message: 'No se pudo actualizar la cita',
       logLabel: 'appointments status',

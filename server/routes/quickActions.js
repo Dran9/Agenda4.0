@@ -1,9 +1,10 @@
 const { Router } = require('express');
-const { pool } = require('../db');
+const { pool, withTransaction } = require('../db');
 const { authMiddleware } = require('../middleware/auth');
 const { sendTextMessage } = require('../services/whatsapp');
 const { sendServerError } = require('../utils/httpErrors');
 const { normalizePhone } = require('../utils/phone');
+const { syncSlotClaimsForStatusTransition } = require('../services/appointmentSlotClaims');
 const { endRecurringSchedule } = require('../services/recurring');
 const { broadcast } = require('../services/adminEvents');
 
@@ -216,10 +217,13 @@ router.post('/cancel', authMiddleware, async (req, res) => {
 
     // Cancel next appointment if exists
     if (appt) {
-      await pool.query(
-        "UPDATE appointments SET status = 'Cancelada' WHERE id = ? AND tenant_id = ?",
-        [appt.id, req.tenantId]
-      );
+      await withTransaction(async (conn) => {
+        await conn.query(
+          "UPDATE appointments SET status = 'Cancelada' WHERE id = ? AND tenant_id = ?",
+          [appt.id, req.tenantId]
+        );
+        await syncSlotClaimsForStatusTransition(conn, appt, 'Cancelada');
+      });
 
       // Try to delete GCal event
       if (appt.gcal_event_id) {
@@ -303,10 +307,13 @@ router.post('/noshow', authMiddleware, async (req, res) => {
     }
 
     const appt = rows[0];
-    await pool.query(
-      "UPDATE appointments SET status = 'No-show' WHERE id = ? AND tenant_id = ?",
-      [appt.id, req.tenantId]
-    );
+    await withTransaction(async (conn) => {
+      await conn.query(
+        "UPDATE appointments SET status = 'No-show' WHERE id = ? AND tenant_id = ?",
+        [appt.id, req.tenantId]
+      );
+      await syncSlotClaimsForStatusTransition(conn, appt, 'No-show');
+    });
 
     const actions = [{ type: 'marked_noshow', appointment_id: appt.id }];
 

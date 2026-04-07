@@ -71,6 +71,8 @@ Daniel MacLean — psicólogo en Cochabamba, Bolivia
 - **Rutas thin:** routes/ solo validan request → llaman servicio → responden HTTP
 - **Servicios con lógica:** services/ contiene toda la lógica de negocio
 - **Transacciones:** toda operación GCal + DB debe ser atómica (transaction wrapper en db.js)
+- **Concurrencia de booking:** los horarios activos se blindan en DB mediante `appointment_slot_claims`; cualquier flujo que cree, cancele, complete, haga no-show o reactive una cita debe sincronizar esos claims, no solo tocar `appointments`
+- **No volver pesado el booking:** endurecer concurrencia debe ser backend-only; no agregar pasos nuevos, modales extra ni espera visible para el cliente salvo el conflicto `409` cuando el horario ya fue tomado
 - **QR en MySQL BLOB:** NUNCA en disco (desaparecen en deploy)
 - **Hard delete:** clientes se borran con DELETE CASCADE (payments, appointments, wa_conversations). Soft delete causaba UNIQUE constraint violations y ghost records.
 - **Multi-tenant ready:** tabla `tenants`, FK `tenant_id` en todas las tablas principales

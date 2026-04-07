@@ -1,6 +1,7 @@
 const dns = require('dns');
 dns.setDefaultResultOrder('ipv4first');
 const mysql = require('mysql2/promise');
+const { backfillActiveAppointmentSlotClaims } = require('./services/appointmentSlotClaims');
 
 const pool = mysql.createPool({
   host: process.env.DB_HOST,
@@ -56,7 +57,7 @@ async function withAdvisoryLock(lockName, timeoutSeconds, callback) {
   }
 }
 
-// Schema: 12 tables, multi-tenant from day 1
+// Schema: core tables, multi-tenant from day 1
 async function initializeDatabase() {
   const conn = await pool.getConnection();
   try {
@@ -136,7 +137,23 @@ async function initializeDatabase() {
       )
     `);
 
-    // 4. recurring_schedules
+    // 4. appointment_slot_claims (DB-enforced overlap protection)
+    await conn.query(`
+      CREATE TABLE IF NOT EXISTS appointment_slot_claims (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        tenant_id INT NOT NULL,
+        appointment_id INT NOT NULL,
+        claim_time DATETIME NOT NULL,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE KEY unique_slot_claim_minute (tenant_id, claim_time),
+        KEY idx_appointment (appointment_id),
+        KEY idx_tenant (tenant_id),
+        FOREIGN KEY (tenant_id) REFERENCES tenants(id),
+        FOREIGN KEY (appointment_id) REFERENCES appointments(id) ON DELETE CASCADE
+      )
+    `);
+
+    // 5. recurring_schedules
     await conn.query(`
       CREATE TABLE IF NOT EXISTS recurring_schedules (
         id INT AUTO_INCREMENT PRIMARY KEY,
@@ -163,7 +180,7 @@ async function initializeDatabase() {
       )
     `);
 
-    // 5. config (one row per tenant)
+    // 6. config (one row per tenant)
     await conn.query(`
       CREATE TABLE IF NOT EXISTS config (
         id INT AUTO_INCREMENT PRIMARY KEY,
@@ -208,7 +225,7 @@ async function initializeDatabase() {
       )
     `);
 
-    // 6. payments
+    // 7. payments
     await conn.query(`
       CREATE TABLE IF NOT EXISTS payments (
         id INT AUTO_INCREMENT PRIMARY KEY,
@@ -236,7 +253,7 @@ async function initializeDatabase() {
       )
     `);
 
-    // 7. deductions
+    // 8. deductions
     await conn.query(`
       CREATE TABLE IF NOT EXISTS deductions (
         id INT AUTO_INCREMENT PRIMARY KEY,
@@ -250,7 +267,7 @@ async function initializeDatabase() {
       )
     `);
 
-    // 8. financial_goals
+    // 9. financial_goals
     await conn.query(`
       CREATE TABLE IF NOT EXISTS financial_goals (
         id INT AUTO_INCREMENT PRIMARY KEY,
@@ -267,7 +284,7 @@ async function initializeDatabase() {
       )
     `);
 
-    // 9. files (QR, receipts, logos — MySQL BLOB)
+    // 10. files (QR, receipts, logos — MySQL BLOB)
     await conn.query(`
       CREATE TABLE IF NOT EXISTS files (
         id INT AUTO_INCREMENT PRIMARY KEY,
@@ -284,7 +301,7 @@ async function initializeDatabase() {
       )
     `);
 
-    // 10. webhooks_log (activity + reminder dedup)
+    // 11. webhooks_log (activity + reminder dedup)
     await conn.query(`
       CREATE TABLE IF NOT EXISTS webhooks_log (
         id INT AUTO_INCREMENT PRIMARY KEY,
@@ -305,7 +322,7 @@ async function initializeDatabase() {
       )
     `);
 
-    // 11. wa_conversations (WhatsApp inbox)
+    // 12. wa_conversations (WhatsApp inbox)
     await conn.query(`
       CREATE TABLE IF NOT EXISTS wa_conversations (
         id INT AUTO_INCREMENT PRIMARY KEY,
@@ -329,7 +346,7 @@ async function initializeDatabase() {
       )
     `);
 
-    // 12. voice_commands_log (admin voice/text shortcut audit)
+    // 13. voice_commands_log (admin voice/text shortcut audit)
     await conn.query(`
       CREATE TABLE IF NOT EXISTS voice_commands_log (
         id INT AUTO_INCREMENT PRIMARY KEY,
@@ -410,7 +427,17 @@ async function initializeDatabase() {
       `ALTER TABLE recurring_schedules ADD UNIQUE KEY unique_active_client (tenant_id, client_id, day_of_week, time, started_at)`
     ).catch(() => {});
 
-    console.log('[DB] All 12 tables initialized');
+    const slotClaimBackfill = await backfillActiveAppointmentSlotClaims(conn).catch((err) => {
+      console.error('[DB] appointment_slot_claims backfill skipped:', err.message);
+      return null;
+    });
+    if (slotClaimBackfill) {
+      console.log(
+        `[DB] appointment_slot_claims backfill: ${slotClaimBackfill.backfilledAppointments}/${slotClaimBackfill.appointments} appointments, conflicts=${slotClaimBackfill.conflictingAppointments}`
+      );
+    }
+
+    console.log('[DB] Core tables initialized');
   } finally {
     conn.release();
   }

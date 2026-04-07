@@ -7,6 +7,10 @@ const {
   listEvents,
   updateEvent,
 } = require('./calendar');
+const {
+  createAppointmentSlotClaims,
+  isSlotClaimConflictError,
+} = require('./appointmentSlotClaims');
 const { normalizePhone, normalizedPhoneSql } = require('../utils/phone');
 
 const LA_PAZ_TZ = 'America/La_Paz';
@@ -546,6 +550,13 @@ async function materializeRecurringOccurrence({ tenantId, scheduleId, date, even
           ]
         );
 
+        await createAppointmentSlotClaims(conn, {
+          id: insertResult.insertId,
+          tenant_id: tenantId,
+          date_time: dateTime,
+          duration: schedule.duration || 60,
+        });
+
         await conn.query(
           `INSERT INTO payments (tenant_id, client_id, appointment_id, amount, status)
            VALUES (?, ?, ?, ?, 'Pendiente')`,
@@ -588,6 +599,9 @@ async function materializeRecurringOccurrence({ tenantId, scheduleId, date, even
         } catch (_) {
           // best effort
         }
+      }
+      if (isSlotClaimConflictError(err)) {
+        throw recurringError(409, 'El horario ya no está disponible');
       }
       throw err;
     }

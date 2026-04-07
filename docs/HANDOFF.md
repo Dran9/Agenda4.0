@@ -12,6 +12,7 @@ If the task is about the private voice app, also read `docs/VOICE-APP-REPORT.md`
 - Branch: `main`
 - Commit: `9ee8997`
 - Summary: SSE real-time admin updates added; GCal recurring series now deleted when ending recurrence from admin or Quick Actions; Quick Actions cancel route now uses service function instead of direct SQL
+- Workspace follow-up: booking concurrency hardening is now in progress without changing public UX; active appointments reserve minute-level slot claims in MySQL so overlapping concurrent bookings fail at DB level too
 - UI follow-up: Clients and Appointments now expose a visible `Recurrencia` field/column with quick manual actions, instead of leaving recurrence implied by badges or backend runtime only
 - UI follow-up 2: recurrence no longer depends on opening the full client popup; there is now a dedicated short recurrence modal
 - Recurring follow-up: materializing a recurring occurrence now reuses the Google Calendar instance ID when the occurrence already comes from a recurring series, instead of creating a duplicate event
@@ -64,6 +65,13 @@ If the task is about the private voice app, also read `docs/VOICE-APP-REPORT.md`
 - Recurring schedules now exist as first-class operational data:
   `recurring_schedules` stores the weekly pattern and `appointments.source_schedule_id` links materialized occurrences back to that pattern
 - New recurring admin API exists at `/api/recurring`
+- Booking concurrency hardening now exists in the backend:
+  `appointment_slot_claims` reserves every minute covered by active appointments (`Agendada`, `Confirmada`, `Reagendada`) with a DB unique constraint on `(tenant_id, claim_time)`
+  public booking, reschedule, recurring materialization, admin status changes, Quick Actions cancel/no-show, and auto-complete all sync those claims
+  the public/client flow and API contract stay the same: no extra screen, no extra confirmation step, no extra client-side waiting state
+- Booking flow intentionally stays operationally conservative for now:
+  Google Calendar is still created before the DB commit and the day-scoped advisory lock is still in place
+  this was not changed in this pass to avoid regressions in the current production flow
 - Dashboard `/Hoy` now mixes real appointments with same-day virtual recurring sessions and materializes a virtual session automatically when the admin changes its status
 - Clients UI now shows a weekly badge plus day/time for active recurring clients and lets admin activate, edit, pause, resume, or end the schedule from the client modal
 - Clients UI now also shows an explicit `Recurrencia` column in the main table:
@@ -122,6 +130,18 @@ If the task is about the private voice app, also read `docs/VOICE-APP-REPORT.md`
 - `CLAUDE.md`
 - `docs/HANDOFF.md`
 
+## Current Workspace Changes (Booking Concurrency Hardening)
+
+- `server/services/appointmentSlotClaims.js` (NEW — minute-level DB slot claim helper shared across booking/status flows)
+- `server/db.js` (creates `appointment_slot_claims` table + startup backfill for active appointments)
+- `server/services/booking.js` (stores `appointments.duration` and claims slot minutes inside the booking transaction)
+- `server/services/recurring.js` (claims slot minutes when materializing recurring occurrences)
+- `server/routes/appointments.js` (status changes now sync slot claims transactionally)
+- `server/routes/quickActions.js` (cancel/no-show now release slot claims transactionally)
+- `server/cron/scheduler.js` (auto-complete now releases slot claims transactionally)
+- `CLAUDE.md`
+- `docs/HANDOFF.md`
+
 ## Important Decisions
 
 - We did not run any aggressive migration over old client data
@@ -134,6 +154,8 @@ If the task is about the private voice app, also read `docs/VOICE-APP-REPORT.md`
 - Voice recurring scope:
   activation by voice should convert the client’s next standalone future Google Calendar event into a weekly recurrence when possible
   if no suitable source appointment exists, voice may still create a new recurring series
+- We did not add any new client-facing step, modal, spinner, or extra API hop for booking concurrency hardening
+- We intentionally kept the current GCal-first booking order and day-scoped advisory lock in this pass to minimize production regression risk
 - Never push automatically. Ask the user explicitly before every push.
 - Untracked mockup files were intentionally not committed:
   `Skills/`, `ocr-sample.png`, `ocr-sample-2.png`
@@ -206,6 +228,14 @@ If the task is about the private voice app, also read `docs/VOICE-APP-REPORT.md`
 - WhatsApp confirmation QR follow-up was syntax-checked after making the Bolivia fallback less strict for legacy/manual appointments
 - Voice agenda smoke check against production DB confirmed:
   `lunes` resolves to `2026-04-06`, `próxima semana` resolves to the range `2026-04-06` to `2026-04-13`, and explicit voice date labels no longer render one day early
+- Booking concurrency hardening syntax checks passed for:
+  `server/services/appointmentSlotClaims.js`
+  `server/services/booking.js`
+  `server/services/recurring.js`
+  `server/routes/appointments.js`
+  `server/routes/quickActions.js`
+  `server/cron/scheduler.js`
+  `server/db.js`
 
 ## Known Follow-Ups
 
@@ -213,6 +243,7 @@ If the task is about the private voice app, also read `docs/VOICE-APP-REPORT.md`
 - Optional: add DB-level migration to rewrite old formatted phones to canonical format
 - Optional: add automated tests for phone normalization across booking, clients, and webhook flows
 - Optional: add unique enforcement strategy for legacy environments if old data becomes real instead of mockup
+- Optional: once production risk is acceptable, move Google Calendar creation to post-commit retry/outbox so DB becomes the primary source of truth instead of the external system
 - Optional: if desired, standardize punctuation in personalized UI copy across the rest of `BookingFlow.jsx`
 - Optional: add a DB-level unique constraint for recurring materializations if legacy data is first cleaned; for now duplication is prevented with advisory locks plus existence checks
 - DONE: ending recurrence now deletes GCal series; pausing intentionally does NOT

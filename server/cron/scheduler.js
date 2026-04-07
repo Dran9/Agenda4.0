@@ -1,4 +1,5 @@
-const { pool } = require('../db');
+const { pool, withTransaction } = require('../db');
+const { syncSlotClaimsForStatusTransition } = require('../services/appointmentSlotClaims');
 const { checkAndSendReminders, checkAndSendPaymentReminders } = require('../services/reminder');
 const { syncRecurringFromGCal } = require('../services/recurringSync');
 
@@ -72,7 +73,7 @@ async function autoCompleteAppointments() {
   try {
     // Find appointments that ended >1h ago and are still pending completion
     const [appts] = await pool.query(
-      `SELECT a.id, a.client_id, a.tenant_id, a.duration, c.fee
+      `SELECT a.id, a.client_id, a.tenant_id, a.date_time, a.duration, a.status, c.fee
        FROM appointments a
        JOIN clients c ON a.client_id = c.id
        WHERE a.status IN ('Agendada','Confirmada','Reagendada')
@@ -82,16 +83,20 @@ async function autoCompleteAppointments() {
     if (appts.length === 0) return { completed: 0 };
 
     for (const appt of appts) {
-      await pool.query('UPDATE appointments SET status = ? WHERE id = ?', ['Completada', appt.id]);
-      // Create pending payment if none exists
-      const [existing] = await pool.query('SELECT id FROM payments WHERE appointment_id = ?', [appt.id]);
-      if (existing.length === 0) {
-        await pool.query(
-          `INSERT INTO payments (tenant_id, client_id, appointment_id, amount, status)
-           VALUES (?, ?, ?, ?, 'Pendiente')`,
-          [appt.tenant_id, appt.client_id, appt.id, appt.fee || 250]
-        );
-      }
+      await withTransaction(async (conn) => {
+        await conn.query('UPDATE appointments SET status = ? WHERE id = ?', ['Completada', appt.id]);
+        await syncSlotClaimsForStatusTransition(conn, appt, 'Completada');
+
+        // Create pending payment if none exists
+        const [existing] = await conn.query('SELECT id FROM payments WHERE appointment_id = ?', [appt.id]);
+        if (existing.length === 0) {
+          await conn.query(
+            `INSERT INTO payments (tenant_id, client_id, appointment_id, amount, status)
+             VALUES (?, ?, ?, ?, 'Pendiente')`,
+            [appt.tenant_id, appt.client_id, appt.id, appt.fee || 250]
+          );
+        }
+      });
     }
 
     console.log(`[cron] Auto-completed ${appts.length} appointments`);

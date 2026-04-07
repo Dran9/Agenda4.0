@@ -2,6 +2,10 @@ const { pool, withTransaction, withAdvisoryLock } = require('../db');
 const { listEvents, createEvent, deleteEvent } = require('./calendar');
 const { getBusyRangesForDate } = require('./calendarBusy');
 const { createPublicRescheduleToken } = require('./publicBookingToken');
+const {
+  createAppointmentSlotClaims,
+  isSlotClaimConflictError,
+} = require('./appointmentSlotClaims');
 const { normalizePhone, normalizedPhoneSql } = require('../utils/phone');
 
 const CALENDAR_ID = () => process.env.CALENDAR_ID || 'danielmacleann@gmail.com';
@@ -219,12 +223,19 @@ async function createBooking(client, dateTime, tenantId, bookingInput = {}) {
 
           const [result] = await conn.query(
             `INSERT INTO appointments (
-               tenant_id, client_id, date_time, gcal_event_id, status, confirmed_at,
+               tenant_id, client_id, date_time, duration, gcal_event_id, status, confirmed_at,
                is_first, session_number, phone, user_agent, booking_context
              )
-             VALUES (?, ?, ?, ?, 'Agendada', NULL, ?, ?, ?, ?, ?)`,
-            [tenantId, client.id, dateTime, gcalEvent.id, isFirst, sessionNumber, client.phone, userAgent, bookingContext ? JSON.stringify(bookingContext) : null]
+             VALUES (?, ?, ?, ?, ?, 'Agendada', NULL, ?, ?, ?, ?, ?)`,
+            [tenantId, client.id, dateTime, duration, gcalEvent.id, isFirst, sessionNumber, client.phone, userAgent, bookingContext ? JSON.stringify(bookingContext) : null]
           );
+
+          await createAppointmentSlotClaims(conn, {
+            id: result.insertId,
+            tenant_id: tenantId,
+            date_time: dateTime,
+            duration,
+          });
 
           const fee = client.fee || 250;
           await conn.query(
@@ -252,6 +263,9 @@ async function createBooking(client, dateTime, tenantId, bookingInput = {}) {
         // DB failed — compensate by removing the GCal event we just created
         console.error('[booking] DB insert failed, rolling back GCal event:', dbErr.message);
         try { await deleteEvent(calendarId, gcalEvent.id); } catch (e) { /* best effort */ }
+        if (isSlotClaimConflictError(dbErr)) {
+          return { error: 'El horario ya no está disponible', status: 409 };
+        }
         throw dbErr;
       }
 

@@ -7,6 +7,7 @@ const AdminLogin = lazy(() => import('./pages/Admin/Login'));
 const AdminDashboard = lazy(() => import('./pages/Admin/Dashboard'));
 const AdminClients = lazy(() => import('./pages/Admin/Clients'));
 const AdminAppointments = lazy(() => import('./pages/Admin/Appointments'));
+const AdminQuickActions = lazy(() => import('./pages/Admin/QuickActions'));
 const AdminConfig = lazy(() => import('./pages/Admin/Config'));
 const AdminAnalytics = lazy(() => import('./pages/Admin/Analytics'));
 const AdminWhatsApp = lazy(() => import('./pages/Admin/WhatsApp'));
@@ -50,6 +51,11 @@ export default function App() {
         <Route path="/admin/appointments" element={
           <Suspense fallback={<AdminFallback />}>
             <AdminAppointments />
+          </Suspense>
+        } />
+        <Route path="/admin/quick-actions" element={
+          <Suspense fallback={<AdminFallback />}>
+            <AdminQuickActions />
           </Suspense>
         } />
         <Route path="/admin/config" element={

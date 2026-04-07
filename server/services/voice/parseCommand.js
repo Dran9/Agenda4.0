@@ -184,7 +184,7 @@ function extractClientNameForRecurring(text, mode) {
       if (modeRepeat?.[1]) {
         candidate = modeRepeat[1];
       } else {
-        const modeRecurring = original.match(/^(.+?)\s+(?:entra\s+a\s+modo\s+recurrencia|pasa\s+a\s+modo\s+recurrencia|pasa\s+a\s+recurrencia)\b/i);
+        const modeRecurring = original.match(/^(.+?)\s+(?:entra\s+a\s+modo\s+recurrencia|entra\s+en\s+recurrencia|pasa\s+a\s+modo\s+recurrencia|pasa\s+a\s+recurrencia)\b/i);
         if (modeRecurring?.[1]) candidate = modeRecurring[1];
       }
     }
@@ -284,7 +284,7 @@ function detectAgendaIntent(text) {
 function detectRecurringIntent(text) {
   const normalized = normalizeText(text);
 
-  if (/\b(entra a modo repetir|entra a modo recurrencia|activar semanal|activar recurrencia|pasa a modo recurrencia|pasa a recurrencia)\b/.test(normalized)) {
+  if (/\b(entra a modo repetir|entra a modo recurrencia|entra en recurrencia|activar semanal|activar recurrencia|pasa a modo recurrencia|pasa a recurrencia)\b/.test(normalized)) {
     return {
       intent: 'activate_recurring',
       entities: {

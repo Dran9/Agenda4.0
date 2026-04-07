@@ -13,13 +13,16 @@ If the task is about the private voice app, also read `docs/VOICE-APP-REPORT.md`
 - Commit: `f6a8cf5` (base pushed commit before the latest voice/GCal follow-up)
 - Summary: recurring schedules were implemented end to end with lazy materialization, reminder integration, admin UI support, analytics, and voice controls; latest local follow-up adds stronger voice phrasing coverage plus GCal conversion from the source appointment
 - UI follow-up: Clients and Appointments now expose a visible `Recurrencia` field/column with quick manual actions, instead of leaving recurrence implied by badges or backend runtime only
+- UI follow-up 2: recurrence no longer depends on opening the full client popup; there is now a dedicated short recurrence modal
 - Recurring follow-up: materializing a recurring occurrence now reuses the Google Calendar instance ID when the occurrence already comes from a recurring series, instead of creating a duplicate event
 - Recurring sync follow-up: a daily 06:00 BOT cron now scans the next 14 days of GCal for recurring therapy events and can auto-create missing `recurring_schedules`
 - Recurring lifecycle follow-up: pause/end inside the app does not automatically delete the master recurring event in Google Calendar; the app simply stops materializing/sending reminders for that schedule
 - Voice recurring follow-up: the parser now recognizes `Fulano pasa a modo recurrencia`, `Fulano pasa a recurrencia`, and `Fulano está en recurrencia`
-- Voice GCal follow-up: activating recurrence from voice now uses the client’s next standalone future appointment as source when possible and converts that Google Calendar event into a weekly recurring series instead of always creating a separate master event
+- Voice recurring follow-up 2: the parser now also recognizes `Fulano entra en recurrencia`
+- Voice GCal follow-up: activating recurrence from voice now prefers the client’s latest standalone completed appointment as source, then falls back to the next standalone future appointment
 - Voice status follow-up: voice can now answer whether a client is actively in recurrence, paused, ended, or not recurrent at all
 - Voice integration follow-up: if recurrence is activated in the app but Google Calendar does not confirm the recurring series, voice now answers with an explicit warning instead of a false success
+- Navigation follow-up: sidebar now includes a placeholder `/admin/quick-actions` entry reserved for future admin command shortcuts
 - UI follow-up: reschedule screen copy now injects the client name in the banner, "already booked" title, and trust message
 - CI follow-up: GitHub `Frontend Guard` was failing because `client/dist` was out of sync with source; local `lint` and `build` passed, but `git diff --exit-code -- client/dist` failed
 - OCR follow-up: destination validation must depend on exact matches against whitelisted destination accounts after stripping separators
@@ -56,13 +59,15 @@ If the task is about the private voice app, also read `docs/VOICE-APP-REPORT.md`
 - Dashboard `/Hoy` now mixes real appointments with same-day virtual recurring sessions and materializes a virtual session automatically when the admin changes its status
 - Clients UI now shows a weekly badge plus day/time for active recurring clients and lets admin activate, edit, pause, resume, or end the schedule from the client modal
 - Clients UI now also shows an explicit `Recurrencia` column in the main table:
-  `—` when there is no active recurrence, `Recurrente` or `Pausada` when it exists, plus quick dropdown actions to open the client, pause, reactivate, or quitar recurrencia
-- Appointments UI now also shows an explicit `Recurrencia` column tied to the client’s current schedule, with quick dropdown actions to pause, reactivate, or quitar recurrencia directly from the appointments list
+  `—` when there is no active recurrence, `Recurrente` or `Pausada` when it exists, plus a dedicated short recurrence modal and quick actions to pause, reactivate, or quitar recurrencia
+- Appointments UI now also shows an explicit `Recurrencia` column tied to the client’s current schedule, with a dedicated short recurrence modal and quick actions to pause, reactivate, or quitar recurrencia directly from the appointments list
+- Appointments UI is now the main fast path for recurrence:
+  the quick modal preloads the latest completed session as source and defaults recurrence to the same weekday and hour as that session, while still letting the admin change day, time, or start date
 - Analytics now exposes recurring totals, paused/ended counts, 90-day churn, and projected monthly recurring revenue
 - Voice admin now supports `activate_recurring`, `pause_recurring`, `resume_recurring`, and `deactivate_recurring`
 - Voice admin now also supports `recurring_status`
 - Reminder flow now tries recurring matching before the old phone-summary fallback so recurring sessions become real appointments before WhatsApp sends
-- Voice activation of recurrence now prefers converting the next standalone future appointment in Google Calendar into a weekly recurring event
+- Voice activation of recurrence now prefers converting the latest standalone completed appointment in Google Calendar into a weekly recurring event, then falls back to the next standalone future appointment
 - If recurrence is changed manually in Google Calendar, the daily `recurringSync` cron can import it back into the app from `recurringEventId`
 - Payment success WhatsApp reply is being simplified to `✅ Pago recibido correctamente, ¡Gracias!`
 - Automatic QR follow-up after reminder confirmation no longer depends strictly on `booking_context`; for Bolivian clients, legacy/manual appointments without location metadata should still receive the correct QR by fee
@@ -116,7 +121,9 @@ If the task is about the private voice app, also read `docs/VOICE-APP-REPORT.md`
 - `client/src/pages/Admin/Analytics.jsx`
 - `client/src/pages/Admin/Appointments.jsx`
 - `client/src/pages/Admin/Clients.jsx`
+- `client/src/pages/Admin/QuickActions.jsx`
 - `client/src/pages/Admin/Dashboard.jsx`
+- `client/src/components/RecurringQuickModal.jsx`
 - `client/src/utils/dates.js`
 
 ## Important Decisions
@@ -153,6 +160,11 @@ If the task is about the private voice app, also read `docs/VOICE-APP-REPORT.md`
   `Juan Perez pasa a modo recurrencia`
   `Juan Perez pasa a recurrencia`
   `Juan Perez esta en recurrencia`
+- Frontend build passed after adding:
+  the dedicated recurrence modal,
+  fast recurrence entry from Appointments,
+  reusable recurrence entry from Clients,
+  and the `Comandos` placeholder page in the sidebar
 - No real client build was available from root `package.json`
   current `build` script is a no-op placeholder
 - Frontend guard diagnosis:

@@ -227,18 +227,26 @@ Ver `.env.example` para la lista completa. Se configuran en hPanel de Hostinger.
   clientes y citas ahora tienen una columna explícita `Recurrencia`
   ahí se ve `—`, `Recurrente` o `Pausada`, junto al patrón semanal y la fecha de inicio
   desde ese campo se puede pausar, reactivar o quitar la recurrencia sin entrar a automatizaciones
+  además, Citas y Clientes ya tienen un modal corto de recurrencia, separado de la ficha completa del cliente
+  el caso principal debe resolverse desde Citas:
+  `Poner en recurrencia` toma por defecto la última sesión completada del cliente y prellena mismo día y misma hora, aunque sigue siendo editable
 - Voz:
   el shortcut/admin voice ya puede activar, consultar, pausar, reactivar y desactivar recurrencias
   frases soportadas de forma directa:
   `Fulano pasa a modo recurrencia`
   `Fulano pasa a recurrencia`
+  `Fulano entra en recurrencia`
   `Fulano está en recurrencia`
 - Regla de activación por voz:
-  si el cliente tiene una próxima cita individual futura, la activación por voz toma esa cita como fuente
+  la activación por voz toma por defecto la última sesión completada del cliente como fuente
   y convierte ese evento de Google Calendar en una serie semanal
-  si no hay cita fuente convertible, crea la serie semanal nueva en GCal y deja la recurrencia activa en la app
+  si no hay última sesión utilizable, cae a la próxima cita individual futura
+  y si tampoco existe una cita fuente convertible, crea la serie semanal nueva en GCal y deja la recurrencia activa en la app
 - Seguridad operativa de voz:
   si la app activa la recurrencia pero Google Calendar no confirma la serie, la respuesta de voz lo avisa explícitamente
+- Comandos rápidos:
+  ya existe la entrada lateral `/admin/quick-actions` como placeholder operativo
+  por ahora solo documenta que ahí vivirá después la capa de acciones rápidas tipo poner en recurrencia, borrar, cancelar o cambiar status
 - Decisión operativa importante:
   pausar/finalizar en la app NO elimina automáticamente la serie maestra en Google Calendar
   la app deja de materializar y recordar esa recurrencia, pero no hace una acción destructiva en GCal por detrás

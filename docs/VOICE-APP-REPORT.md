@@ -128,9 +128,10 @@ Todos los comandos quedan en `voice_commands_log` con:
 
 - `Fulano pasa a modo recurrencia`
 - `Fulano pasa a recurrencia`
+- `Fulano entra en recurrencia`
 - `Fulano está en recurrencia`
 
-Cuando voz activa una recurrencia y detecta una próxima cita individual futura del cliente, usa esa cita como fuente:
+Cuando voz activa una recurrencia, por defecto intenta usar la última sesión completada del cliente como fuente. Si no existe una utilizable, cae a la próxima cita individual futura.
 
 - deriva día y hora si el comando no los dijo explícitamente
 - convierte el evento individual en Google Calendar en una serie semanal

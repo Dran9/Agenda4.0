@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Trash2, Search, BellRing, RotateCcw, ArrowUpDown, Repeat } from 'lucide-react';
 import AdminLayout from '../../components/AdminLayout';
+import RecurringQuickModal from '../../components/RecurringQuickModal';
 import { api } from '../../utils/api';
 import { useToast, Toast } from '../../hooks/useToast';
 import { formatDateBolivia, formatTimeBolivia, formatWeekdayShort } from '../../utils/dates';
@@ -158,6 +159,8 @@ export default function Appointments() {
   const [total, setTotal] = useState(0);
   const [selected, setSelected] = useState(new Set());
   const [savingRecurringClientId, setSavingRecurringClientId] = useState(null);
+  const [recurringModal, setRecurringModal] = useState(null);
+  const [loadingRecurringModal, setLoadingRecurringModal] = useState(false);
 
   useEffect(() => {
     fetchAppointments();
@@ -196,6 +199,21 @@ export default function Appointments() {
       setRecurringSchedules(Array.isArray(data) ? data : []);
     } catch (err) {
       console.error(err);
+    }
+  }
+
+  async function loadDefaultRecurringSource(clientId, fallbackAppointment = null) {
+    if (fallbackAppointment?.status === 'Completada' && !fallbackAppointment?.source_schedule_id) {
+      return fallbackAppointment;
+    }
+
+    try {
+      const detail = await api.get(`/clients/${clientId}`);
+      const appointmentsHistory = Array.isArray(detail?.appointments) ? detail.appointments : [];
+      return appointmentsHistory.find((item) => item.status === 'Completada' && !item.source_schedule_id) || fallbackAppointment || null;
+    } catch (err) {
+      console.error(err);
+      return fallbackAppointment || null;
     }
   }
 
@@ -311,6 +329,51 @@ export default function Appointments() {
             ? 'Recurrencia reactivada'
             : 'Recurrencia quitada'
       );
+    } catch (err) {
+      showToast('Error: ' + err.message, 'error');
+    } finally {
+      setSavingRecurringClientId(null);
+    }
+  }
+
+  async function openRecurringModal(appt, schedule) {
+    setLoadingRecurringModal(true);
+    try {
+      const sourceAppointment = await loadDefaultRecurringSource(appt.client_id, appt);
+      setRecurringModal({
+        clientId: appt.client_id,
+        clientName: `${appt.first_name} ${appt.last_name}`.trim(),
+        schedule,
+        sourceAppointment,
+      });
+    } finally {
+      setLoadingRecurringModal(false);
+    }
+  }
+
+  async function handleRecurringModalSubmit(payload) {
+    if (!recurringModal) return;
+    setSavingRecurringClientId(recurringModal.clientId);
+    try {
+      if (recurringModal.schedule && !recurringModal.schedule.ended_at) {
+        await api.put(`/recurring/${recurringModal.schedule.id}`, {
+          day_of_week: payload.day_of_week,
+          time: payload.time,
+        });
+        showToast('Recurrencia actualizada');
+      } else {
+        await api.post('/recurring', {
+          client_id: recurringModal.clientId,
+          day_of_week: payload.day_of_week,
+          time: payload.time,
+          started_at: payload.started_at,
+          source_appointment_id: payload.source_appointment_id,
+        });
+        showToast('Recurrencia activada');
+      }
+
+      setRecurringModal(null);
+      await Promise.all([fetchAppointments(), loadRecurringSchedules()]);
     } catch (err) {
       showToast('Error: ' + err.message, 'error');
     } finally {
@@ -450,27 +513,52 @@ export default function Appointments() {
                     </td>
                     <td className="p-3 align-top">
                       <div className="space-y-1">
-                        <select
-                          value=""
-                          onChange={e => handleRecurringQuickAction(appt, recurringSchedule, e.target.value)}
-                          disabled={!recurringSchedule || recurringSchedule.ended_at || savingRecurringClientId === appt.client_id}
-                          className={`min-w-[170px] rounded-full border px-2.5 py-1 text-xs font-semibold ${recurringMeta.className}`}
-                        >
-                          <option value="" disabled>{recurringMeta.label}</option>
-                          {recurringSchedule && !recurringSchedule.ended_at && !recurringSchedule.paused_at ? (
-                            <option value="pause">Pausar recurrencia</option>
-                          ) : null}
-                          {recurringSchedule?.paused_at && !recurringSchedule.ended_at ? (
-                            <option value="resume">Reactivar recurrencia</option>
-                          ) : null}
-                          {recurringSchedule && !recurringSchedule.ended_at ? (
-                            <option value="end">Quitar recurrencia</option>
-                          ) : null}
-                        </select>
+                        <div className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-semibold ${recurringMeta.className}`}>
+                          {recurringMeta.label}
+                        </div>
                         {recurringMeta.detail ? (
                           <div className="inline-flex items-center gap-1 text-[11px] font-medium text-gray-500">
                             <Repeat size={11} className="text-gray-400" />
                             <span>{recurringMeta.detail}</span>
+                          </div>
+                        ) : null}
+                        <button
+                          type="button"
+                          onClick={() => openRecurringModal(appt, recurringSchedule)}
+                          disabled={loadingRecurringModal || savingRecurringClientId === appt.client_id}
+                          className="inline-flex rounded-lg border border-gray-200 px-2.5 py-1 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-60"
+                        >
+                          {recurringSchedule && !recurringSchedule.ended_at ? 'Editar recurrencia' : 'Poner en recurrencia'}
+                        </button>
+                        {recurringSchedule && !recurringSchedule.ended_at ? (
+                          <div className="flex flex-wrap gap-2">
+                            {!recurringSchedule.paused_at ? (
+                              <button
+                                type="button"
+                                onClick={() => handleRecurringQuickAction(appt, recurringSchedule, 'pause')}
+                                disabled={savingRecurringClientId === appt.client_id}
+                                className="rounded-lg border border-amber-200 px-2.5 py-1 text-xs font-medium text-amber-700 hover:bg-amber-50 disabled:opacity-60"
+                              >
+                                Pausar
+                              </button>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={() => handleRecurringQuickAction(appt, recurringSchedule, 'resume')}
+                                disabled={savingRecurringClientId === appt.client_id}
+                                className="rounded-lg border border-emerald-200 px-2.5 py-1 text-xs font-medium text-emerald-700 hover:bg-emerald-50 disabled:opacity-60"
+                              >
+                                Reactivar
+                              </button>
+                            )}
+                            <button
+                              type="button"
+                              onClick={() => handleRecurringQuickAction(appt, recurringSchedule, 'end')}
+                              disabled={savingRecurringClientId === appt.client_id}
+                              className="rounded-lg border border-rose-200 px-2.5 py-1 text-xs font-medium text-rose-700 hover:bg-rose-50 disabled:opacity-60"
+                            >
+                              Quitar
+                            </button>
                           </div>
                         ) : null}
                       </div>
@@ -565,6 +653,15 @@ export default function Appointments() {
           </>
         )}
       </div>
+      <RecurringQuickModal
+        open={!!recurringModal}
+        clientName={recurringModal?.clientName || ''}
+        schedule={recurringModal?.schedule || null}
+        sourceAppointment={recurringModal?.sourceAppointment || null}
+        saving={savingRecurringClientId === recurringModal?.clientId}
+        onClose={() => setRecurringModal(null)}
+        onSubmit={handleRecurringModalSubmit}
+      />
     </AdminLayout>
   );
 }

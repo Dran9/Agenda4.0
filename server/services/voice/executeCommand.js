@@ -288,9 +288,22 @@ async function findLatestRecurringScheduleForClient(tenantId, clientId) {
   return rows[0] || null;
 }
 
-async function findNextRecurringSourceAppointment(tenantId, clientId) {
+async function findDefaultRecurringSourceAppointment(tenantId, clientId) {
   if (!clientId) return null;
-  const [rows] = await pool.query(
+  const [completedRows] = await pool.query(
+    `SELECT id, date_time, duration, gcal_event_id, status, source_schedule_id
+     FROM appointments
+     WHERE tenant_id = ?
+       AND client_id = ?
+       AND status = 'Completada'
+       AND source_schedule_id IS NULL
+     ORDER BY date_time DESC
+     LIMIT 1`,
+    [tenantId, clientId]
+  );
+  if (completedRows[0]) return completedRows[0];
+
+  const [futureRows] = await pool.query(
     `SELECT id, date_time, duration, gcal_event_id, status, source_schedule_id
      FROM appointments
      WHERE tenant_id = ?
@@ -299,10 +312,10 @@ async function findNextRecurringSourceAppointment(tenantId, clientId) {
        AND source_schedule_id IS NULL
        AND date_time > NOW()
      ORDER BY date_time ASC
-     LIMIT 1`,
+      LIMIT 1`,
     [tenantId, clientId]
   );
-  return rows[0] || null;
+  return futureRows[0] || null;
 }
 
 function buildPendingAction(intent, entities = {}) {
@@ -1164,7 +1177,7 @@ async function buildActivateRecurringReply(tenantId, clientName, weekdayName, ti
 
   const client = resolution.client;
   const latestSchedule = await findLatestRecurringScheduleForClient(tenantId, client.id);
-  const sourceAppointment = await findNextRecurringSourceAppointment(tenantId, client.id);
+  const sourceAppointment = await findDefaultRecurringSourceAppointment(tenantId, client.id);
   const sourceDayIndex = sourceAppointment ? getDayIndexInLaPaz(sourceAppointment.date_time) : null;
   const sourceWeekdayName = sourceDayIndex != null ? weekdayNameFromIndex(sourceDayIndex) : null;
   const sourceTime = sourceAppointment ? getTimeHhmmInLaPaz(sourceAppointment.date_time) : null;

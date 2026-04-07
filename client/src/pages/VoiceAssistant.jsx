@@ -53,6 +53,7 @@ export default function VoiceAssistant() {
   const [isRecording, setIsRecording] = useState(false);
   const [voiceEnabled, setVoiceEnabled] = useState(true);
   const [holdActive, setHoldActive] = useState(false);
+  const [authReady, setAuthReady] = useState(false);
 
   const mediaRecorderRef = useRef(null);
   const mediaStreamRef = useRef(null);
@@ -66,9 +67,11 @@ export default function VoiceAssistant() {
   useEffect(() => {
     const token = localStorage.getItem('auth_token');
     if (!token) {
-      navigate('/admin/login');
+      setAuthReady(false);
       return;
     }
+
+    setAuthReady(true);
 
     const hasMediaRecorder =
       typeof window !== 'undefined' &&
@@ -89,6 +92,7 @@ export default function VoiceAssistant() {
   }, [navigate]);
 
   useEffect(() => {
+    if (!authReady) return undefined;
     loadHistory();
     return () => {
       stopTracks();
@@ -97,7 +101,7 @@ export default function VoiceAssistant() {
         window.speechSynthesis.cancel();
       }
     };
-  }, []);
+  }, [authReady]);
 
   useEffect(() => {
     document.documentElement.classList.add('voice-app-mode');
@@ -143,7 +147,7 @@ export default function VoiceAssistant() {
   }
 
   async function speak(text) {
-    if (!voiceEnabled || !text) return;
+    if (!authReady || !voiceEnabled || !text) return;
     const requestId = Date.now();
     speakRequestRef.current = requestId;
     stopSpokenAudio();
@@ -221,7 +225,7 @@ export default function VoiceAssistant() {
 
   async function sendTextCommand(text) {
     const trimmed = String(text || '').trim();
-    if (!trimmed) return;
+    if (!trimmed || !authReady) return;
 
     try {
       setLoading(true);
@@ -246,7 +250,7 @@ export default function VoiceAssistant() {
   }
 
   async function startRecording() {
-    if (loading || isRecording || !micSupported) return;
+    if (!authReady || loading || isRecording || !micSupported) return;
 
     try {
       setError('');
@@ -326,6 +330,37 @@ export default function VoiceAssistant() {
     : loading
       ? 'Procesando tu comando...'
       : 'Mantén pulsado para hablar o toca una vez para grabar.';
+
+  if (!authReady) {
+    return (
+      <div className="voice-app-root bg-[#f6f1e8] text-slate-950">
+        <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top_left,_rgba(78,118,155,0.22),_transparent_35%),radial-gradient(circle_at_top_right,_rgba(179,78,53,0.16),_transparent_28%),linear-gradient(180deg,_rgba(255,255,255,0.94),_rgba(246,241,232,0.96))]" />
+        <div className="relative mx-auto flex min-h-screen max-w-xl items-center justify-center px-6">
+          <div className="w-full rounded-[2rem] border border-white/70 bg-white/90 p-8 text-center shadow-[0_30px_80px_rgba(15,23,42,0.10)] backdrop-blur">
+            <div className="mx-auto mb-4 inline-flex rounded-full bg-[#0f172a] px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.24em] text-white/80">
+              Voice
+            </div>
+            <h1 className="text-3xl font-semibold tracking-tight text-slate-950">
+              Sesión de voz requerida
+            </h1>
+            <p className="mt-4 text-[1.02rem] leading-7 text-slate-600">
+              Esta ruta ya no te saca directo al admin, pero sí necesita una sesión válida.
+              Si entras desde la app iOS, el wrapper debe iniciar la sesión antes de abrir esta pantalla.
+            </p>
+            <div className="mt-6 flex flex-wrap items-center justify-center gap-3">
+              <button
+                type="button"
+                onClick={() => navigate('/admin/login')}
+                className="inline-flex items-center gap-2 rounded-full bg-[#0f172a] px-5 py-3 text-sm font-semibold text-white transition hover:translate-y-[-1px]"
+              >
+                Ir a login admin
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="voice-app-root bg-[#f6f1e8] text-slate-950">

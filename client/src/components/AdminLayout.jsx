@@ -3,10 +3,10 @@ import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { LayoutDashboard, Users, CalendarDays, BarChart3, Settings, MessageSquare, DollarSign, LogOut, Menu, X, Command } from 'lucide-react';
 
 const NAV_ITEMS = [
+  { path: '/admin/quick-actions', label: 'Comandos', icon: Command },
   { path: '/admin', label: 'Hoy', icon: LayoutDashboard },
   { path: '/admin/appointments', label: 'Agenda', icon: CalendarDays },
   { path: '/admin/clients', label: 'Clientes', icon: Users },
-  { path: '/admin/quick-actions', label: 'Comandos', icon: Command },
   { path: '/admin/whatsapp', label: 'Inbox', icon: MessageSquare },
   { path: '/admin/finance', label: 'Cobros', icon: DollarSign },
   { path: '/admin/analytics', label: 'Insights', icon: BarChart3 },

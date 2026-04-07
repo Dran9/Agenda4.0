@@ -22,6 +22,7 @@ const analyticsRoutes = require('./routes/analytics');
 const paymentsRoutes = require('./routes/payments');
 const voiceRoutes = require('./routes/voice');
 const recurringRoutes = require('./routes/recurring');
+const quickActionsRoutes = require('./routes/quickActions');
 
 const app = express();
 app.set('trust proxy', 1);
@@ -60,6 +61,7 @@ app.use('/api/analytics', analyticsRoutes);
 app.use('/api/payments', paymentsRoutes);
 app.use('/api/voice', voiceRoutes);
 app.use('/api/recurring', recurringRoutes);
+app.use('/api/quick-actions', quickActionsRoutes);
 
 // ─── Admin reminder trigger (protected) ─────────────────────────
 app.get('/api/admin/test-reminder', authMiddleware, async (req, res) => {

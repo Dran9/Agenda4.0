@@ -30,7 +30,7 @@ export default function AdminLayout({ children, title, sidebarSubItems = [] }) {
   }
 
   return (
-    <div className="min-h-screen bg-white flex text-slate-900">
+    <div className="admin-contrast min-h-screen bg-white flex text-slate-900">
       {/* Sidebar */}
       <aside className={`
         fixed inset-y-0 left-0 z-30 w-64 bg-white/95 border-r border-slate-200 backdrop-blur-xl transform transition-transform

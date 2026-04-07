@@ -101,6 +101,27 @@ body {
   -moz-osx-font-smoothing: grayscale;
 }
 
+.admin-contrast .text-slate-400,
+.admin-contrast .text-gray-400 {
+  color: #5b6675;
+}
+
+.admin-contrast .text-slate-500,
+.admin-contrast .text-gray-500 {
+  color: #435163;
+}
+
+.admin-contrast .text-slate-600,
+.admin-contrast .text-gray-600 {
+  color: #334155;
+}
+
+.admin-contrast .placeholder\:text-slate-400::placeholder,
+.admin-contrast .placeholder\:text-gray-400::placeholder {
+  color: #64748b;
+  opacity: 1;
+}
+
 @keyframes voicePulse {
   0%, 100% {
     transform: scaleY(0.45);

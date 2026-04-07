@@ -23,6 +23,14 @@ function getVoiceTenantId() {
   return Number(process.env.VOICE_ADMIN_TENANT_ID || 1);
 }
 
+function getAdminBootstrapToken() {
+  return process.env.ADMIN_APP_BOOTSTRAP_TOKEN || '';
+}
+
+function getDefaultAdminTenantSlug() {
+  return process.env.ADMIN_APP_TENANT_SLUG || 'daniel';
+}
+
 // POST /api/auth/login — simple password-based login
 router.post('/login', loginLimiter, async (req, res) => {
   try {
@@ -94,6 +102,53 @@ router.post('/voice-login', loginLimiter, async (req, res) => {
     sendServerError(res, req, err, {
       message: 'No se pudo iniciar la sesión de voz',
       logLabel: 'auth voice-login',
+    });
+  }
+});
+
+// POST /api/auth/admin-login — bootstrap session for native /admin wrapper
+router.post('/admin-login', loginLimiter, async (req, res) => {
+  try {
+    const expected = getAdminBootstrapToken();
+    const provided = String(
+      req.get('x-admin-token') ||
+      req.body?.token ||
+      ''
+    ).trim();
+
+    if (!expected) {
+      return res.status(500).json({ error: 'ADMIN bootstrap no configurado' });
+    }
+
+    if (!provided || provided !== expected) {
+      return res.status(401).json({ error: 'Token de admin inválido' });
+    }
+
+    const tenantSlug = String(req.body?.slug || getDefaultAdminTenantSlug()).trim();
+    const [tenants] = await pool.query(
+      'SELECT id, name, slug FROM tenants WHERE slug = ? LIMIT 1',
+      [tenantSlug]
+    );
+
+    if (tenants.length === 0) {
+      return res.status(404).json({ error: 'Tenant admin no encontrado' });
+    }
+
+    const tenant = tenants[0];
+    const token = generateToken(tenant.id, null);
+
+    res.json({
+      token,
+      tenant: {
+        id: tenant.id,
+        name: tenant.name,
+        slug: tenant.slug,
+      },
+    });
+  } catch (err) {
+    sendServerError(res, req, err, {
+      message: 'No se pudo iniciar la sesión de admin',
+      logLabel: 'auth admin-login',
     });
   }
 });

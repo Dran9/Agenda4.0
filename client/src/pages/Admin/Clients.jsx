@@ -3,6 +3,7 @@ import { Plus, Trash2, X, Search, Repeat } from 'lucide-react';
 import AdminLayout from '../../components/AdminLayout';
 import RecurringQuickModal from '../../components/RecurringQuickModal';
 import { api } from '../../utils/api';
+import { getRecurringSyncIssue, pickDefaultRecurringSource } from '../../utils/recurring';
 import { useToast, Toast } from '../../hooks/useToast';
 import useAdminEvents from '../../hooks/useAdminEvents';
 import { formatTimeBolivia, formatWeekdayShort, getBoliviaDateKey } from '../../utils/dates';
@@ -272,14 +273,18 @@ export default function Clients() {
 
     setSavingRecurringClientId(client.id);
     try {
-      await api.put(`/recurring/${schedule.id}/${action}`, {});
+      const result = await api.put(`/recurring/${schedule.id}/${action}`, {});
       await Promise.all([loadClients(), loadRecurringSchedules()]);
+      const syncIssue = action === 'resume' ? getRecurringSyncIssue(result, 'resume') : null;
       showToast(
-        action === 'pause'
-          ? 'Recurrencia pausada'
-          : action === 'resume'
-            ? 'Recurrencia reactivada'
-            : 'Recurrencia quitada'
+        syncIssue || (
+          action === 'pause'
+            ? 'Recurrencia pausada'
+            : action === 'resume'
+              ? 'Recurrencia reactivada'
+              : 'Recurrencia quitada'
+        ),
+        syncIssue ? 'error' : 'success'
       );
     } catch (err) {
       showToast('Error: ' + err.message, 'error');
@@ -293,7 +298,7 @@ export default function Clients() {
     try {
       const detail = await api.get(`/clients/${client.id}`);
       const appointmentsHistory = Array.isArray(detail?.appointments) ? detail.appointments : [];
-      const sourceAppointment = appointmentsHistory.find((item) => item.status === 'Completada' && !item.source_schedule_id) || null;
+      const sourceAppointment = pickDefaultRecurringSource(appointmentsHistory);
       setRecurringModal({
         clientId: client.id,
         clientName: `${client.first_name} ${client.last_name}`.trim(),
@@ -312,20 +317,22 @@ export default function Clients() {
     setSavingRecurringClientId(recurringModal.clientId);
     try {
       if (recurringModal.schedule && !recurringModal.schedule.ended_at) {
-        await api.put(`/recurring/${recurringModal.schedule.id}`, {
+        const updated = await api.put(`/recurring/${recurringModal.schedule.id}`, {
           day_of_week: payload.day_of_week,
           time: payload.time,
         });
-        showToast('Recurrencia actualizada');
+        const syncIssue = getRecurringSyncIssue(updated, 'update');
+        showToast(syncIssue || 'Recurrencia actualizada', syncIssue ? 'error' : 'success');
       } else {
-        await api.post('/recurring', {
+        const created = await api.post('/recurring', {
           client_id: recurringModal.clientId,
           day_of_week: payload.day_of_week,
           time: payload.time,
           started_at: payload.started_at,
           source_appointment_id: payload.source_appointment_id,
         });
-        showToast('Recurrencia activada');
+        const syncIssue = getRecurringSyncIssue(created, 'activate');
+        showToast(syncIssue || 'Recurrencia activada', syncIssue ? 'error' : 'success');
       }
 
       setRecurringModal(null);

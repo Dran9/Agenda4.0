@@ -6,6 +6,7 @@ const { refreshConfigSchedulers } = require('../../cron/scheduler');
 const {
   createRecurringSchedule,
   endRecurringSchedule,
+  findDefaultRecurringSourceAppointment,
   pauseRecurringSchedule,
   resumeRecurringSchedule,
   updateRecurringSchedule,
@@ -288,36 +289,6 @@ async function findLatestRecurringScheduleForClient(tenantId, clientId) {
   return rows[0] || null;
 }
 
-async function findDefaultRecurringSourceAppointment(tenantId, clientId) {
-  if (!clientId) return null;
-  const [completedRows] = await pool.query(
-    `SELECT id, date_time, duration, gcal_event_id, status, source_schedule_id
-     FROM appointments
-     WHERE tenant_id = ?
-       AND client_id = ?
-       AND status = 'Completada'
-       AND source_schedule_id IS NULL
-     ORDER BY date_time DESC
-     LIMIT 1`,
-    [tenantId, clientId]
-  );
-  if (completedRows[0]) return completedRows[0];
-
-  const [futureRows] = await pool.query(
-    `SELECT id, date_time, duration, gcal_event_id, status, source_schedule_id
-     FROM appointments
-     WHERE tenant_id = ?
-       AND client_id = ?
-       AND status IN ('Agendada','Confirmada','Reagendada')
-       AND source_schedule_id IS NULL
-       AND date_time > NOW()
-     ORDER BY date_time ASC
-      LIMIT 1`,
-    [tenantId, clientId]
-  );
-  return futureRows[0] || null;
-}
-
 function buildPendingAction(intent, entities = {}) {
   return {
     intent,
@@ -339,6 +310,35 @@ function buildPendingAction(intent, entities = {}) {
       afternoon_mode: entities.afternoon_mode ?? null,
       afternoon_start: entities.afternoon_start ?? null,
       afternoon_end: entities.afternoon_end ?? null,
+    },
+  };
+}
+
+function getRecurringSyncIssueText(mode, client, sourceAppointment = null) {
+  if (mode === 'update') {
+    return `Actualicé la recurrencia de ${client.first_name} en la app, pero Google Calendar no confirmó el cambio de la serie semanal. Revisa la autorización antes de darlo por hecho.`;
+  }
+
+  if (mode === 'resume') {
+    return `Reactivé la recurrencia de ${client.first_name} en la app, pero Google Calendar no confirmó la serie semanal. Revisa la autorización antes de darlo por hecho.`;
+  }
+
+  if (sourceAppointment?.id) {
+    return `Activé la recurrencia de ${client.first_name} en la app, pero Google Calendar no confirmó la conversión de la cita a serie semanal. Revisa la autorización antes de darlo por hecho.`;
+  }
+
+  return `Activé la recurrencia de ${client.first_name} en la app, pero Google Calendar no confirmó la serie semanal. Revisa la autorización antes de darlo por hecho.`;
+}
+
+function buildRecurringSyncIssueReply(mode, client, schedule, sourceAppointment = null) {
+  return {
+    status: 'clarification',
+    replyText: getRecurringSyncIssueText(mode, client, sourceAppointment),
+    data: {
+      client,
+      recurring_schedule: schedule,
+      source_appointment: sourceAppointment,
+      integration_error: 'google_calendar_recurring_sync_failed',
     },
   };
 }
@@ -1216,6 +1216,9 @@ async function buildActivateRecurringReply(tenantId, clientName, weekdayName, ti
         time: effectiveTime,
         notes: latestSchedule.notes,
       });
+      if (updated?.gcal_sync_status === 'failed') {
+        return buildRecurringSyncIssueReply('update', client, updated, sourceAppointment);
+      }
       return {
         status: 'resolved',
         replyText: `Listo, ${client.first_name} ahora tiene sesión semanal los ${WEEKDAY_LABELS[effectiveWeekdayName]} a las ${updated.time}.`,
@@ -1240,6 +1243,9 @@ async function buildActivateRecurringReply(tenantId, clientName, weekdayName, ti
       });
     }
     const resumed = await resumeRecurringSchedule(tenantId, latestSchedule.id);
+    if (resumed?.gcal_sync_status === 'failed') {
+      return buildRecurringSyncIssueReply('resume', client, resumed, sourceAppointment);
+    }
     return {
       status: 'resolved',
       replyText: `Listo, ${client.first_name} volvió a modo semanal los ${WEEKDAY_LABELS[weekdayNameFromIndex(resumed.day_of_week)]} a las ${resumed.time}.`,
@@ -1256,14 +1262,13 @@ async function buildActivateRecurringReply(tenantId, clientName, weekdayName, ti
     notes: 'Activado desde comando de voz',
   });
 
-  if (!created?.gcal_recurring_event_id) {
-    return {
-      status: 'clarification',
-      replyText: canConvertSourceAppointment
-        ? `Activé la recurrencia de ${client.first_name} en la app, pero Google Calendar no confirmó la conversión de la cita a serie semanal. Revisa la autorización de Google antes de darlo por hecho.`
-        : `Activé la recurrencia de ${client.first_name} en la app, pero Google Calendar no confirmó la serie semanal. Revisa la autorización de Google antes de darlo por hecho.`,
-      data: { client, recurring_schedule: created, source_appointment: sourceAppointment, integration_error: 'google_calendar_recurring_sync_failed' },
-    };
+  if (!created?.gcal_recurring_event_id || created?.gcal_sync_status === 'failed') {
+    return buildRecurringSyncIssueReply(
+      'create',
+      client,
+      created,
+      canConvertSourceAppointment ? sourceAppointment : null
+    );
   }
 
   return {

@@ -69,6 +69,9 @@ export default function RecurringQuickModal({
     if (!sourceAppointment?.date_time) return null;
     return formatDateTimeBolivia(sourceAppointment.date_time);
   }, [sourceAppointment]);
+  const sourceTone = sourceAppointment?.status === 'Completada'
+    ? 'última sesión completada'
+    : 'cita próxima';
 
   if (!open) return null;
 
@@ -105,11 +108,11 @@ export default function RecurringQuickModal({
 
         {sourceLabel ? (
           <div className="mt-4 rounded-xl border border-blue-100 bg-blue-50 px-4 py-3 text-sm text-blue-800">
-            Base automática: última sesión o cita elegida del {sourceLabel}.
+            Base automática: {sourceTone} del {sourceLabel}.
           </div>
         ) : (
           <div className="mt-4 rounded-xl border border-amber-100 bg-amber-50 px-4 py-3 text-sm text-amber-800">
-            No encontré una sesión completada para tomar como base. Ajusta los campos manualmente.
+            No encontré una base automática para esta recurrencia. Ajusta día, hora y fecha manualmente.
           </div>
         )}
 

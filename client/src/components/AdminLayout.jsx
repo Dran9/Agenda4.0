@@ -32,11 +32,14 @@ export default function AdminLayout({ children, title, sidebarSubItems = [] }) {
   return (
     <div className="admin-contrast min-h-screen bg-white flex text-slate-900">
       {/* Sidebar */}
-      <aside className={`
+      <aside
+        className={`
         fixed inset-y-0 left-0 z-30 w-64 bg-white/95 border-r border-slate-200 backdrop-blur-xl transform transition-transform
         lg:translate-x-0 lg:static lg:inset-0
         ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}
-      `}>
+      `}
+        style={{ paddingTop: 'env(safe-area-inset-top, 0px)' }}
+      >
         <div className="p-5 border-b border-slate-200">
           <div className="inline-flex rounded-full bg-[#CFE8E9] px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.24em] text-[#4E769B]">Agenda Daniel MacLean</div>
           <h1 className="mt-2 font-semibold text-xl text-slate-950 tracking-tight">Admin Desk</h1>
@@ -106,19 +109,22 @@ export default function AdminLayout({ children, title, sidebarSubItems = [] }) {
 
       {/* Main content */}
       <div className="flex-1 min-w-0">
-        <header
-          className="sticky top-0 z-10 bg-white/95 backdrop-blur-xl border-b border-slate-200 px-4 py-4 flex items-center gap-3 lg:px-6"
-          style={{ paddingTop: 'calc(env(safe-area-inset-top, 0px) + 1rem)' }}
-        >
-          <button
-            type="button"
-            onClick={() => setSidebarOpen(true)}
-            className="lg:hidden inline-flex h-11 w-11 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-900 shadow-sm"
-            aria-label="Abrir menú"
-          >
-            <Menu size={20} />
-          </button>
-          <h2 className="text-lg font-semibold tracking-tight">{title}</h2>
+        <header className="sticky top-0 z-10 bg-white/95 backdrop-blur-xl border-b border-slate-200">
+          <div
+            className="lg:hidden"
+            style={{ height: 'max(env(safe-area-inset-top, 0px), 2.25rem)' }}
+          />
+          <div className="flex items-center gap-3 px-4 py-4 lg:px-6">
+            <button
+              type="button"
+              onClick={() => setSidebarOpen(true)}
+              className="lg:hidden inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-900 shadow-sm"
+              aria-label="Abrir menú"
+            >
+              <Menu size={20} />
+            </button>
+            <h2 className="text-lg font-semibold tracking-tight">{title}</h2>
+          </div>
         </header>
 
         <main className="p-4 lg:p-6 bg-white">

@@ -146,6 +146,8 @@ function trimClientCandidate(candidate) {
 
   const cutPatterns = [
     /\s+para\s+el\s+/i,
+    /\s+en\s+(?:modo\s+)?recurrencia\b/i,
+    /\s+a\s+modo\s+recurrencia\b/i,
     /\s+los\s+(lunes|martes|miercoles|miércoles|jueves|viernes|sabado|sábado|domingo)\b/i,
     /\s+de\s+(lunes|martes|miercoles|miércoles|jueves|viernes|sabado|sábado|domingo)\b/i,
     /\s+el\s+(lunes|martes|miercoles|miércoles|jueves|viernes|sabado|sábado|domingo)\b/i,
@@ -180,12 +182,22 @@ function extractClientNameForRecurring(text, mode) {
     if (afterActivate?.[1]) {
       candidate = afterActivate[1];
     } else {
-      const modeRepeat = original.match(/^(.+?)\s+entra\s+a\s+modo\s+repetir\b/i);
-      if (modeRepeat?.[1]) {
-        candidate = modeRepeat[1];
+      const directPutIntoRecurring = original.match(/(?:pon(?:er)?\s+en\s+recurrencia\s+a\s+)(.+)$/i);
+      if (directPutIntoRecurring?.[1]) {
+        candidate = directPutIntoRecurring[1];
       } else {
-        const modeRecurring = original.match(/^(.+?)\s+(?:entra\s+a\s+modo\s+recurrencia|entra\s+en\s+recurrencia|pasa\s+a\s+modo\s+recurrencia|pasa\s+a\s+recurrencia)\b/i);
-        if (modeRecurring?.[1]) candidate = modeRecurring[1];
+        const trailingPutIntoRecurring = original.match(/(?:pon(?:er)?\s+a\s+)(.+?)(?:\s+en\s+recurrencia.*)$/i);
+        if (trailingPutIntoRecurring?.[1]) {
+          candidate = trailingPutIntoRecurring[1];
+        } else {
+          const modeRepeat = original.match(/^(.+?)\s+entra\s+a\s+modo\s+repetir\b/i);
+          if (modeRepeat?.[1]) {
+            candidate = modeRepeat[1];
+          } else {
+            const modeRecurring = original.match(/^(.+?)\s+(?:entra\s+a\s+modo\s+recurrencia|entra\s+en\s+recurrencia|pasa\s+a\s+modo\s+recurrencia|pasa\s+a\s+recurrencia)\b/i);
+            if (modeRecurring?.[1]) candidate = modeRecurring[1];
+          }
+        }
       }
     }
   }
@@ -284,7 +296,7 @@ function detectAgendaIntent(text) {
 function detectRecurringIntent(text) {
   const normalized = normalizeText(text);
 
-  if (/\b(entra a modo repetir|entra a modo recurrencia|entra en recurrencia|activar semanal|activar recurrencia|pasa a modo recurrencia|pasa a recurrencia)\b/.test(normalized)) {
+  if (/\b(entra a modo repetir|entra a modo recurrencia|entra en recurrencia|activar semanal|activar recurrencia|pasa a modo recurrencia|pasa a recurrencia|pon en recurrencia|poner en recurrencia)\b/.test(normalized) || /\bpon\b.+\ben recurrencia\b/.test(normalized)) {
     return {
       intent: 'activate_recurring',
       entities: {

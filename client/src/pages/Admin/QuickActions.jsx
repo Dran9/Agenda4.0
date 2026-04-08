@@ -15,6 +15,7 @@ import {
 import AdminLayout from '../../components/AdminLayout';
 import RecurringQuickModal from '../../components/RecurringQuickModal';
 import { api } from '../../utils/api';
+import { getRecurringSyncIssue } from '../../utils/recurring';
 import { useToast, Toast } from '../../hooks/useToast';
 import useAdminEvents from '../../hooks/useAdminEvents';
 import { formatWeekdayShort, formatTimeBolivia, formatDateBolivia } from '../../utils/dates';
@@ -259,15 +260,16 @@ export default function QuickActions() {
     if (!selectedClient) return;
     setRecurringSaving(true);
     try {
-      await api.post('/recurring', {
+      const created = await api.post('/recurring', {
         client_id: selectedClient.id,
         ...formData,
       });
+      const syncIssue = getRecurringSyncIssue(created, 'activate');
       setRecurringModalOpen(false);
       setActionResult({
-        success: true,
-        title: 'Recurrencia activada',
-        detail: `${selectedClient.first_name} ahora tiene sesión semanal.`,
+        success: !syncIssue,
+        title: syncIssue ? 'Recurrencia guardada en la app' : 'Recurrencia activada',
+        detail: syncIssue || `${selectedClient.first_name} ahora tiene sesión semanal.`,
       });
       refreshClient(selectedClient.id);
     } catch (err) {
@@ -315,11 +317,12 @@ export default function QuickActions() {
         setActionResult({ success: false, title: 'Sin recurrencia pausada', detail: '' });
         return;
       }
-      await api.put(`/recurring/${schedule.id}/resume`);
+      const resumed = await api.put(`/recurring/${schedule.id}/resume`);
+      const syncIssue = getRecurringSyncIssue(resumed, 'resume');
       setActionResult({
-        success: true,
-        title: 'Recurrencia reactivada',
-        detail: `${selectedClient.first_name} vuelve a sesión semanal.`,
+        success: !syncIssue,
+        title: syncIssue ? 'Recurrencia reactivada en la app' : 'Recurrencia reactivada',
+        detail: syncIssue || `${selectedClient.first_name} vuelve a sesión semanal.`,
       });
       refreshClient(selectedClient.id);
     } catch (err) {

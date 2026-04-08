@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Plus, Trash2, X, Search, Repeat } from 'lucide-react';
 import AdminLayout from '../../components/AdminLayout';
+import InlineConfirmButton from '../../components/InlineConfirmButton';
 import RecurringQuickModal from '../../components/RecurringQuickModal';
 import { api } from '../../utils/api';
 import { getRecurringSyncIssue, pickDefaultRecurringSource } from '../../utils/recurring';
@@ -127,45 +128,31 @@ export default function Clients() {
   const [savingRecurringClientId, setSavingRecurringClientId] = useState(null);
   const [recurringModal, setRecurringModal] = useState(null);
   const [loadingRecurringModal, setLoadingRecurringModal] = useState(false);
+  const [archiveView, setArchiveView] = useState('active');
 
-  const refreshAll = useCallback(() => {
-    loadClients();
-    loadRecurringSchedules();
-  }, []);
-
-  useEffect(() => {
-    loadClients();
-    loadRecurringSchedules();
-    loadConfig();
-  }, []);
-
-  // Real-time updates via SSE
-  useAdminEvents(
-    ['client:change', 'recurring:change', 'appointment:change'],
-    refreshAll,
-  );
-
-  async function loadClients() {
+  const loadClients = useCallback(async () => {
+    setLoading(true);
     try {
-      const data = await api.get('/clients');
+      const suffix = archiveView === 'active' ? '' : `?view=${archiveView}`;
+      const data = await api.get(`/clients${suffix}`);
       setClients(data);
     } catch (err) {
       console.error(err);
     } finally {
       setLoading(false);
     }
-  }
+  }, [archiveView]);
 
-  async function loadRecurringSchedules() {
+  const loadRecurringSchedules = useCallback(async () => {
     try {
       const data = await api.get('/recurring');
       setRecurringSchedules(Array.isArray(data) ? data : []);
     } catch (err) {
       console.error(err);
     }
-  }
+  }, []);
 
-  async function loadConfig() {
+  const loadConfig = useCallback(async () => {
     try {
       const cfg = await api.get('/config');
       if (cfg.custom_statuses) {
@@ -179,7 +166,31 @@ export default function Clients() {
     } catch (err) {
       console.error(err);
     }
-  }
+  }, []);
+
+  const refreshAll = useCallback(() => {
+    loadClients();
+    loadRecurringSchedules();
+  }, [loadClients, loadRecurringSchedules]);
+
+  useEffect(() => {
+    loadClients();
+  }, [loadClients]);
+
+  useEffect(() => {
+    loadRecurringSchedules();
+    loadConfig();
+  }, [loadRecurringSchedules, loadConfig]);
+
+  useEffect(() => {
+    setSelected(new Set());
+  }, [archiveView]);
+
+  // Real-time updates via SSE
+  useAdminEvents(
+    ['client:change', 'recurring:change', 'appointment:change'],
+    refreshAll,
+  );
 
   async function handleUpdate(id, field, value) {
     try {
@@ -191,11 +202,11 @@ export default function Clients() {
   }
 
   async function handleDelete(id) {
-    if (!confirm('Archivar este cliente? Conserva historial y podrá reactivarse si vuelve a agendar.')) return;
     try {
       await api.delete(`/clients/${id}`);
-      setClients(prev => prev.filter(c => c.id !== id));
       setSelected(prev => { const n = new Set(prev); n.delete(id); return n; });
+      await loadClients();
+      showToast('Cliente archivado');
     } catch (err) {
       showToast('Error: ' + err.message, 'error');
     }
@@ -203,13 +214,34 @@ export default function Clients() {
 
   async function handleBulkDelete() {
     if (selected.size === 0) return;
-    if (!confirm(`Archivar ${selected.size} cliente(s)?`)) return;
     try {
-      for (const id of selected) {
-        await api.delete(`/clients/${id}`);
-      }
-      setClients(prev => prev.filter(c => !selected.has(c.id)));
+      await Promise.all([...selected].map((id) => api.delete(`/clients/${id}`)));
       setSelected(new Set());
+      await loadClients();
+      showToast(`${selected.size} cliente(s) archivado(s)`);
+    } catch (err) {
+      showToast('Error: ' + err.message, 'error');
+    }
+  }
+
+  async function handleRestore(id) {
+    try {
+      await api.post(`/clients/${id}/restore`, {});
+      setSelected(prev => { const n = new Set(prev); n.delete(id); return n; });
+      await loadClients();
+      showToast('Cliente restaurado');
+    } catch (err) {
+      showToast('Error: ' + err.message, 'error');
+    }
+  }
+
+  async function handleBulkRestore() {
+    if (selected.size === 0) return;
+    try {
+      await Promise.all([...selected].map((id) => api.post(`/clients/${id}/restore`, {})));
+      setSelected(new Set());
+      await loadClients();
+      showToast(`${selected.size} cliente(s) restaurado(s)`);
     } catch (err) {
       showToast('Error: ' + err.message, 'error');
     }
@@ -269,7 +301,6 @@ export default function Clients() {
 
   async function handleRecurringQuickAction(client, schedule, action) {
     if (!schedule?.id) return;
-    if (action === 'end' && !confirm(`Quitar la recurrencia de ${client.first_name} ${client.last_name}?`)) return;
 
     setSavingRecurringClientId(client.id);
     try {
@@ -379,6 +410,27 @@ export default function Clients() {
           />
         </div>
 
+        <div className="inline-flex rounded-lg border border-gray-200 bg-white p-1">
+          {[
+            { value: 'active', label: 'Activos' },
+            { value: 'archived', label: 'Archivados' },
+            { value: 'all', label: 'Todos' },
+          ].map((option) => (
+            <button
+              key={option.value}
+              type="button"
+              onClick={() => setArchiveView(option.value)}
+              className={`rounded-md px-3 py-1.5 text-xs font-medium transition ${
+                archiveView === option.value
+                  ? 'bg-gray-900 text-white'
+                  : 'text-gray-500 hover:bg-gray-100'
+              }`}
+            >
+              {option.label}
+            </button>
+          ))}
+        </div>
+
         <button
           type="button"
           onClick={() => setShowCreate(true)}
@@ -388,16 +440,30 @@ export default function Clients() {
           Crear cliente
         </button>
 
-        {selected.size > 0 && (
-          <button
-            type="button"
-            onClick={handleBulkDelete}
-            className="flex items-center gap-1.5 px-3 py-2 bg-red-600 text-white rounded-lg text-sm font-medium hover:bg-red-700"
+        {selected.size > 0 && archiveView === 'active' ? (
+          <InlineConfirmButton
+            onConfirm={handleBulkDelete}
+            confirmLabel={`Archivar ${selected.size}`}
+            cancelLabel="Cancelar"
+            wrapperClassName="flex items-center gap-2"
+            idleClassName="flex items-center gap-1.5 px-3 py-2 bg-red-600 text-white rounded-lg text-sm font-medium hover:bg-red-700"
+            confirmClassName="inline-flex items-center gap-1.5 rounded-lg bg-red-700 px-3 py-2 text-sm font-medium text-white hover:bg-red-800"
+            cancelClassName="inline-flex items-center gap-1 rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm font-medium text-gray-600 hover:bg-gray-50"
           >
             <Trash2 size={16} />
             Archivar ({selected.size})
+          </InlineConfirmButton>
+        ) : null}
+
+        {selected.size > 0 && archiveView === 'archived' ? (
+          <button
+            type="button"
+            onClick={handleBulkRestore}
+            className="flex items-center gap-1.5 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm font-medium text-emerald-700 hover:bg-emerald-100"
+          >
+            Restaurar ({selected.size})
           </button>
-        )}
+        ) : null}
 
         <span className="text-xs text-gray-400 ml-auto">{filtered.length} cliente{filtered.length !== 1 ? 's' : ''}</span>
       </div>
@@ -437,6 +503,7 @@ export default function Clients() {
               {filtered.map(client => {
                 const recurringSchedule = recurringByClient.get(client.id) || null;
                 const recurringMeta = getRecurringFieldMeta(recurringSchedule);
+                const isArchived = Boolean(client.deleted_at);
                 return (
                 <tr key={client.id} className="border-b border-gray-50 hover:bg-gray-50">
                   <td className="p-3">
@@ -463,68 +530,87 @@ export default function Clients() {
                   <td className="p-3 text-gray-500 text-xs">{(client.timezone || 'America/La_Paz').replace('America/', '')}</td>
                   <td className="p-3">
                     <div className="space-y-1">
-                      <div className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-semibold ${recurringMeta.className}`}>
-                        {recurringMeta.label}
+                      <div className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-semibold ${isArchived ? 'border-gray-200 bg-gray-100 text-gray-500' : recurringMeta.className}`}>
+                        {isArchived ? 'Archivado' : recurringMeta.label}
                       </div>
-                      {recurringMeta.detail ? (
-                        <div className="inline-flex items-center gap-1 text-[11px] font-medium text-gray-500">
-                          <Repeat size={11} className="text-gray-400" />
-                          <span>{recurringMeta.detail}</span>
+                      {isArchived ? (
+                        <div className="text-[11px] font-medium text-gray-400">
+                          Archivado{client.deleted_at ? ` el ${new Date(client.deleted_at).toLocaleDateString('es-BO')}` : ''}
                         </div>
-                      ) : null}
-                      <button
-                        type="button"
-                        onClick={() => openRecurringModal(client, recurringSchedule)}
-                        disabled={loadingRecurringModal || savingRecurringClientId === client.id}
-                        className="inline-flex rounded-lg border border-gray-200 px-2.5 py-1 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-60"
-                      >
-                        {recurringSchedule && !recurringSchedule.ended_at ? 'Editar recurrencia' : 'Poner en recurrencia'}
-                      </button>
-                      {recurringSchedule && !recurringSchedule.ended_at ? (
-                        <div className="flex flex-wrap gap-2">
-                          {!recurringSchedule.paused_at ? (
-                            <button
-                              type="button"
-                              onClick={() => handleRecurringQuickAction(client, recurringSchedule, 'pause')}
-                              disabled={savingRecurringClientId === client.id}
-                              className="rounded-lg border border-amber-200 px-2.5 py-1 text-xs font-medium text-amber-700 hover:bg-amber-50 disabled:opacity-60"
-                            >
-                              Pausar
-                            </button>
-                          ) : (
-                            <button
-                              type="button"
-                              onClick={() => handleRecurringQuickAction(client, recurringSchedule, 'resume')}
-                              disabled={savingRecurringClientId === client.id}
-                              className="rounded-lg border border-emerald-200 px-2.5 py-1 text-xs font-medium text-emerald-700 hover:bg-emerald-50 disabled:opacity-60"
-                            >
-                              Reactivar
-                            </button>
-                          )}
+                      ) : (
+                        <>
+                          {recurringMeta.detail ? (
+                            <div className="inline-flex items-center gap-1 text-[11px] font-medium text-gray-500">
+                              <Repeat size={11} className="text-gray-400" />
+                              <span>{recurringMeta.detail}</span>
+                            </div>
+                          ) : null}
                           <button
                             type="button"
-                            onClick={() => handleRecurringQuickAction(client, recurringSchedule, 'end')}
-                            disabled={savingRecurringClientId === client.id}
-                            className="rounded-lg border border-rose-200 px-2.5 py-1 text-xs font-medium text-rose-700 hover:bg-rose-50 disabled:opacity-60"
+                            onClick={() => openRecurringModal(client, recurringSchedule)}
+                            disabled={loadingRecurringModal || savingRecurringClientId === client.id}
+                            className="inline-flex rounded-lg border border-gray-200 px-2.5 py-1 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-60"
                           >
-                            Quitar
+                            {recurringSchedule && !recurringSchedule.ended_at ? 'Editar recurrencia' : 'Poner en recurrencia'}
                           </button>
-                        </div>
-                      ) : null}
+                          {recurringSchedule && !recurringSchedule.ended_at ? (
+                            <div className="flex flex-wrap gap-2">
+                              {!recurringSchedule.paused_at ? (
+                                <button
+                                  type="button"
+                                  onClick={() => handleRecurringQuickAction(client, recurringSchedule, 'pause')}
+                                  disabled={savingRecurringClientId === client.id}
+                                  className="rounded-lg border border-amber-200 px-2.5 py-1 text-xs font-medium text-amber-700 hover:bg-amber-50 disabled:opacity-60"
+                                >
+                                  Pausar
+                                </button>
+                              ) : (
+                                <button
+                                  type="button"
+                                  onClick={() => handleRecurringQuickAction(client, recurringSchedule, 'resume')}
+                                  disabled={savingRecurringClientId === client.id}
+                                  className="rounded-lg border border-emerald-200 px-2.5 py-1 text-xs font-medium text-emerald-700 hover:bg-emerald-50 disabled:opacity-60"
+                                >
+                                  Reactivar
+                                </button>
+                              )}
+                              <InlineConfirmButton
+                                onConfirm={() => handleRecurringQuickAction(client, recurringSchedule, 'end')}
+                                confirmLabel="Confirmar"
+                                cancelLabel="Cancelar"
+                                compactCancel
+                                wrapperClassName="flex items-center gap-2"
+                                idleClassName="rounded-lg border border-rose-200 px-2.5 py-1 text-xs font-medium text-rose-700 hover:bg-rose-50 disabled:opacity-60"
+                                confirmClassName="inline-flex items-center gap-1 rounded-lg border border-rose-200 bg-rose-50 px-2.5 py-1 text-xs font-medium text-rose-700 hover:bg-rose-100"
+                                cancelClassName="inline-flex items-center justify-center rounded-lg border border-gray-200 p-1 text-gray-500 hover:bg-gray-50"
+                                disabled={savingRecurringClientId === client.id}
+                              >
+                                Quitar
+                              </InlineConfirmButton>
+                            </div>
+                          ) : null}
+                        </>
+                      )}
                     </div>
                   </td>
                   <td className="p-3">
-                    <select
-                      value={client.status_override || client.calculated_status || ''}
-                      onChange={e => handleUpdate(client.id, 'status_override', e.target.value || null)}
-                      className="text-xs px-2 py-1 rounded-full font-medium border-0 cursor-pointer"
-                      style={statusStyle((statuses.find(s => s.name === (client.status_override || client.calculated_status))?.color) || '#9CA3AF')}
-                    >
-                      <option value="">Auto ({client.calculated_status})</option>
-                      {statuses.map(s => (
-                        <option key={s.name} value={s.name}>{s.name}</option>
-                      ))}
-                    </select>
+                    {isArchived ? (
+                      <span className="inline-flex rounded-full bg-gray-100 px-2.5 py-1 text-xs font-semibold text-gray-500">
+                        Archivado
+                      </span>
+                    ) : (
+                      <select
+                        value={client.status_override || client.calculated_status || ''}
+                        onChange={e => handleUpdate(client.id, 'status_override', e.target.value || null)}
+                        className="text-xs px-2 py-1 rounded-full font-medium border-0 cursor-pointer"
+                        style={statusStyle((statuses.find(s => s.name === (client.status_override || client.calculated_status))?.color) || '#9CA3AF')}
+                      >
+                        <option value="">Auto ({client.calculated_status})</option>
+                        {statuses.map(s => (
+                          <option key={s.name} value={s.name}>{s.name}</option>
+                        ))}
+                      </select>
+                    )}
                   </td>
                   <td className="p-3">
                     <div className="flex flex-col gap-1">
@@ -562,14 +648,30 @@ export default function Clients() {
                     </select>
                   </td>
                   <td className="p-3">
-                    <button
-                      type="button"
-                      onClick={() => handleDelete(client.id)}
-                      className="text-gray-300 hover:text-red-500 transition-colors"
-                      title="Archivar"
-                    >
-                      <Trash2 size={15} />
-                    </button>
+                    {isArchived ? (
+                      <button
+                        type="button"
+                        onClick={() => handleRestore(client.id)}
+                        className="text-xs font-medium text-emerald-700 hover:underline"
+                        title="Restaurar"
+                      >
+                        Restaurar
+                      </button>
+                    ) : (
+                      <InlineConfirmButton
+                        onConfirm={() => handleDelete(client.id)}
+                        confirmLabel="Archivar"
+                        cancelLabel="Cancelar"
+                        compactCancel
+                        wrapperClassName="flex items-center justify-end gap-1"
+                        idleClassName="text-gray-300 hover:text-red-500 transition-colors"
+                        confirmClassName="inline-flex items-center gap-1 rounded-lg border border-rose-200 bg-rose-50 px-2 py-1 text-xs font-medium text-rose-700 hover:bg-rose-100"
+                        cancelClassName="inline-flex items-center justify-center rounded-lg border border-gray-200 p-1 text-gray-500 hover:bg-gray-50"
+                        idleTitle="Archivar"
+                      >
+                        <Trash2 size={15} />
+                      </InlineConfirmButton>
+                    )}
                   </td>
                 </tr>
               )})}
@@ -1026,14 +1128,18 @@ function EditClientModal({ client, recurringSchedule, onClose, onSave, onRecurri
                     </button>
                   ) : null}
                   {currentSchedule && !currentSchedule.ended_at ? (
-                    <button
-                      type="button"
-                      onClick={() => handleRecurringAction('end')}
+                    <InlineConfirmButton
+                      onConfirm={() => handleRecurringAction('end')}
+                      confirmLabel="Finalizar"
+                      cancelLabel="Cancelar"
+                      compactCancel
+                      idleClassName="rounded-lg bg-gray-100 px-3 py-2 text-xs font-medium text-gray-700 hover:bg-gray-200 disabled:opacity-40"
+                      confirmClassName="inline-flex items-center gap-1 rounded-lg bg-rose-50 px-3 py-2 text-xs font-medium text-rose-700 hover:bg-rose-100"
+                      cancelClassName="inline-flex items-center justify-center rounded-lg border border-gray-200 p-2 text-gray-500 hover:bg-gray-50"
                       disabled={savingRecurring}
-                      className="rounded-lg bg-gray-100 px-3 py-2 text-xs font-medium text-gray-700 disabled:opacity-40"
                     >
                       Finalizar
-                    </button>
+                    </InlineConfirmButton>
                   ) : null}
                 </div>
               </div>

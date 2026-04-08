@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Trash2, Search, BellRing, RotateCcw, ArrowUpDown, Repeat } from 'lucide-react';
 import AdminLayout from '../../components/AdminLayout';
+import InlineConfirmButton from '../../components/InlineConfirmButton';
 import RecurringQuickModal from '../../components/RecurringQuickModal';
 import { api } from '../../utils/api';
 import { getRecurringSyncIssue, pickDefaultRecurringSource } from '../../utils/recurring';
@@ -245,7 +246,6 @@ export default function Appointments() {
   }
 
   async function handleDelete(id) {
-    if (!confirm('Eliminar esta cita permanentemente?')) return;
     try {
       await api.delete(`/appointments/${id}`);
       setAppointments(prev => prev.filter(a => a.id !== id));
@@ -293,11 +293,8 @@ export default function Appointments() {
 
   async function handleBulkDelete() {
     if (selected.size === 0) return;
-    if (!confirm(`Eliminar ${selected.size} cita(s) permanentemente?`)) return;
     try {
-      for (const id of selected) {
-        await api.delete(`/appointments/${id}`);
-      }
+      await Promise.all([...selected].map((id) => api.delete(`/appointments/${id}`)));
       setAppointments(prev => prev.filter(a => !selected.has(a.id)));
       setTotal(t => t - selected.size);
       setSelected(new Set());
@@ -324,7 +321,6 @@ export default function Appointments() {
 
   async function handleRecurringQuickAction(appt, schedule, action) {
     if (!schedule?.id) return;
-    if (action === 'end' && !confirm(`Quitar la recurrencia de ${appt.first_name} ${appt.last_name}?`)) return;
 
     setSavingRecurringClientId(appt.client_id);
     try {
@@ -456,14 +452,18 @@ export default function Appointments() {
         </div>
 
         {selected.size > 0 && (
-          <button
-            type="button"
-            onClick={handleBulkDelete}
-            className="flex items-center gap-1.5 px-3 py-2 bg-red-600 text-white rounded-lg text-sm font-medium hover:bg-red-700"
+          <InlineConfirmButton
+            onConfirm={handleBulkDelete}
+            confirmLabel={`Eliminar ${selected.size}`}
+            cancelLabel="Cancelar"
+            wrapperClassName="flex items-center gap-2"
+            idleClassName="flex items-center gap-1.5 rounded-lg bg-red-600 px-3 py-2 text-sm font-medium text-white hover:bg-red-700"
+            confirmClassName="inline-flex items-center gap-1.5 rounded-lg bg-red-700 px-3 py-2 text-sm font-medium text-white hover:bg-red-800"
+            cancelClassName="inline-flex items-center gap-1 rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm font-medium text-gray-600 hover:bg-gray-50"
           >
             <Trash2 size={16} />
             Eliminar ({selected.size})
-          </button>
+          </InlineConfirmButton>
         )}
 
         <span className="text-xs text-gray-400 ml-auto">{total} cita{total !== 1 ? 's' : ''}</span>
@@ -565,14 +565,19 @@ export default function Appointments() {
                                 Reactivar
                               </button>
                             )}
-                            <button
-                              type="button"
-                              onClick={() => handleRecurringQuickAction(appt, recurringSchedule, 'end')}
+                            <InlineConfirmButton
+                              onConfirm={() => handleRecurringQuickAction(appt, recurringSchedule, 'end')}
+                              confirmLabel="Confirmar"
+                              cancelLabel="Cancelar"
+                              compactCancel
+                              wrapperClassName="flex items-center gap-2"
+                              idleClassName="rounded-lg border border-rose-200 px-2.5 py-1 text-xs font-medium text-rose-700 hover:bg-rose-50 disabled:opacity-60"
+                              confirmClassName="inline-flex items-center gap-1 rounded-lg border border-rose-200 bg-rose-50 px-2.5 py-1 text-xs font-medium text-rose-700 hover:bg-rose-100"
+                              cancelClassName="inline-flex items-center justify-center rounded-lg border border-gray-200 p-1 text-gray-500 hover:bg-gray-50"
                               disabled={savingRecurringClientId === appt.client_id}
-                              className="rounded-lg border border-rose-200 px-2.5 py-1 text-xs font-medium text-rose-700 hover:bg-rose-50 disabled:opacity-60"
                             >
                               Quitar
-                            </button>
+                            </InlineConfirmButton>
                           </div>
                         ) : null}
                       </div>
@@ -639,14 +644,19 @@ export default function Appointments() {
                       )}
                     </td>
                     <td className="p-3 align-top">
-                      <button
-                        type="button"
-                        onClick={() => handleDelete(appt.id)}
-                        className="text-gray-300 hover:text-red-500 transition-colors"
-                        title="Eliminar"
+                      <InlineConfirmButton
+                        onConfirm={() => handleDelete(appt.id)}
+                        confirmLabel="Eliminar"
+                        cancelLabel="Cancelar"
+                        compactCancel
+                        wrapperClassName="flex items-center justify-end gap-1"
+                        idleClassName="text-gray-300 hover:text-red-500 transition-colors"
+                        confirmClassName="inline-flex items-center gap-1 rounded-lg border border-rose-200 bg-rose-50 px-2 py-1 text-xs font-medium text-rose-700 hover:bg-rose-100"
+                        cancelClassName="inline-flex items-center justify-center rounded-lg border border-gray-200 p-1 text-gray-500 hover:bg-gray-50"
+                        idleTitle="Eliminar"
                       >
                         <Trash2 size={15} />
-                      </button>
+                      </InlineConfirmButton>
                     </td>
                   </tr>
                 )})}

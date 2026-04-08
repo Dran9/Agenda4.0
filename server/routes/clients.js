@@ -11,6 +11,7 @@ const router = Router();
 
 // Helper: calculate client status based on rules from SPECS
 function calculateStatus(client, lastAppt, futureAppt, completedCount) {
+  if (client.deleted_at) return 'Archivado';
   if (client.status_override === 'Archivado') return 'Archivado';
   if (client.status_override) return client.status_override;
   if (client.has_active_recurring > 0) return 'Recurrente';
@@ -42,6 +43,13 @@ function sanitizePublicClientStatus(result) {
 // GET /api/clients — list all (admin)
 router.get('/', authMiddleware, async (req, res) => {
   try {
+    const view = String(req.query.view || 'active');
+    const deletedFilter = view === 'archived'
+      ? 'c.deleted_at IS NOT NULL'
+      : view === 'all'
+        ? '1=1'
+        : 'c.deleted_at IS NULL';
+
     const [clients] = await pool.query(
       `SELECT c.*,
         (SELECT COUNT(*) FROM appointments WHERE client_id = c.id AND tenant_id = ? AND status = 'Completada') as completed_sessions,
@@ -52,8 +60,11 @@ router.get('/', authMiddleware, async (req, res) => {
         (SELECT COUNT(*) FROM appointments WHERE client_id = c.id AND tenant_id = ? AND status = 'Reagendada') as reschedule_count,
         (SELECT COUNT(*) FROM recurring_schedules WHERE client_id = c.id AND tenant_id = ? AND ended_at IS NULL AND paused_at IS NULL) as has_active_recurring,
         (SELECT COUNT(*) FROM recurring_schedules WHERE client_id = c.id AND tenant_id = ? AND ended_at IS NULL AND paused_at IS NOT NULL) as has_paused_recurring
-       FROM clients c WHERE c.tenant_id = ? AND c.deleted_at IS NULL
-       ORDER BY c.created_at DESC`,
+       FROM clients c
+       WHERE c.tenant_id = ? AND ${deletedFilter}
+       ORDER BY
+         CASE WHEN c.deleted_at IS NULL THEN 0 ELSE 1 END,
+         COALESCE(c.deleted_at, c.created_at) DESC`,
       [req.tenantId, req.tenantId, req.tenantId, req.tenantId, req.tenantId, req.tenantId, req.tenantId, req.tenantId, req.tenantId]
     );
 
@@ -90,11 +101,36 @@ router.get('/', authMiddleware, async (req, res) => {
   }
 });
 
+// POST /api/clients/:id/restore — restore archived client (admin)
+router.post('/:id/restore', authMiddleware, async (req, res) => {
+  try {
+    const [clientRows] = await pool.query(
+      'SELECT id FROM clients WHERE id = ? AND tenant_id = ? AND deleted_at IS NOT NULL',
+      [req.params.id, req.tenantId]
+    );
+    if (clientRows.length === 0) {
+      return res.status(404).json({ error: 'Cliente archivado no encontrado' });
+    }
+
+    await pool.query(
+      'UPDATE clients SET deleted_at = NULL WHERE id = ? AND tenant_id = ?',
+      [req.params.id, req.tenantId]
+    );
+    broadcast('client:change', { id: Number(req.params.id), action: 'restored' }, req.tenantId);
+    res.json({ success: true, restored: true });
+  } catch (err) {
+    sendServerError(res, req, err, {
+      message: 'No se pudo restaurar el cliente',
+      logLabel: 'clients restore',
+    });
+  }
+});
+
 // GET /api/clients/:id — single client detail (admin)
 router.get('/:id', authMiddleware, async (req, res) => {
   try {
     const [clients] = await pool.query(
-      'SELECT * FROM clients WHERE id = ? AND tenant_id = ? AND deleted_at IS NULL',
+      'SELECT * FROM clients WHERE id = ? AND tenant_id = ?',
       [req.params.id, req.tenantId]
     );
     if (clients.length === 0) return res.status(404).json({ error: 'Cliente no encontrado' });

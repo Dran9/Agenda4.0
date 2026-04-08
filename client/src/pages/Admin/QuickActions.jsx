@@ -20,7 +20,7 @@ import { api } from '../../utils/api';
 import { getRecurringSyncIssue } from '../../utils/recurring';
 import { useToast, Toast } from '../../hooks/useToast';
 import useAdminEvents from '../../hooks/useAdminEvents';
-import { formatWeekdayShort, formatTimeBolivia, formatDateBolivia } from '../../utils/dates';
+import { formatWeekdayShort, formatTimeBolivia, formatDateBolivia, formatRelativeDay } from '../../utils/dates';
 
 // ─── Constants ────────────────────────────────────────────────────
 
@@ -63,23 +63,32 @@ export default function QuickActions() {
   // Config quick settings
   const [config, setConfig] = useState(null);
 
+  // Upcoming clients
+  const [upcoming, setUpcoming] = useState([]);
+  const [upcomingLoading, setUpcomingLoading] = useState(true);
+
   const searchRef = useRef(null);
   const debounceRef = useRef(null);
   const { toast, show: showToast } = useToast();
 
-  // Focus search on mount
+  // Focus search on mount + load upcoming
   useEffect(() => {
     searchRef.current?.focus();
     api.get('/config').then(setConfig).catch(() => {});
+    api.get('/quick-actions/upcoming')
+      .then(setUpcoming)
+      .catch(() => {})
+      .finally(() => setUpcomingLoading(false));
   }, []);
 
-  // Real-time updates via SSE — refresh search results if query is active
+  // Real-time updates via SSE — refresh search results and upcoming
   const refreshSearch = useCallback(() => {
     if (query.trim().length >= 2) {
       api.get(`/quick-actions/clients?q=${encodeURIComponent(query.trim())}`)
         .then(setResults)
         .catch(() => {});
     }
+    api.get('/quick-actions/upcoming').then(setUpcoming).catch(() => {});
   }, [query]);
   useAdminEvents(
     ['appointment:change', 'recurring:change', 'client:change', 'payment:change'],
@@ -660,8 +669,53 @@ export default function QuickActions() {
           )}
         </div>
 
-        {/* Empty state */}
-        {!selectedClient && !query && (
+        {/* Upcoming clients */}
+        {!selectedClient && !query && upcoming.length > 0 && (
+          <div>
+            <div className="mb-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400 px-1">
+              Próximas citas
+            </div>
+            <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+              {upcoming.map((client) => (
+                <button
+                  key={client.id}
+                  type="button"
+                  onClick={() => selectClient(client)}
+                  className="flex w-full items-center gap-3 border-b border-slate-100 px-4 py-3.5 text-left transition last:border-0 hover:bg-slate-50 active:bg-slate-100"
+                >
+                  <div className="flex h-10 w-10 flex-none items-center justify-center rounded-xl bg-slate-100 text-sm font-semibold text-slate-600">
+                    {client.first_name?.[0]}{client.last_name?.[0]}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="text-[15px] font-semibold text-slate-900">
+                      {client.first_name} {client.last_name}
+                    </div>
+                    <div className="mt-0.5 flex flex-wrap items-center gap-2 text-xs text-slate-500">
+                      <span>Bs {client.fee}</span>
+                      {client.has_recurring > 0 && (
+                        <span className="inline-flex items-center gap-1 rounded-full bg-blue-50 px-2 py-0.5 text-blue-700">
+                          <Repeat size={10} />
+                          {formatWeekdayShort(client.recurring_day)} {client.recurring_time}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                  <div className="flex-none text-right">
+                    <div className="text-xs font-semibold text-emerald-700">
+                      {formatRelativeDay(client.next_appointment)}
+                    </div>
+                    <div className="text-sm font-medium text-slate-900">
+                      {formatTimeBolivia(client.next_appointment)}
+                    </div>
+                  </div>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Empty state — only when no upcoming either */}
+        {!selectedClient && !query && upcoming.length === 0 && !upcomingLoading && (
           <div className="py-8 text-center">
             <div className="mx-auto mb-3 flex h-16 w-16 items-center justify-center rounded-2xl bg-slate-100">
               <Search size={24} className="text-slate-400" />

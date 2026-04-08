@@ -43,6 +43,23 @@ export function formatDateTimeBolivia(dateStr) {
   return `${formatDateBolivia(dateStr)} a las ${formatTimeBolivia(dateStr)}`;
 }
 
+export function formatRelativeDay(dateStr) {
+  const todayKey = getBoliviaDateKey(new Date());
+  const tomorrow = new Date();
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  const tomorrowKey = getBoliviaDateKey(tomorrow);
+  const targetKey = getBoliviaDateKey(new Date(dateStr));
+
+  if (targetKey === todayKey) return 'Hoy';
+  if (targetKey === tomorrowKey) return 'Mañana';
+  return new Date(dateStr).toLocaleDateString('es-BO', {
+    weekday: 'short',
+    day: 'numeric',
+    month: 'short',
+    timeZone: 'America/La_Paz',
+  });
+}
+
 export function formatRelativeTime(dateStr) {
   const now = new Date();
   const date = new Date(dateStr);

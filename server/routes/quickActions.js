@@ -110,6 +110,58 @@ router.get('/clients', authMiddleware, async (req, res) => {
   }
 });
 
+// ─── GET /api/quick-actions/upcoming — 4 clients with nearest appointments ──
+router.get('/upcoming', authMiddleware, async (req, res) => {
+  try {
+    const t = req.tenantId;
+    const [rows] = await pool.query(
+      `SELECT c.id, c.first_name, c.last_name, c.phone, c.fee, c.frequency, c.city,
+        a.date_time as next_appointment,
+        a.id as next_appointment_id,
+        (SELECT a3.id FROM appointments a3
+         WHERE a3.client_id = c.id AND a3.tenant_id = ?
+           AND a3.status = 'Completada'
+         ORDER BY a3.date_time DESC LIMIT 1) as last_completed_id,
+        (SELECT a3.date_time FROM appointments a3
+         WHERE a3.client_id = c.id AND a3.tenant_id = ?
+           AND a3.status = 'Completada'
+         ORDER BY a3.date_time DESC LIMIT 1) as last_completed_date,
+        (SELECT COUNT(*) FROM recurring_schedules rs
+         WHERE rs.client_id = c.id AND rs.tenant_id = ?
+           AND rs.ended_at IS NULL AND rs.paused_at IS NULL) as has_recurring,
+        (SELECT COUNT(*) FROM recurring_schedules rs
+         WHERE rs.client_id = c.id AND rs.tenant_id = ?
+           AND rs.ended_at IS NULL AND rs.paused_at IS NOT NULL) as has_paused_recurring,
+        (SELECT rs2.day_of_week FROM recurring_schedules rs2
+         WHERE rs2.client_id = c.id AND rs2.tenant_id = ?
+           AND rs2.ended_at IS NULL
+         ORDER BY CASE WHEN rs2.paused_at IS NULL THEN 0 ELSE 1 END
+         LIMIT 1) as recurring_day,
+        (SELECT rs2.time FROM recurring_schedules rs2
+         WHERE rs2.client_id = c.id AND rs2.tenant_id = ?
+           AND rs2.ended_at IS NULL
+         ORDER BY CASE WHEN rs2.paused_at IS NULL THEN 0 ELSE 1 END
+         LIMIT 1) as recurring_time,
+        (SELECT COUNT(*) FROM appointments WHERE client_id = c.id AND tenant_id = ? AND status = 'Completada') as completed_sessions
+       FROM appointments a
+       JOIN clients c ON c.id = a.client_id AND c.tenant_id = a.tenant_id
+       WHERE a.tenant_id = ?
+         AND a.status IN ('Agendada','Confirmada','Reagendada')
+         AND a.date_time > NOW()
+         AND c.deleted_at IS NULL
+       ORDER BY a.date_time ASC
+       LIMIT 4`,
+      [t, t, t, t, t, t, t, t]
+    );
+    res.json(rows);
+  } catch (err) {
+    sendServerError(res, req, err, {
+      message: 'No se pudieron obtener las citas próximas',
+      logLabel: 'quick-actions upcoming',
+    });
+  }
+});
+
 // ─── GET /api/quick-actions/clients/:id — single client refresh ──
 router.get('/clients/:id', authMiddleware, async (req, res) => {
   try {

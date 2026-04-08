@@ -4,7 +4,7 @@ import { LayoutDashboard, Users, CalendarDays, BarChart3, Settings, MessageSquar
 
 const NAV_ITEMS = [
   { path: '/admin/quick-actions', label: 'Comandos', icon: Command },
-  { path: '/admin', label: 'Hoy', icon: LayoutDashboard },
+  { path: '/admin/dashboard', label: 'Hoy', icon: LayoutDashboard },
   { path: '/admin/appointments', label: 'Agenda', icon: CalendarDays },
   { path: '/admin/clients', label: 'Clientes', icon: Users },
   { path: '/admin/whatsapp', label: 'Inbox', icon: MessageSquare },
@@ -106,11 +106,15 @@ export default function AdminLayout({ children, title, sidebarSubItems = [] }) {
 
       {/* Main content */}
       <div className="flex-1 min-w-0">
-        <header className="bg-white/95 backdrop-blur-xl border-b border-slate-200 px-4 py-4 flex items-center gap-3 lg:px-6">
+        <header
+          className="sticky top-0 z-10 bg-white/95 backdrop-blur-xl border-b border-slate-200 px-4 py-4 flex items-center gap-3 lg:px-6"
+          style={{ paddingTop: 'calc(env(safe-area-inset-top, 0px) + 1rem)' }}
+        >
           <button
             type="button"
             onClick={() => setSidebarOpen(true)}
-            className="lg:hidden p-1"
+            className="lg:hidden inline-flex h-11 w-11 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-900 shadow-sm"
+            aria-label="Abrir menú"
           >
             <Menu size={20} />
           </button>

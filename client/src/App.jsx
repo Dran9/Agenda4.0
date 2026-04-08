@@ -23,6 +23,11 @@ function AdminFallback() {
   );
 }
 
+function AdminEntryRedirect() {
+  const token = typeof window !== 'undefined' ? window.localStorage.getItem('auth_token') : null;
+  return <Navigate to={token ? '/admin/quick-actions' : '/admin/login'} replace />;
+}
+
 export default function App() {
   return (
     <BrowserRouter>
@@ -39,6 +44,9 @@ export default function App() {
 
         {/* Admin routes */}
         <Route path="/admin" element={
+          <AdminEntryRedirect />
+        } />
+        <Route path="/admin/dashboard" element={
           <Suspense fallback={<AdminFallback />}>
             <AdminDashboard />
           </Suspense>

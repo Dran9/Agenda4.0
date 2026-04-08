@@ -239,6 +239,12 @@ body[data-ui-theme='dark'] {
   outline: none;
 }
 
+.admin-shell.theme-dark .copy-schedule-popover {
+  background: #141c24;
+  border-color: rgba(255, 255, 255, 0.12);
+  box-shadow: 0 30px 80px rgba(0, 0, 0, 0.5);
+}
+
 .admin-shell.theme-dark .shadow-sm,
 .admin-shell.theme-dark .shadow-lg,
 .admin-shell.theme-dark [class*='shadow-[0_8px_30px'],

@@ -512,7 +512,9 @@ export default function Config() {
                 return (
                   <div
                     key={day.key}
-                    className={`rounded-[24px] border transition-all ${
+                    className={`rounded-[24px] border transition-all relative ${
+                      copyPopoverDay === day.key ? 'z-40' : 'z-0'
+                    } ${
                       dayAvail.enabled
                         ? 'border-[#CFE8E9] bg-white shadow-[0_10px_24px_rgba(15,23,42,0.04)]'
                         : 'border-slate-200 bg-slate-50/60'
@@ -609,7 +611,7 @@ export default function Config() {
                           {copyPopoverDay === day.key && dayAvail.enabled && (
                             <div
                               data-copy-popover
-                              className="absolute right-0 top-[calc(100%+12px)] z-20 w-[320px] rounded-[28px] border border-slate-200 bg-white p-5 shadow-[0_30px_80px_rgba(15,23,42,0.16)]"
+                              className="copy-schedule-popover absolute right-0 top-[calc(100%+12px)] z-50 w-[320px] rounded-[28px] border border-slate-200 bg-white p-5 shadow-[0_30px_80px_rgba(15,23,42,0.16)]"
                             >
                               <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-400 mb-2">Copiar horarios a</div>
                               <label className="flex items-center gap-3 py-2 text-base text-slate-700">

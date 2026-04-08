@@ -191,7 +191,7 @@ export default function Clients() {
   }
 
   async function handleDelete(id) {
-    if (!confirm('Eliminar este cliente? (soft delete)')) return;
+    if (!confirm('Archivar este cliente? Conserva historial y podrá reactivarse si vuelve a agendar.')) return;
     try {
       await api.delete(`/clients/${id}`);
       setClients(prev => prev.filter(c => c.id !== id));
@@ -203,7 +203,7 @@ export default function Clients() {
 
   async function handleBulkDelete() {
     if (selected.size === 0) return;
-    if (!confirm(`Eliminar ${selected.size} cliente(s)?`)) return;
+    if (!confirm(`Archivar ${selected.size} cliente(s)?`)) return;
     try {
       for (const id of selected) {
         await api.delete(`/clients/${id}`);
@@ -395,7 +395,7 @@ export default function Clients() {
             className="flex items-center gap-1.5 px-3 py-2 bg-red-600 text-white rounded-lg text-sm font-medium hover:bg-red-700"
           >
             <Trash2 size={16} />
-            Eliminar ({selected.size})
+            Archivar ({selected.size})
           </button>
         )}
 
@@ -566,7 +566,7 @@ export default function Clients() {
                       type="button"
                       onClick={() => handleDelete(client.id)}
                       className="text-gray-300 hover:text-red-500 transition-colors"
-                      title="Eliminar"
+                      title="Archivar"
                     >
                       <Trash2 size={15} />
                     </button>

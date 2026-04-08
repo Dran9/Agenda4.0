@@ -1,7 +1,7 @@
 const { Router } = require('express');
 const { pool, withTransaction } = require('../db');
 const { authMiddleware } = require('../middleware/auth');
-const { sendRescheduleTemplate, sendTextMessage, sendConfirmationTemplate } = require('../services/whatsapp');
+const { sendRescheduleTemplate, sendConfirmationTemplate } = require('../services/whatsapp');
 const { sendServerError } = require('../utils/httpErrors');
 const { normalizePhone } = require('../utils/phone');
 const { syncSlotClaimsForStatusTransition } = require('../services/appointmentSlotClaims');
@@ -258,7 +258,7 @@ router.post('/send-reschedule-link', authMiddleware, async (req, res) => {
 // ─── POST /api/quick-actions/cancel ─────────────────────────────
 router.post('/cancel', authMiddleware, async (req, res) => {
   try {
-    const { client_id, end_recurring = false, send_whatsapp = false } = req.body;
+    const { client_id, end_recurring = false } = req.body;
     if (!client_id) return res.status(400).json({ error: 'client_id requerido' });
 
     const appt = await getNextAppointment(client_id, req.tenantId);
@@ -280,6 +280,10 @@ router.post('/cancel', authMiddleware, async (req, res) => {
           const { deleteEvent } = require('../services/calendar');
           const calendarId = process.env.CALENDAR_ID || 'danielmacleann@gmail.com';
           await deleteEvent(calendarId, appt.gcal_event_id);
+          await pool.query(
+            'UPDATE appointments SET gcal_event_id = NULL WHERE id = ? AND tenant_id = ?',
+            [appt.id, req.tenantId]
+          );
         } catch (gcalErr) {
           if (![404, 410].includes(gcalErr.code)) {
             console.error('[quick-actions] GCal delete failed:', gcalErr.message);
@@ -296,18 +300,6 @@ router.post('/cancel', authMiddleware, async (req, res) => {
       if (schedule) {
         await endRecurringSchedule(req.tenantId, schedule.id);
         actions.push({ type: 'recurring_ended', schedule_id: schedule.id });
-      }
-    }
-
-    // Send WhatsApp notification
-    if (send_whatsapp && appt) {
-      try {
-        const nombre = appt.first_name.split(' ')[0];
-        const text = `Hola ${nombre}, tu cita ha sido cancelada. Si necesitas reagendar, no dudes en escribirme.`;
-        const result = await sendTextMessage(normalizePhone(appt.phone), text);
-        actions.push({ type: 'whatsapp_sent', message_id: result.messages?.[0]?.id });
-      } catch (waErr) {
-        actions.push({ type: 'whatsapp_failed', error: waErr.message });
       }
     }
 
@@ -332,7 +324,7 @@ router.post('/cancel', authMiddleware, async (req, res) => {
 // ─── POST /api/quick-actions/noshow ─────────────────────────────
 router.post('/noshow', authMiddleware, async (req, res) => {
   try {
-    const { client_id, send_whatsapp = false } = req.body;
+    const { client_id } = req.body;
     if (!client_id) return res.status(400).json({ error: 'client_id requerido' });
 
     // Find today's or most recent upcoming appointment
@@ -365,17 +357,6 @@ router.post('/noshow', authMiddleware, async (req, res) => {
     });
 
     const actions = [{ type: 'marked_noshow', appointment_id: appt.id }];
-
-    if (send_whatsapp) {
-      try {
-        const nombre = appt.first_name.split(' ')[0];
-        const text = `Hola ${nombre}, no pudimos verte hoy. Si quieres reagendar tu cita, escríbeme y coordinamos.`;
-        const result = await sendTextMessage(normalizePhone(appt.phone), text);
-        actions.push({ type: 'whatsapp_sent', message_id: result.messages?.[0]?.id });
-      } catch (waErr) {
-        actions.push({ type: 'whatsapp_failed', error: waErr.message });
-      }
-    }
 
     await pool.query(
       `INSERT INTO webhooks_log (tenant_id, event, type, payload, status, client_id, appointment_id)

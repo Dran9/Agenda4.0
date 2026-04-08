@@ -26,7 +26,7 @@ import { formatWeekdayShort, formatTimeBolivia, formatDateBolivia, formatRelativ
 
 const ACTIONS = [
   { id: 'reschedule', label: 'Reagendar', icon: CalendarClock, color: 'bg-blue-600', desc: 'Envía link de reagendamiento por WhatsApp' },
-  { id: 'cancel', label: 'Cancelar', icon: CalendarX2, color: 'bg-red-600', desc: 'Cancela la próxima cita' },
+  { id: 'cancel', label: 'Cancelar', icon: CalendarX2, color: 'bg-red-600', desc: 'Cancela la próxima cita y libera el horario' },
   { id: 'noshow', label: 'No-show', icon: UserX, color: 'bg-slate-600', desc: 'Marca como inasistencia' },
   { id: 'reminder', label: 'Recordar cita', icon: BellRing, color: 'bg-emerald-600', desc: 'Fuerza envío del recordatorio de cita' },
   { id: 'payment-reminder', label: 'Recordar cobro', icon: CreditCard, color: 'bg-teal-600', desc: 'Envía el template de cobro pendiente' },
@@ -51,10 +51,6 @@ export default function QuickActions() {
 
   // Cancel options
   const [cancelEndRecurring, setCancelEndRecurring] = useState(false);
-  const [cancelSendWA, setCancelSendWA] = useState(true);
-
-  // No-show options
-  const [noshowSendWA, setNoshowSendWA] = useState(false);
 
   // Recurring modal
   const [recurringModalOpen, setRecurringModalOpen] = useState(false);
@@ -131,8 +127,6 @@ export default function QuickActions() {
     setActionResult(null);
     setFeeValue(String(client.fee || 250));
     setCancelEndRecurring(client.has_recurring > 0);
-    setCancelSendWA(true);
-    setNoshowSendWA(false);
   }
 
   function clearClient() {
@@ -170,16 +164,12 @@ export default function QuickActions() {
           result = await api.post('/quick-actions/cancel', {
             client_id: clientId,
             end_recurring: cancelEndRecurring,
-            send_whatsapp: cancelSendWA,
           });
           const parts = [];
           if (result.had_appointment) parts.push('Cita cancelada');
           else parts.push('No tenía cita próxima');
           if (cancelEndRecurring && result.actions?.some((a) => a.type === 'recurring_ended')) {
             parts.push('recurrencia finalizada');
-          }
-          if (result.actions?.some((a) => a.type === 'whatsapp_sent')) {
-            parts.push('WhatsApp enviado');
           }
           setActionResult({
             success: true,
@@ -192,14 +182,8 @@ export default function QuickActions() {
         }
 
         case 'noshow': {
-          result = await api.post('/quick-actions/noshow', {
-            client_id: clientId,
-            send_whatsapp: noshowSendWA,
-          });
+          result = await api.post('/quick-actions/noshow', { client_id: clientId });
           const parts = ['Marcada como no-show'];
-          if (result.actions?.some((a) => a.type === 'whatsapp_sent')) {
-            parts.push('WhatsApp enviado');
-          }
           setActionResult({
             success: true,
             title: 'No-show registrado',
@@ -575,10 +559,6 @@ export default function QuickActions() {
                   setFeeValue={setFeeValue}
                   cancelEndRecurring={cancelEndRecurring}
                   setCancelEndRecurring={setCancelEndRecurring}
-                  cancelSendWA={cancelSendWA}
-                  setCancelSendWA={setCancelSendWA}
-                  noshowSendWA={noshowSendWA}
-                  setNoshowSendWA={setNoshowSendWA}
                   onExecute={executeAction}
                   onRecurringActivate={() => setRecurringModalOpen(true)}
                   onRecurringPause={handleRecurringPause}
@@ -760,10 +740,6 @@ function ActionPanel({
   setFeeValue,
   cancelEndRecurring,
   setCancelEndRecurring,
-  cancelSendWA,
-  setCancelSendWA,
-  noshowSendWA,
-  setNoshowSendWA,
   onExecute,
   onRecurringActivate,
   onRecurringPause,
@@ -889,16 +865,6 @@ function ActionPanel({
           </label>
         )}
 
-        <label className="flex items-center gap-2.5">
-          <input
-            type="checkbox"
-            checked={cancelSendWA}
-            onChange={(e) => setCancelSendWA(e.target.checked)}
-            className="h-4 w-4 rounded border-slate-300"
-          />
-          <span className="text-sm text-slate-700">Avisar al cliente por WhatsApp</span>
-        </label>
-
         <button
           type="button"
           onClick={() => onExecute('cancel')}
@@ -916,16 +882,6 @@ function ActionPanel({
     return (
       <div className="space-y-3">
         <p className="text-sm text-slate-600">{action.desc}</p>
-
-        <label className="flex items-center gap-2.5">
-          <input
-            type="checkbox"
-            checked={noshowSendWA}
-            onChange={(e) => setNoshowSendWA(e.target.checked)}
-            className="h-4 w-4 rounded border-slate-300"
-          />
-          <span className="text-sm text-slate-700">Avisar al cliente por WhatsApp</span>
-        </label>
 
         <button
           type="button"

@@ -149,11 +149,19 @@ router.put('/:id/status', authMiddleware, async (req, res) => {
         }
       }
 
-      return { notFound: false };
+      return { notFound: false, gcalEventId: appointment.gcal_event_id || null };
     });
 
     if (result.notFound) {
       return res.status(404).json({ error: 'Cita no encontrada' });
+    }
+
+    if (status === 'Cancelada' && result.gcalEventId) {
+      await deleteCalendarEventIfPresent(result.gcalEventId);
+      await pool.query(
+        'UPDATE appointments SET gcal_event_id = NULL WHERE id = ? AND tenant_id = ?',
+        [req.params.id, req.tenantId]
+      );
     }
 
     broadcast('appointment:change', { id: Number(req.params.id), action: 'status', status }, req.tenantId);

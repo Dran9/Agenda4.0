@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../../utils/api';
 
@@ -8,6 +8,13 @@ export default function Login() {
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
 
+  useEffect(() => {
+    const token = localStorage.getItem('auth_token');
+    if (token) {
+      navigate('/admin/quick-actions', { replace: true });
+    }
+  }, [navigate]);
+
   async function handleSubmit(e) {
     e.preventDefault();
     setLoading(true);
@@ -15,7 +22,7 @@ export default function Login() {
     try {
       const data = await api.post('/auth/login', { password });
       localStorage.setItem('auth_token', data.token);
-      navigate('/admin');
+      navigate('/admin/quick-actions', { replace: true });
     } catch (err) {
       setError(err.message);
     } finally {

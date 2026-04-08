@@ -1,25 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import {
-  ArrowLeft,
   LoaderCircle,
   Mic,
   MicOff,
-  Send,
   Volume2,
   VolumeX,
-  Waves,
 } from 'lucide-react';
 import { api } from '../utils/api';
-
-const SUGGESTIONS = [
-  'pagos pendientes',
-  'manda recordatorios para mañana',
-  'qué citas tengo hoy',
-  'quiénes no han confirmado mañana',
-  'activar recordatorios',
-  'el jueves solo voy a trabajar de 8 a 12 en la mañana, en la tarde nada',
-];
 
 function formatHistoryDate(value) {
   if (!value) return '';
@@ -43,7 +31,6 @@ function pickSpanishVoice(voices = []) {
 
 export default function VoiceAssistant() {
   const navigate = useNavigate();
-  const [draft, setDraft] = useState('');
   const [history, setHistory] = useState([]);
   const [result, setResult] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -89,6 +76,8 @@ export default function VoiceAssistant() {
         window.speechSynthesis.removeEventListener('voiceschanged', updateVoices);
       };
     }
+
+    return undefined;
   }, [navigate]);
 
   useEffect(() => {
@@ -115,9 +104,9 @@ export default function VoiceAssistant() {
   const lastResponse = result?.reply_text || '';
   const statusTone = useMemo(() => {
     const status = result?.status;
-    if (status === 'resolved') return 'text-emerald-800 bg-emerald-100 border-emerald-200';
-    if (status === 'clarification') return 'text-amber-900 bg-amber-100 border-amber-200';
-    return 'text-slate-800 bg-slate-100 border-slate-200';
+    if (status === 'resolved') return 'text-emerald-900 bg-emerald-100 border-emerald-200';
+    if (status === 'clarification') return 'text-amber-950 bg-amber-100 border-amber-200';
+    return 'text-slate-900 bg-slate-100 border-slate-300';
   }, [result?.status]);
 
   async function loadHistory() {
@@ -223,25 +212,6 @@ export default function VoiceAssistant() {
     }
   }, [voiceEnabled]);
 
-  async function sendTextCommand(text) {
-    const trimmed = String(text || '').trim();
-    if (!trimmed || !authReady) return;
-
-    try {
-      setLoading(true);
-      setError('');
-      const response = await api.post('/voice/admin-command', { text: trimmed });
-      setResult(response);
-      setDraft('');
-      void speak(response.spoken_text || response.reply_text);
-      await loadHistory();
-    } catch (err) {
-      setError(err.message);
-    } finally {
-      setLoading(false);
-    }
-  }
-
   function stopTracks() {
     if (mediaStreamRef.current) {
       mediaStreamRef.current.getTracks().forEach((track) => track.stop());
@@ -272,7 +242,6 @@ export default function VoiceAssistant() {
           const extension = blob.type.includes('mp4') || blob.type.includes('mpeg') ? 'm4a' : 'webm';
           const formData = new FormData();
           formData.append('audio', blob, `voice-command.${extension}`);
-          if (draft.trim()) formData.append('text', draft.trim());
 
           setLoading(true);
           const response = await api.upload('/voice/admin-command', formData);
@@ -292,7 +261,7 @@ export default function VoiceAssistant() {
       mediaRecorderRef.current = recorder;
       recorder.start();
       setIsRecording(true);
-    } catch (err) {
+    } catch (_) {
       setError('No pude abrir el micrófono.');
       stopTracks();
     }
@@ -326,10 +295,10 @@ export default function VoiceAssistant() {
   }
 
   const activePrompt = isRecording
-    ? 'Escuchando. Suelta cuando termines.'
+    ? 'Escuchando'
     : loading
-      ? 'Procesando tu comando...'
-      : 'Mantén pulsado para hablar o toca una vez para grabar.';
+      ? 'Procesando'
+      : 'Hablar';
 
   if (!authReady) {
     return (
@@ -343,9 +312,8 @@ export default function VoiceAssistant() {
             <h1 className="text-3xl font-semibold tracking-tight text-slate-950">
               Sesión de voz requerida
             </h1>
-            <p className="mt-4 text-[1.02rem] leading-7 text-slate-600">
-              Esta ruta ya no te saca directo al admin, pero sí necesita una sesión válida.
-              Si entras desde la app iOS, el wrapper debe iniciar la sesión antes de abrir esta pantalla.
+            <p className="mt-4 text-[1.02rem] leading-7 text-slate-700">
+              Esta app necesita una sesión válida antes de abrir la consola.
             </p>
             <div className="mt-6 flex flex-wrap items-center justify-center gap-3">
               <button
@@ -363,236 +331,160 @@ export default function VoiceAssistant() {
   }
 
   return (
-    <div className="voice-app-root bg-[#f6f1e8] text-slate-950">
-      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top_left,_rgba(78,118,155,0.22),_transparent_35%),radial-gradient(circle_at_top_right,_rgba(179,78,53,0.16),_transparent_28%),linear-gradient(180deg,_rgba(255,255,255,0.94),_rgba(246,241,232,0.96))]" />
-      <div className="pointer-events-none absolute left-[-4rem] top-24 h-56 w-56 rounded-full bg-[#cfe8e9]/70 blur-3xl sm:left-[-6rem] sm:h-72 sm:w-72" />
-      <div className="pointer-events-none absolute bottom-[-4rem] right-[-2rem] h-56 w-56 rounded-full bg-[#fdda78]/30 blur-3xl sm:bottom-[-6rem] sm:right-[-4rem] sm:h-72 sm:w-72" />
+    <div className="voice-app-root bg-[#f1e8da] text-slate-950">
+      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top,_rgba(6,78,94,0.16),_transparent_36%),radial-gradient(circle_at_bottom,_rgba(179,78,53,0.14),_transparent_30%),linear-gradient(180deg,_#fffdf8,_#f1e8da_44%,_#eadfce_100%)]" />
+      <div className="pointer-events-none absolute left-[-5rem] top-12 h-56 w-56 rounded-full bg-[#0f766e]/10 blur-3xl" />
+      <div className="pointer-events-none absolute right-[-4rem] top-44 h-48 w-48 rounded-full bg-[#b45309]/10 blur-3xl" />
 
       <div className="voice-scroll-shell">
-      <div className="relative mx-auto flex min-h-screen w-full max-w-7xl flex-col px-4 pb-10 pt-6 sm:px-6 lg:px-8">
-        <header className="flex items-center justify-end gap-3">
-          <div className="flex items-center gap-3">
-            <button
-              type="button"
-              onClick={() => setVoiceEnabled((current) => !current)}
-              className="inline-flex h-12 w-12 items-center justify-center rounded-full border border-white/70 bg-white/75 text-slate-700 shadow-[0_12px_28px_rgba(15,23,42,0.08)] backdrop-blur transition hover:scale-[1.02] hover:text-slate-950"
-              title={voiceEnabled ? 'Silenciar respuesta hablada' : 'Activar respuesta hablada'}
-            >
-              {voiceEnabled ? <Volume2 size={20} /> : <VolumeX size={20} />}
-            </button>
-            <Link
-              to="/admin"
-              className="inline-flex items-center gap-2 rounded-full border border-white/70 bg-white/75 px-4 py-3 text-sm font-semibold text-slate-700 shadow-[0_12px_28px_rgba(15,23,42,0.08)] backdrop-blur transition hover:translate-y-[-1px] hover:text-slate-950"
-            >
-              <ArrowLeft size={16} />
-              Volver al admin
-            </Link>
-          </div>
-        </header>
-
-        <section className="mt-6 grid gap-6 lg:grid-cols-[1.15fr_0.85fr]">
-          <div className="relative overflow-hidden rounded-[2rem] border border-white/70 bg-[linear-gradient(135deg,rgba(255,255,255,0.96),rgba(238,246,247,0.92))] p-5 shadow-[0_30px_80px_rgba(15,23,42,0.10)] sm:p-7">
-            <div className="absolute right-6 top-6 hidden rounded-full bg-[#0f172a] px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.24em] text-white/80 sm:block">
-              Privado
-            </div>
-
-            <div className="flex flex-col items-center text-center">
-              <button
-                type="button"
-                onPointerDown={handlePressStart}
-                onPointerUp={handlePressEnd}
-                onPointerLeave={handlePressEnd}
-                onPointerCancel={handlePressEnd}
-                onClick={handleRecordButtonClick}
-                disabled={loading || !micSupported}
-                className={`voice-record-button group relative flex h-64 w-64 max-w-full select-none items-center justify-center rounded-full border border-white/70 transition duration-200 sm:h-72 sm:w-72 ${
-                  isRecording
-                    ? 'scale-[1.02] bg-[radial-gradient(circle_at_center,_rgba(179,78,53,0.94),_rgba(120,34,15,0.98))] shadow-[0_0_0_18px_rgba(179,78,53,0.12),0_40px_80px_rgba(120,34,15,0.32)]'
-                    : 'bg-[radial-gradient(circle_at_30%_30%,_rgba(78,118,155,0.96),_rgba(8,92,109,0.98))] shadow-[0_0_0_18px_rgba(78,118,155,0.12),0_40px_80px_rgba(8,92,109,0.30)] hover:scale-[1.01]'
-                } ${loading || !micSupported ? 'cursor-not-allowed opacity-60' : 'cursor-pointer'}`}
-              >
-                <div className="absolute inset-5 rounded-full border border-white/20" />
-                <div className="absolute inset-10 rounded-full border border-white/10" />
-
-                <div className="relative z-10 flex items-center justify-center text-white">
-                  {loading ? (
-                    <LoaderCircle size={54} className="animate-spin" />
-                  ) : isRecording ? (
-                    <MicOff size={54} />
-                  ) : (
-                    <Mic size={54} />
-                  )}
-                </div>
-
-                <div className="absolute bottom-12 flex gap-2">
-                  {[0, 1, 2, 3].map((index) => (
-                    <span
-                      key={index}
-                      className={`h-10 w-2 rounded-full bg-white/70 ${isRecording ? 'animate-[voicePulse_1.2s_ease-in-out_infinite]' : 'opacity-45'}`}
-                      style={{ animationDelay: `${index * 0.15}s` }}
-                    />
-                  ))}
-                </div>
-              </button>
-
-              <p className="mt-6 max-w-lg text-[1rem] leading-7 text-slate-600">{activePrompt}</p>
-
-              {!micSupported && (
-                <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
-                  Este navegador no soporta grabación directa. Puedes seguir usando la caja de texto.
-                </div>
-              )}
-            </div>
-
-            <div className="mt-8 grid gap-4">
-              <div className="rounded-[1.75rem] border border-white/80 bg-white/90 p-4 shadow-[0_20px_45px_rgba(15,23,42,0.06)] sm:p-5">
-                <div className="mb-3 flex items-center justify-between gap-3">
-                  <label htmlFor="voice-draft" className="text-sm font-semibold uppercase tracking-[0.22em] text-slate-500">
-                    Texto directo
-                  </label>
-                  <div className="text-xs text-slate-400">Fallback rápido</div>
-                </div>
-
-                <textarea
-                  id="voice-draft"
-                  value={draft}
-                  onChange={(event) => setDraft(event.target.value)}
-                  placeholder="Escribe o dicta aquí. Ejemplo: manda recordatorios para mañana."
-                  className="min-h-[116px] w-full resize-none rounded-[1.3rem] border border-slate-200/90 bg-[#fbfaf7] px-4 py-4 text-[1.08rem] leading-7 text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-[#4E769B] focus:ring-2 focus:ring-[#4E769B]/15"
-                />
-
-                <div className="mt-4 flex flex-wrap gap-2">
-                  {SUGGESTIONS.map((suggestion) => (
-                    <button
-                      key={suggestion}
-                      type="button"
-                      onClick={() => setDraft(suggestion)}
-                      className="rounded-full border border-slate-200 bg-white px-3 py-2 text-sm text-slate-600 transition hover:border-[#4E769B]/30 hover:text-slate-950"
-                    >
-                      {suggestion}
-                    </button>
-                  ))}
-                </div>
-
-                <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
-                  <div className="flex items-center gap-2 text-sm text-slate-500">
-                    <Waves size={16} className="text-[#4E769B]" />
-                    {holdActive || isRecording ? 'Listo para capturar audio.' : 'Texto y audio usan el mismo motor de comandos.'}
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => sendTextCommand(draft)}
-                    disabled={loading || !draft.trim()}
-                    className="inline-flex items-center gap-2 rounded-full bg-[#0f172a] px-5 py-3 text-sm font-semibold text-white transition hover:translate-y-[-1px] disabled:cursor-not-allowed disabled:opacity-50"
-                  >
-                    <Send size={16} />
-                    Enviar texto
-                  </button>
-                </div>
+        <div className="relative mx-auto flex min-h-screen w-full max-w-3xl flex-col px-4 pb-40 pt-5 sm:px-6">
+          <section className="rounded-[2rem] border border-white/75 bg-[linear-gradient(180deg,rgba(255,255,255,0.96),rgba(252,247,239,0.96))] p-5 shadow-[0_26px_70px_rgba(15,23,42,0.10)] sm:p-6">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <div className="text-[12px] font-semibold uppercase tracking-[0.22em] text-slate-700">Voice Console</div>
+                <h1 className="mt-2 text-[2rem] font-semibold tracking-[-0.04em] text-slate-950">
+                  Lo que entendió
+                </h1>
               </div>
-
-              {error && (
-                <div className="rounded-[1.5rem] border border-[#B34E35]/20 bg-[#fff1ed] px-4 py-3 text-sm text-[#8f3520]">
-                  {error}
-                </div>
-              )}
-            </div>
-          </div>
-
-          <div className="grid gap-6">
-            <div className="rounded-[2rem] border border-white/70 bg-white/86 p-5 shadow-[0_30px_80px_rgba(15,23,42,0.08)] backdrop-blur sm:p-6">
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <div className="text-sm font-semibold uppercase tracking-[0.22em] text-slate-500">Última respuesta</div>
-                  <div className="mt-2 text-2xl font-semibold tracking-tight text-slate-950">Lo que entendió el sistema</div>
-                </div>
+              <div className="flex flex-col items-end gap-2">
                 {result?.status && (
-                  <span className={`rounded-full border px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] ${statusTone}`}>
+                  <span className={`rounded-full border px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] ${statusTone}`}>
                     {result.status}
                   </span>
                 )}
-              </div>
-
-              <div className="mt-5 space-y-4">
-                <div className="rounded-[1.4rem] bg-[#f7f5ef] p-4">
-                  <div className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">Intent</div>
-                  <div className="mt-2 text-lg font-semibold text-slate-900">
-                    {result?.parsed?.intent || 'Todavía no hay comando'}
-                  </div>
-                </div>
-
-                <div className="rounded-[1.4rem] border border-slate-200 bg-white p-4">
-                  <div className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">Respuesta</div>
-                  <div className="mt-3 whitespace-pre-line text-[1.02rem] leading-7 text-slate-800">
-                    {lastResponse || 'Aquí aparecerá la respuesta textual cada vez que hables o escribas.'}
-                  </div>
-                </div>
-
-                {(result?.input_text || result?.transcript || draft) && (
-                  <div className="rounded-[1.4rem] border border-dashed border-slate-200 bg-white/60 p-4">
-                    <div className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">Entrada reconocida</div>
-                    <div className="mt-3 whitespace-pre-line text-sm leading-6 text-slate-600">
-                      {result?.input_text || result?.transcript || draft}
-                    </div>
-                  </div>
+                {!micSupported && (
+                  <span className="rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-amber-900">
+                    Mic no disponible
+                  </span>
                 )}
               </div>
             </div>
 
-            <div className="rounded-[2rem] border border-white/70 bg-[linear-gradient(180deg,rgba(255,255,255,0.92),rgba(244,239,231,0.96))] p-5 shadow-[0_30px_80px_rgba(15,23,42,0.08)] sm:p-6">
-              <div className="flex items-center justify-between gap-3">
-                <div>
-                  <div className="text-sm font-semibold uppercase tracking-[0.22em] text-slate-500">Historial</div>
-                  <div className="mt-1 text-2xl font-semibold tracking-tight text-slate-950">Reciente</div>
+            {error && (
+              <div className="mt-5 rounded-[1.4rem] border border-[#B34E35]/25 bg-[#fff1ed] px-4 py-3 text-[0.98rem] leading-7 text-[#7f2f1f]">
+                {error}
+              </div>
+            )}
+
+            <div className="mt-5 space-y-4">
+              <div className="rounded-[1.5rem] border border-[#d8d1c7] bg-[#f7f0e7] px-5 py-4">
+                <div className="text-[12px] font-semibold uppercase tracking-[0.22em] text-slate-700">Intent</div>
+                <div className="mt-2 text-[1.28rem] font-semibold leading-8 text-slate-950">
+                  {result?.parsed?.intent || 'Esperando comando'}
                 </div>
-                <button
-                  type="button"
-                  onClick={loadHistory}
-                  className="rounded-full border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-600 transition hover:text-slate-950"
-                >
-                  Actualizar
-                </button>
               </div>
 
-              <div className="mt-5 space-y-3">
-                {historyLoading && (
-                  <div className="rounded-[1.2rem] border border-slate-200 bg-white px-4 py-5 text-sm text-slate-500">
-                    Cargando historial...
-                  </div>
-                )}
+              <div className="rounded-[1.5rem] border border-[#d8d1c7] bg-white px-5 py-4">
+                <div className="text-[12px] font-semibold uppercase tracking-[0.22em] text-slate-700">Entrada reconocida</div>
+                <div className="mt-3 whitespace-pre-line text-[1.08rem] leading-8 text-slate-800">
+                  {result?.input_text || result?.transcript || 'Todavía no hay audio reconocido.'}
+                </div>
+              </div>
 
-                {!historyLoading && history.length === 0 && (
-                  <div className="rounded-[1.2rem] border border-slate-200 bg-white px-4 py-5 text-sm text-slate-500">
-                    Todavía no hay comandos registrados.
-                  </div>
-                )}
+              <div className="rounded-[1.5rem] border border-[#d8d1c7] bg-white px-5 py-4 shadow-[0_14px_34px_rgba(15,23,42,0.06)]">
+                <div className="text-[12px] font-semibold uppercase tracking-[0.22em] text-slate-700">Respuesta</div>
+                <div className="mt-3 whitespace-pre-line text-[1.14rem] leading-8 text-slate-900">
+                  {lastResponse || 'Aquí aparecerá la respuesta completa después de hablar.'}
+                </div>
+              </div>
+            </div>
+          </section>
 
-                {history.map((item) => (
-                  <div key={item.id} className="rounded-[1.3rem] border border-white/80 bg-white/92 px-4 py-4 shadow-[0_18px_34px_rgba(15,23,42,0.05)]">
-                    <div className="flex items-start justify-between gap-4">
-                      <div>
-                        <div className="text-sm font-semibold text-slate-900">
-                          {item.transcript || item.raw_text || 'Audio sin texto visible'}
-                        </div>
-                        <div className="mt-1 text-xs uppercase tracking-[0.16em] text-slate-400">
-                          {item.parsed_intent || 'unknown'} · {item.source === 'voice_web' ? 'Voice web' : 'Shortcut'}
-                        </div>
+          <section className="mt-8 rounded-[2rem] border border-white/75 bg-[linear-gradient(180deg,rgba(255,255,255,0.94),rgba(247,241,231,0.94))] p-5 shadow-[0_24px_60px_rgba(15,23,42,0.08)] sm:p-6">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <div className="text-[12px] font-semibold uppercase tracking-[0.22em] text-slate-700">Historial</div>
+                <div className="mt-1 text-[1.7rem] font-semibold tracking-[-0.03em] text-slate-950">Reciente</div>
+              </div>
+              <button
+                type="button"
+                onClick={loadHistory}
+                className="rounded-full border border-[#cfc5b9] bg-white px-4 py-2 text-[0.95rem] font-semibold text-slate-800 transition hover:border-slate-500 hover:text-slate-950"
+              >
+                Actualizar
+              </button>
+            </div>
+
+            <div className="mt-5 space-y-3">
+              {historyLoading && (
+                <div className="rounded-[1.25rem] border border-[#d8d1c7] bg-white px-4 py-5 text-[1rem] text-slate-700">
+                  Cargando historial...
+                </div>
+              )}
+
+              {!historyLoading && history.length === 0 && (
+                <div className="rounded-[1.25rem] border border-[#d8d1c7] bg-white px-4 py-5 text-[1rem] text-slate-700">
+                  Todavía no hay comandos registrados.
+                </div>
+              )}
+
+              {history.map((item) => (
+                <div key={item.id} className="rounded-[1.35rem] border border-white/80 bg-white px-4 py-4 shadow-[0_16px_32px_rgba(15,23,42,0.05)]">
+                  <div className="flex items-start justify-between gap-4">
+                    <div>
+                      <div className="text-[1rem] font-semibold leading-7 text-slate-900">
+                        {item.transcript || item.raw_text || 'Audio sin texto visible'}
                       </div>
-                      <div className="text-xs text-slate-400">{formatHistoryDate(item.created_at)}</div>
+                      <div className="mt-1 text-[11px] uppercase tracking-[0.16em] text-slate-700">
+                        {item.parsed_intent || 'unknown'} · {item.source === 'voice_web' ? 'Voice web' : 'Shortcut'}
+                      </div>
                     </div>
-
-                    {item.response_text && (
-                      <div className="mt-3 rounded-2xl bg-[#f7f5ef] px-3 py-3 text-sm leading-6 text-slate-700">
-                        {item.response_text}
-                      </div>
-                    )}
+                    <div className="text-[11px] text-slate-700">{formatHistoryDate(item.created_at)}</div>
                   </div>
-                ))}
-              </div>
+
+                  {item.response_text && (
+                    <div className="mt-3 rounded-[1.1rem] bg-[#f6efe6] px-3 py-3 text-[0.98rem] leading-7 text-slate-800">
+                      {item.response_text}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          </section>
+        </div>
+      </div>
+
+      <div className="pointer-events-none fixed inset-x-0 bottom-0 z-20 px-4 pb-[calc(env(safe-area-inset-bottom,0px)+16px)]">
+        <div className="pointer-events-auto mx-auto flex w-full max-w-md items-center justify-center gap-3 rounded-[2rem] border border-white/80 bg-[rgba(20,28,36,0.84)] px-4 py-3 shadow-[0_24px_50px_rgba(15,23,42,0.32)] backdrop-blur-xl">
+          <button
+            type="button"
+            onClick={() => setVoiceEnabled((current) => !current)}
+            className="inline-flex h-12 w-12 items-center justify-center rounded-full border border-white/20 bg-white/10 text-white transition hover:bg-white/16"
+            title={voiceEnabled ? 'Silenciar respuesta hablada' : 'Activar respuesta hablada'}
+          >
+            {voiceEnabled ? <Volume2 size={18} /> : <VolumeX size={18} />}
+          </button>
+
+          <button
+            type="button"
+            onPointerDown={handlePressStart}
+            onPointerUp={handlePressEnd}
+            onPointerLeave={handlePressEnd}
+            onPointerCancel={handlePressEnd}
+            onClick={handleRecordButtonClick}
+            disabled={loading || !micSupported}
+            className={`voice-record-button relative flex h-[4.8rem] w-[4.8rem] shrink-0 items-center justify-center rounded-full border transition ${
+              isRecording
+                ? 'border-[#ffcfbf] bg-[radial-gradient(circle_at_30%_30%,_#d97757,_#8c2f19)] text-white shadow-[0_0_0_10px_rgba(179,78,53,0.22)]'
+                : 'border-[#d8eced] bg-[radial-gradient(circle_at_30%_30%,_#4e769b,_#0b5d69)] text-white shadow-[0_0_0_10px_rgba(78,118,155,0.18)]'
+            } ${loading || !micSupported ? 'cursor-not-allowed opacity-55' : 'cursor-pointer active:scale-[0.98]'}`}
+          >
+            {loading ? (
+              <LoaderCircle size={28} className="animate-spin" />
+            ) : isRecording ? (
+              <MicOff size={28} />
+            ) : (
+              <Mic size={28} />
+            )}
+          </button>
+
+          <div className="min-w-[5.5rem] text-left">
+            <div className="text-[0.98rem] font-semibold text-white">{activePrompt}</div>
+            <div className="text-[12px] uppercase tracking-[0.16em] text-white/70">
+              {holdActive || isRecording ? 'Grabando' : loading ? 'LLM' : 'Voice'}
             </div>
           </div>
-        </section>
-      </div>
+        </div>
       </div>
     </div>
   );

@@ -126,11 +126,6 @@ body[data-ui-theme='dark'] {
   opacity: 0.9;
 }
 
-.admin-shell.theme-dark > * {
-  position: relative;
-  z-index: 1;
-}
-
 .admin-shell.theme-dark main {
   background: transparent !important;
 }

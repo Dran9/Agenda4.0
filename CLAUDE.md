@@ -238,9 +238,16 @@ Ver `.env.example` para la lista completa. Se configuran en hPanel de Hostinger.
   usa `sendPaymentReminderTemplate()` en `server/services/whatsapp.js`
   y permite override por config/env (`payment_reminder_template`, `WA_PAYMENT_REMINDER_TEMPLATE`)
 - Link de reagendamiento:
-  todavía no está enchufado como template
-  `POST /api/quick-actions/send-reschedule-link` sigue usando `sendTextMessage()`
-  siguiente paso: crear sender dedicado en `server/services/whatsapp.js` y migrar quick actions a template aprobado
+  ya está enchufado como template aprobado `reprogramar_sesion`
+  `{{1}} = nombre`, `{{2}} = link /?r=telefono`
+  `POST /api/quick-actions/send-reschedule-link` ya no usa texto libre
+- Reminder de pago actualizado:
+  el fallback por defecto ya apunta a `recordatorio_pago`
+  el sender actual usa el contrato informado: `{{1}} = nombre`
+  si Meta lo aprobó con más placeholders, habrá que completar ese payload
+- Fix mobile admin layout:
+  un override global del dark theme estaba rompiendo el `position: fixed` del sidebar móvil y desplazando todo el contenido hacia la derecha en iPhone
+  se eliminó ese selector y se regeneró `client/dist`
 
 ## Bugs corregidos en recurring schedules (2026-04-06)
 - **`eventStart` undefined en reminder.js**: el Try 3 (fallback por teléfono) usaba una variable que no existía. Cambiado a `event.start?.dateTime || event.start?.date`. Sin esto, el reminder crasheaba al matchear por teléfono.

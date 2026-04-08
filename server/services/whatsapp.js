@@ -23,6 +23,31 @@ function formatTemplateDateParts(date) {
   };
 }
 
+function formatFirstName(nombre) {
+  const firstName = (nombre || '').split(' ')[0] || 'hola';
+  return firstName.charAt(0).toUpperCase() + firstName.slice(1).toLowerCase();
+}
+
+async function sendTemplateMessage(phone, template, token, phoneNumberId) {
+  const response = await fetch(`${GRAPH_API_URL}/${phoneNumberId}/messages`, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${token}`,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({
+      messaging_product: 'whatsapp',
+      to: phone,
+      type: 'template',
+      template,
+    })
+  });
+
+  const data = await response.json();
+  if (!response.ok) throw new Error(`WhatsApp API error ${response.status}: ${JSON.stringify(data)}`);
+  return data;
+}
+
 async function sendConfirmationTemplate(phone, nombre, fechaISO) {
   const token = process.env.WA_TOKEN;
   const phoneNumberId = process.env.WA_PHONE_ID;
@@ -31,8 +56,7 @@ async function sendConfirmationTemplate(phone, nombre, fechaISO) {
   // Parse date — handle Date objects (from mysql2) and strings
   const date = parseLaPazDate(fechaISO);
 
-  let nombrewa = nombre.split(' ')[0];
-  nombrewa = nombrewa.charAt(0).toUpperCase() + nombrewa.slice(1).toLowerCase();
+  const nombrewa = formatFirstName(nombre);
 
   // Format day and time in Bolivia timezone (single conversion via Intl — no double-conversion)
   const { fecha: fechawa, hora: horawa } = formatTemplateDateParts(date);
@@ -67,63 +91,51 @@ async function sendConfirmationTemplate(phone, nombre, fechaISO) {
     }
   };
 
-  const response = await fetch(`${GRAPH_API_URL}/${phoneNumberId}/messages`, {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${token}`,
-      'Content-Type': 'application/json'
-    },
-    body: JSON.stringify(payload)
-  });
+  return sendTemplateMessage(phone, payload.template, token, phoneNumberId);
+}
 
-  const data = await response.json();
-  if (!response.ok) throw new Error(`WhatsApp API error ${response.status}: ${JSON.stringify(data)}`);
-  return data;
+async function sendRescheduleTemplate(phone, nombre, link, options = {}) {
+  const token = process.env.WA_TOKEN;
+  const phoneNumberId = process.env.WA_PHONE_ID;
+  const templateName = options.templateName || process.env.WA_RESCHEDULE_TEMPLATE || 'reprogramar_sesion';
+  const languageCode = options.languageCode || 'es';
+  const nombrewa = formatFirstName(nombre);
+
+  return sendTemplateMessage(phone, {
+    name: templateName,
+    language: { code: languageCode },
+    components: [
+      {
+        type: 'body',
+        parameters: [
+          { type: 'text', text: nombrewa },
+          { type: 'text', text: String(link || '') },
+        ]
+      }
+    ]
+  }, token, phoneNumberId);
 }
 
 async function sendPaymentReminderTemplate(phone, nombre, fechaISO, amount, options = {}) {
   const token = process.env.WA_TOKEN;
   const phoneNumberId = process.env.WA_PHONE_ID;
-  const templateName = options.templateName || process.env.WA_PAYMENT_REMINDER_TEMPLATE || 'recordatorio_pago_pendiente';
+  const templateName = options.templateName || process.env.WA_PAYMENT_REMINDER_TEMPLATE || 'recordatorio_pago';
   const languageCode = options.languageCode || 'es';
 
-  const date = parseLaPazDate(fechaISO);
-  const firstName = (nombre || '').split(' ')[0] || 'hola';
-  const nombrewa = firstName.charAt(0).toUpperCase() + firstName.slice(1).toLowerCase();
-  const { fecha, hora } = formatTemplateDateParts(date);
+  const nombrewa = formatFirstName(nombre);
 
-  const payload = {
-    messaging_product: 'whatsapp',
-    to: phone,
-    type: 'template',
-    template: {
-      name: templateName,
-      language: { code: languageCode },
-      components: [
-        {
-          type: 'body',
-          parameters: [
-            { type: 'text', text: nombrewa },
-            { type: 'text', text: `${fecha} ${hora}`.trim() },
-            { type: 'text', text: String(amount ?? '') },
-          ]
-        }
-      ]
-    }
-  };
-
-  const response = await fetch(`${GRAPH_API_URL}/${phoneNumberId}/messages`, {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${token}`,
-      'Content-Type': 'application/json'
-    },
-    body: JSON.stringify(payload)
-  });
-
-  const data = await response.json();
-  if (!response.ok) throw new Error(`WhatsApp API error ${response.status}: ${JSON.stringify(data)}`);
-  return data;
+  return sendTemplateMessage(phone, {
+    name: templateName,
+    language: { code: languageCode },
+    components: [
+      {
+        type: 'body',
+        parameters: [
+          { type: 'text', text: nombrewa },
+        ]
+      }
+    ]
+  }, token, phoneNumberId);
 }
 
 async function sendTextMessage(phone, text) {
@@ -181,4 +193,4 @@ async function sendImageMessage(phone, imageUrl, caption) {
   return data;
 }
 
-module.exports = { sendConfirmationTemplate, sendPaymentReminderTemplate, sendTextMessage, sendImageMessage };
+module.exports = { sendConfirmationTemplate, sendRescheduleTemplate, sendPaymentReminderTemplate, sendTextMessage, sendImageMessage };

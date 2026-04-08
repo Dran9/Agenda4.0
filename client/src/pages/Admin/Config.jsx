@@ -953,7 +953,7 @@ export default function Config() {
                   </select>
                 </div>
                 <div className="rounded-xl border border-[#CFE8E9] bg-[#eef7f7] px-4 py-3 text-sm text-[#365673]">
-                  Requiere template aprobado en Meta. Lo eliges aquí en el panel; si lo dejas vacío, el servidor usa el fallback <code>WA_PAYMENT_REMINDER_TEMPLATE</code>.
+                  Requiere template aprobado en Meta. Lo eliges aquí en el panel; si lo dejas vacío, el servidor usa el fallback <code>WA_PAYMENT_REMINDER_TEMPLATE</code>, que ahora apunta a <code>recordatorio_pago</code>.
                 </div>
               </div>
 
@@ -965,7 +965,7 @@ export default function Config() {
                     value={config?.payment_reminder_template || ''}
                     onChange={e => setConfig(c => ({ ...c, payment_reminder_template: e.target.value }))}
                     disabled={!config?.payment_reminder_enabled}
-                    placeholder="recordatorio_pago_pendiente"
+                    placeholder="recordatorio_pago"
                     className="w-full px-3 py-2.5 border border-gray-200 rounded-lg text-sm bg-white disabled:bg-gray-50 disabled:text-gray-400"
                   />
                 </div>

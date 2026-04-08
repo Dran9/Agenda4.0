@@ -278,6 +278,13 @@ If the task is about the private voice app, also read `docs/VOICE-APP-REPORT.md`
 - 2026-04-07 — Meta template status:
   payment reminder is already wired end-to-end via `sendPaymentReminderTemplate()` plus config/env override
   reschedule link is not; next step is to add a dedicated template sender and switch quick actions to use it
+- 2026-04-07 — Meta template wiring updated:
+  quick actions reschedule link now uses approved template `reprogramar_sesion` with `{{1}} = nombre` and `{{2}} = link`
+  payment reminder fallback template now points to `recordatorio_pago`
+  current payment sender assumes the approved template body only needs `{{1}} = nombre`
+- 2026-04-07 — Admin mobile layout fix:
+  dark theme CSS was forcing `position: relative` onto every direct child of `.admin-shell`, which broke the fixed mobile sidebar and pushed the whole admin canvas to the right on iPhone
+  that selector was removed and the frontend bundle was rebuilt
 
 ## Known Follow-Ups
 
@@ -292,7 +299,7 @@ If the task is about the private voice app, also read `docs/VOICE-APP-REPORT.md`
 - DONE: SSE real-time admin updates — Dashboard, Appointments, Clients, Finance, Quick Actions all auto-refresh
 - Optional: add a small recurring trend chart in Analytics if monthly series visibility becomes commercially useful
 - Optional: create WhatsApp templates (Meta-approved) for cancel notification and no-show notification instead of using free-form text messages
-- Pending next step: wire the Meta-approved reschedule-link template into quick actions once the exact approved template name and parameter contract are confirmed
+- Pending verification: confirm in production that Meta accepted `recordatorio_pago` with only one body placeholder; if the approved template has more fields, update the sender to provide them
 
 ## Useful Commands
 

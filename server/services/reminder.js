@@ -342,7 +342,7 @@ async function checkAndSendPaymentReminders({ tenantId = 1, force = false } = {}
           row.date_time,
           row.amount,
           {
-            templateName: cfg.payment_reminder_template || process.env.WA_PAYMENT_REMINDER_TEMPLATE || 'recordatorio_pago_pendiente',
+            templateName: cfg.payment_reminder_template || process.env.WA_PAYMENT_REMINDER_TEMPLATE || 'recordatorio_pago',
             languageCode: cfg.whatsapp_template_language || 'es',
           }
         );

@@ -1,7 +1,7 @@
 const { Router } = require('express');
 const { pool, withTransaction } = require('../db');
 const { authMiddleware } = require('../middleware/auth');
-const { sendTextMessage } = require('../services/whatsapp');
+const { sendRescheduleTemplate, sendTextMessage } = require('../services/whatsapp');
 const { sendServerError } = require('../utils/httpErrors');
 const { normalizePhone } = require('../utils/phone');
 const { syncSlotClaimsForStatusTransition } = require('../services/appointmentSlotClaims');
@@ -185,10 +185,7 @@ router.post('/send-reschedule-link', authMiddleware, async (req, res) => {
 
     const phone = normalizePhone(client.phone);
     const link = `https://${domain}/?r=${phone}`;
-    const nombre = client.first_name.split(' ')[0];
-    const text = `Hola ${nombre}, puedes reprogramar tu cita desde aquí:\n\n${link}`;
-
-    const result = await sendTextMessage(phone, text);
+    const result = await sendRescheduleTemplate(phone, client.first_name, link);
 
     // Log in webhooks_log
     await pool.query(

@@ -1,102 +1,18 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import {
-  BellRing,
-  CheckCheck,
-  FileWarning,
-  MessageSquareMore,
-  Repeat,
-  ShieldCheck,
-  TrendingUp,
+  CalendarDays,
+  CircleAlert,
+  Clock3,
+  Target,
+  Wallet,
 } from 'lucide-react';
 import AdminLayout from '../../components/AdminLayout';
 import { api } from '../../utils/api';
-import { formatRelativeTime, formatTimeBolivia, getBoliviaDateKey } from '../../utils/dates';
+import { formatTimeBolivia, getBoliviaDateKey } from '../../utils/dates';
 import { Toast, useToast } from '../../hooks/useToast';
 import useAdminEvents from '../../hooks/useAdminEvents';
 import { useUiTheme } from '../../hooks/useUiTheme';
 import './Preview.css';
-
-const AUTOMATIONS = [
-  '24h antes: recordatorio si no hubo confirmación.',
-  '12h después: reintentar cobro si la cita sigue pendiente.',
-  '21 días sin agenda: reactivación por WhatsApp.',
-];
-
-function toneClasses(tone, isDark) {
-  const dark = {
-    blue: 'border-sky-500/30 bg-sky-500/12 text-sky-100',
-    rose: 'border-rose-500/30 bg-rose-500/12 text-rose-100',
-    amber: 'border-amber-400/30 bg-amber-400/12 text-amber-50',
-    sky: 'border-cyan-400/30 bg-cyan-400/12 text-cyan-50',
-  };
-  const light = {
-    blue: 'border-blue-200 bg-blue-100 text-blue-700',
-    rose: 'border-rose-200 bg-rose-100 text-rose-700',
-    amber: 'border-amber-200 bg-amber-100 text-amber-700',
-    sky: 'border-sky-200 bg-sky-100 text-sky-700',
-  };
-
-  const palette = isDark ? dark : light;
-  return palette[tone] || palette.sky;
-}
-
-function appointmentStatusClasses(state, isDark) {
-  const dark = {
-    Recurrente: 'bg-sky-500/14 text-sky-100',
-    Confirmada: 'bg-emerald-500/14 text-emerald-100',
-    Completada: 'bg-white text-slate-950',
-    Agendada: 'bg-amber-400/14 text-amber-50',
-    'No-show': 'bg-rose-500/14 text-rose-100',
-    Cancelada: 'bg-slate-700 text-slate-200',
-  };
-  const light = {
-    Recurrente: 'bg-blue-100 text-blue-700',
-    Confirmada: 'bg-emerald-100 text-emerald-700',
-    Completada: 'bg-slate-900 text-white',
-    Agendada: 'bg-amber-100 text-amber-700',
-    'No-show': 'bg-rose-100 text-rose-700',
-    Cancelada: 'bg-slate-200 text-slate-600',
-  };
-
-  const palette = isDark ? dark : light;
-  return palette[state] || palette.Agendada;
-}
-
-function paymentClasses(state, isDark) {
-  const dark = {
-    Confirmado: 'text-emerald-200 hover:text-emerald-100',
-    Mismatch: 'text-rose-200 hover:text-rose-100',
-    Rechazado: 'text-rose-300 hover:text-rose-200',
-    default: 'text-slate-300 hover:text-white',
-  };
-  const light = {
-    Confirmado: 'text-emerald-700 hover:text-emerald-800',
-    Mismatch: 'text-rose-700 hover:text-rose-800',
-    Rechazado: 'text-rose-600 hover:text-rose-700',
-    default: 'text-slate-500 hover:text-slate-700',
-  };
-
-  const palette = isDark ? dark : light;
-  return palette[state] || palette.default;
-}
-
-function actionButtonClasses(intent, isDark) {
-  if (intent === 'danger') {
-    return isDark
-      ? 'border-rose-500/30 bg-rose-500/12 text-rose-100 hover:bg-rose-500/20'
-      : 'border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100';
-  }
-
-  if (intent === 'success') {
-    return isDark
-      ? 'border-emerald-500/30 bg-emerald-500/14 text-emerald-100 hover:bg-emerald-500/22'
-      : 'border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100';
-  }
-
-  return isDark
-    ? 'border-white/12 bg-white/6 text-slate-100 hover:bg-white/10'
-    : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50';
-}
 
 function formatMoney(amount) {
   return `Bs ${Number(amount || 0).toLocaleString('es-BO')}`;
@@ -121,174 +37,355 @@ function mergeTodayAgenda(appointments = [], recurring = []) {
       merged.set(key, item);
       continue;
     }
+
     merged.set(buildAgendaKey(item), item);
   }
 
   return [...merged.values()].sort((a, b) => new Date(a.date_time) - new Date(b.date_time));
 }
 
-function getDashboardActions(appt) {
-  const currentStatus = appt.type === 'virtual' ? 'Agendada' : appt.status;
+function getBoliviaDateParts(dateInput = new Date()) {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/La_Paz',
+    year: 'numeric',
+    month: 'numeric',
+    day: 'numeric',
+  }).formatToParts(new Date(dateInput));
 
-  if (['Completada', 'Cancelada', 'No-show'].includes(currentStatus)) {
-    return [];
-  }
-
-  if (currentStatus === 'Confirmada') {
-    return [
-      { status: 'Completada', label: 'Completar', intent: 'success' },
-      { status: 'No-show', label: 'No-show', intent: 'neutral' },
-      { status: 'Cancelada', label: 'Cancelar', intent: 'danger' },
-    ];
-  }
-
-  return [
-    { status: 'Confirmada', label: 'Confirmar', intent: 'success' },
-    { status: 'No-show', label: 'No-show', intent: 'neutral' },
-    { status: 'Cancelada', label: 'Cancelar', intent: 'danger' },
-  ];
+  return {
+    year: Number(parts.find((part) => part.type === 'year')?.value || 0),
+    month: Number(parts.find((part) => part.type === 'month')?.value || 0),
+    day: Number(parts.find((part) => part.type === 'day')?.value || 0),
+  };
 }
 
-function PreviewPanel({ eyebrow, title, description, children, className = '', delay = 0, isDark = false }) {
-  const shellClass = isDark
-    ? 'rounded-[28px] border border-white/10 bg-[rgba(8,14,20,0.82)] shadow-[0_30px_80px_rgba(0,0,0,0.32)] backdrop-blur-xl'
-    : 'rounded-[28px] border border-white/70 bg-white/82 shadow-[0_30px_80px_rgba(15,23,42,0.08)] backdrop-blur-xl';
+function formatLongDate(dateInput = new Date()) {
+  const formatter = new Intl.DateTimeFormat('es-BO', {
+    weekday: 'long',
+    day: 'numeric',
+    month: 'long',
+    timeZone: 'America/La_Paz',
+  });
+  const text = formatter.format(new Date(dateInput));
+  return text.charAt(0).toUpperCase() + text.slice(1);
+}
+
+function formatMonthLabel(dateInput = new Date()) {
+  const formatter = new Intl.DateTimeFormat('es-BO', {
+    month: 'long',
+    timeZone: 'America/La_Paz',
+  });
+  const text = formatter.format(new Date(dateInput));
+  return text.charAt(0).toUpperCase() + text.slice(1);
+}
+
+function getAppointmentStatus(appt) {
+  return appt.type === 'virtual' ? 'Recurrente' : appt.status || 'Agendada';
+}
+
+function getAppointmentEnd(appt, durationMinutes) {
+  return new Date(new Date(appt.date_time).getTime() + durationMinutes * 60000);
+}
+
+function getNextAppointment(appointments, durationMinutes, now) {
+  return appointments.find((appt) => {
+    const status = getAppointmentStatus(appt);
+    if (['Cancelada', 'No-show'].includes(status)) return false;
+    return getAppointmentEnd(appt, durationMinutes) >= now;
+  }) || null;
+}
+
+function getPendingItems(appointments) {
+  const priorityMap = { mismatch: 0, payment: 1, confirmation: 2 };
+
+  return appointments
+    .map((appt) => {
+      const status = getAppointmentStatus(appt);
+      const patientName = `${appt.first_name || ''} ${appt.last_name || ''}`.trim();
+      const time = formatTimeBolivia(appt.date_time);
+
+      if (appt.payment_status === 'Mismatch') {
+        return {
+          key: `${buildAgendaKey(appt)}-mismatch`,
+          priority: priorityMap.mismatch,
+          label: 'Revisar comprobante',
+          detail: `${patientName} · ${time}`,
+          tone: 'rose',
+        };
+      }
+
+      if (status === 'Completada' && appt.payment_status !== 'Confirmado') {
+        return {
+          key: `${buildAgendaKey(appt)}-payment`,
+          priority: priorityMap.payment,
+          label: 'Cobro por cerrar',
+          detail: `${patientName} · ${time}`,
+          tone: 'amber',
+        };
+      }
+
+      if (appt.type === 'virtual' || ['Agendada', 'Reagendada'].includes(status)) {
+        return {
+          key: `${buildAgendaKey(appt)}-confirmation`,
+          priority: priorityMap.confirmation,
+          label: 'Aún sin confirmar',
+          detail: `${patientName} · ${time}`,
+          tone: 'sky',
+        };
+      }
+
+      return null;
+    })
+    .filter(Boolean)
+    .sort((a, b) => a.priority - b.priority)
+    .slice(0, 6);
+}
+
+function computeFutureGaps(appointments, durationMinutes, now) {
+  const activeAppointments = appointments
+    .filter((appt) => !['Cancelada', 'No-show'].includes(getAppointmentStatus(appt)))
+    .sort((a, b) => new Date(a.date_time) - new Date(b.date_time));
+
+  const futureAppointments = activeAppointments.filter((appt) => getAppointmentEnd(appt, durationMinutes) >= now);
+  if (futureAppointments.length === 0) return [];
+
+  const windows = [];
+  const firstStart = new Date(futureAppointments[0].date_time);
+  const leadMinutes = Math.round((firstStart - now) / 60000);
+
+  if (leadMinutes >= 30) {
+    windows.push({
+      key: 'lead-gap',
+      start: now,
+      end: firstStart,
+      minutes: leadMinutes,
+    });
+  }
+
+  for (let index = 0; index < futureAppointments.length - 1; index += 1) {
+    const currentEnd = getAppointmentEnd(futureAppointments[index], durationMinutes);
+    const nextStart = new Date(futureAppointments[index + 1].date_time);
+    const gapMinutes = Math.round((nextStart - currentEnd) / 60000);
+
+    if (gapMinutes >= 30) {
+      windows.push({
+        key: `gap-${index}`,
+        start: currentEnd,
+        end: nextStart,
+        minutes: gapMinutes,
+      });
+    }
+  }
+
+  return windows.slice(0, 3);
+}
+
+function getTimelineToneClasses(status, isDark, isNext) {
+  if (isNext) {
+    return isDark
+      ? 'border-l-amber-300 bg-amber-400/8'
+      : 'border-l-[#b3643d] bg-[#f8efe5]';
+  }
+
+  if (status === 'Completada') {
+    return isDark
+      ? 'border-l-emerald-400/70 bg-emerald-500/6'
+      : 'border-l-emerald-500 bg-emerald-50';
+  }
+
+  if (status === 'Cancelada' || status === 'No-show') {
+    return isDark
+      ? 'border-l-slate-600 bg-slate-800/40'
+      : 'border-l-slate-300 bg-slate-100/70';
+  }
+
+  return isDark
+    ? 'border-l-white/12 bg-white/[0.03]'
+    : 'border-l-slate-200 bg-white';
+}
+
+function statusPillClasses(status, isDark) {
+  const dark = {
+    Recurrente: 'bg-sky-500/14 text-sky-100',
+    Confirmada: 'bg-emerald-500/14 text-emerald-100',
+    Completada: 'bg-white text-slate-950',
+    Agendada: 'bg-amber-400/14 text-amber-50',
+    Reagendada: 'bg-amber-400/14 text-amber-50',
+    'No-show': 'bg-rose-500/14 text-rose-100',
+    Cancelada: 'bg-slate-700 text-slate-200',
+  };
+  const light = {
+    Recurrente: 'bg-sky-100 text-sky-700',
+    Confirmada: 'bg-emerald-100 text-emerald-700',
+    Completada: 'bg-slate-900 text-white',
+    Agendada: 'bg-amber-100 text-amber-700',
+    Reagendada: 'bg-amber-100 text-amber-700',
+    'No-show': 'bg-rose-100 text-rose-700',
+    Cancelada: 'bg-slate-200 text-slate-600',
+  };
+
+  const palette = isDark ? dark : light;
+  return palette[status] || palette.Agendada;
+}
+
+function paymentPillClasses(status, isDark) {
+  const dark = {
+    Confirmado: 'bg-emerald-500/14 text-emerald-100',
+    Pendiente: 'bg-amber-400/14 text-amber-50',
+    Mismatch: 'bg-rose-500/14 text-rose-100',
+    Rechazado: 'bg-rose-500/14 text-rose-100',
+    default: 'bg-white/8 text-slate-300',
+  };
+  const light = {
+    Confirmado: 'bg-emerald-100 text-emerald-700',
+    Pendiente: 'bg-amber-100 text-amber-700',
+    Mismatch: 'bg-rose-100 text-rose-700',
+    Rechazado: 'bg-rose-100 text-rose-700',
+    default: 'bg-slate-100 text-slate-500',
+  };
+
+  const palette = isDark ? dark : light;
+  return palette[status] || palette.default;
+}
+
+function issueToneClasses(tone, isDark) {
+  const dark = {
+    rose: 'border-rose-500/20 bg-rose-500/8 text-rose-100',
+    amber: 'border-amber-400/20 bg-amber-400/8 text-amber-50',
+    sky: 'border-sky-500/20 bg-sky-500/8 text-sky-100',
+  };
+  const light = {
+    rose: 'border-rose-200 bg-rose-50 text-rose-700',
+    amber: 'border-amber-200 bg-amber-50 text-amber-700',
+    sky: 'border-sky-200 bg-sky-50 text-sky-700',
+  };
+
+  const palette = isDark ? dark : light;
+  return palette[tone] || palette.sky;
+}
+
+function ProgressBar({ progress, isDark }) {
+  return (
+    <div className={`h-2 overflow-hidden rounded-full ${isDark ? 'bg-white/8' : 'bg-slate-200'}`}>
+      <div
+        className={`h-full rounded-full transition-all duration-500 ${
+          progress >= 100
+            ? 'bg-emerald-500'
+            : progress >= 60
+              ? 'bg-sky-500'
+              : 'bg-amber-500'
+        }`}
+        style={{ width: `${Math.max(0, Math.min(progress, 100))}%` }}
+      />
+    </div>
+  );
+}
+
+function AgendaRow({ appt, isDark, isNext, durationMinutes }) {
+  const status = getAppointmentStatus(appt);
+  const timelineTone = getTimelineToneClasses(status, isDark, isNext);
+  const note = appt.notes || appt.payment_notes || '';
+  const shellText = isDark ? 'text-white' : 'text-slate-950';
+  const mutedText = isDark ? 'text-slate-400' : 'text-slate-500';
+  const faintText = isDark ? 'text-slate-500' : 'text-slate-400';
+  const endTime = formatTimeBolivia(getAppointmentEnd(appt, durationMinutes));
 
   return (
-    <section className={`preview-enter ${shellClass} ${className}`} style={{ animationDelay: `${delay}ms` }}>
-      <div className={`px-6 py-5 ${isDark ? 'border-b border-white/10' : 'border-b border-slate-200/70'}`}>
-        <div className={`mb-2 text-[11px] font-semibold uppercase tracking-[0.22em] ${isDark ? 'text-slate-500' : 'text-slate-400'}`}>
-          {eyebrow}
-        </div>
+    <article className={`border-l-4 px-4 py-4 sm:px-5 ${timelineTone}`}>
+      <div className="grid gap-4 md:grid-cols-[92px_minmax(0,1fr)_minmax(0,200px)] md:items-start">
         <div>
-          <h3 className={`text-xl font-semibold ${isDark ? 'text-white' : 'text-slate-900'}`}>{title}</h3>
-          {description ? (
-            <p className={`mt-1 text-sm leading-6 ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>{description}</p>
+          <div className={`text-2xl font-semibold tracking-tight ${shellText}`}>{formatTimeBolivia(appt.date_time)}</div>
+          <div className={`mt-1 text-xs uppercase tracking-[0.18em] ${faintText}`}>
+            hasta {endTime}
+          </div>
+          {isNext ? (
+            <div className={`mt-3 inline-flex rounded-full px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] ${
+              isDark ? 'bg-amber-400/14 text-amber-100' : 'bg-[#f3e4d5] text-[#8c4f2b]'
+            }`}>
+              Sigue
+            </div>
           ) : null}
         </div>
+
+        <div className="min-w-0">
+          <div className={`text-lg font-semibold tracking-tight ${shellText}`}>
+            {`${appt.first_name || ''} ${appt.last_name || ''}`.trim() || 'Paciente sin nombre'}
+          </div>
+          <div className={`mt-1 flex flex-wrap items-center gap-2 text-sm ${mutedText}`}>
+            <span>{appt.client_phone || 'Sin teléfono'}</span>
+            {appt.session_number ? <span>Sesión {appt.session_number}</span> : null}
+            {appt.type === 'virtual' ? <span>Recurrente</span> : null}
+          </div>
+          <div className={`mt-3 text-sm leading-6 ${note ? mutedText : faintText}`}>
+            {note || 'Sin contexto añadido para esta cita.'}
+          </div>
+        </div>
+
+        <div className="flex flex-wrap items-start gap-2 md:justify-end">
+          <span className={`rounded-full px-2.5 py-1 text-xs font-medium ${statusPillClasses(status, isDark)}`}>
+            {status}
+          </span>
+          <span className={`rounded-full px-2.5 py-1 text-xs font-medium ${paymentPillClasses(appt.payment_status, isDark)}`}>
+            {appt.payment_status || (status === 'Completada' ? 'Sin cobro' : 'Sin pago')}
+          </span>
+          {appt.payment_amount ? (
+            <span className={`rounded-full px-2.5 py-1 text-xs font-medium ${
+              isDark ? 'bg-white/8 text-slate-200' : 'bg-slate-100 text-slate-600'
+            }`}>
+              {formatMoney(appt.payment_amount)}
+            </span>
+          ) : null}
+        </div>
+      </div>
+    </article>
+  );
+}
+
+function Section({ title, description, isDark, children, className = '' }) {
+  return (
+    <section className={`preview-enter overflow-hidden rounded-[28px] border ${className} ${
+      isDark
+        ? 'border-white/10 bg-[rgba(7,12,17,0.86)]'
+        : 'border-slate-200/80 bg-[rgba(255,255,255,0.92)]'
+    }`}>
+      <div className={`px-6 py-5 ${isDark ? 'border-b border-white/10' : 'border-b border-slate-200/80'}`}>
+        <h2 className={`text-lg font-semibold tracking-tight ${isDark ? 'text-white' : 'text-slate-950'}`}>{title}</h2>
+        {description ? (
+          <p className={`mt-1 text-sm leading-6 ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>{description}</p>
+        ) : null}
       </div>
       {children}
     </section>
   );
 }
 
-function AgendaCard({ appt, index, isDark, onTogglePayment, onStatusChange }) {
-  const actions = getDashboardActions(appt);
-  const cardClass = isDark
-    ? appt.type === 'virtual'
-      ? 'border-sky-500/18 bg-sky-500/8'
-      : 'border-white/10 bg-[#101923]'
-    : appt.type === 'virtual'
-      ? 'border-blue-200/60 bg-blue-50/70'
-      : 'border-slate-200/80 bg-[#fcfbf8]';
-
-  const numberClass = isDark
-    ? 'bg-white/10 text-white'
-    : 'bg-[#1f2937] text-white';
-
-  const labelClass = isDark ? 'text-slate-500' : 'text-slate-400';
-  const nameClass = isDark ? 'text-white' : 'text-slate-900';
-  const metaClass = isDark ? 'text-slate-300' : 'text-slate-500';
-  const emptyClass = isDark ? 'text-slate-500' : 'text-slate-400';
-
-  return (
-    <div className={`rounded-[24px] border px-4 py-4 ${cardClass}`}>
-      <div className="grid gap-4 xl:grid-cols-[90px_minmax(0,1fr)_minmax(0,270px)]">
-        <div className="flex items-center gap-3 xl:flex-col xl:items-start">
-          <div className={`flex h-12 w-12 items-center justify-center rounded-2xl text-sm font-semibold ${numberClass}`}>
-            {index + 1}
-          </div>
-          <div className="space-y-1">
-            <div className={`text-lg font-semibold tracking-tight ${nameClass}`}>{formatTimeBolivia(appt.date_time)}</div>
-            <div className={`text-[11px] uppercase tracking-[0.18em] ${labelClass}`}>
-              {appt.type === 'virtual'
-                ? 'recurrente'
-                : appt.session_number ? `sesión ${appt.session_number}` : 'agenda'}
-            </div>
-          </div>
-        </div>
-
-        <div className="min-w-0 space-y-3">
-          <div className="flex flex-wrap items-center gap-2">
-            <div className={`min-w-0 text-lg font-semibold tracking-tight ${nameClass}`}>
-              {appt.first_name} {appt.last_name}
-            </div>
-            {appt.type === 'virtual' ? <Repeat size={15} className={isDark ? 'text-sky-300' : 'text-blue-600'} /> : null}
-            <span className={`rounded-full px-2.5 py-1 text-xs font-medium ${appointmentStatusClasses(appt.type === 'virtual' ? 'Recurrente' : appt.status, isDark)}`}>
-              {appt.type === 'virtual' ? 'Recurrente' : appt.status}
-            </span>
-          </div>
-
-          <div className={`flex flex-wrap gap-x-4 gap-y-2 text-sm ${metaClass}`}>
-            <span>{appt.client_phone || 'Sin teléfono'}</span>
-            {appt.payment_amount ? <span>{formatMoney(appt.payment_amount)}</span> : null}
-            {appt.type === 'virtual' && appt.time ? <span>{appt.time}</span> : null}
-          </div>
-        </div>
-
-        <div className="space-y-3 xl:text-right">
-          <button
-            type="button"
-            onClick={() => onTogglePayment(appt)}
-            disabled={!appt.payment_id}
-            className={`text-sm font-semibold transition ${paymentClasses(appt.payment_status, isDark)} ${appt.payment_id ? '' : 'cursor-not-allowed opacity-40'}`}
-          >
-            {appt.payment_status || 'Sin pago'}
-          </button>
-
-          {actions.length > 0 ? (
-            <div className="flex flex-wrap gap-2 xl:justify-end">
-              {actions.map((action) => (
-                <button
-                  key={action.status}
-                  type="button"
-                  onClick={() => onStatusChange(appt, action.status)}
-                  className={`rounded-xl border px-3 py-2 text-xs font-semibold transition ${actionButtonClasses(action.intent, isDark)}`}
-                >
-                  {action.label}
-                </button>
-              ))}
-            </div>
-          ) : (
-            <div className={`text-xs font-medium ${emptyClass}`}>Sin acciones rápidas</div>
-          )}
-        </div>
-      </div>
-    </div>
-  );
-}
-
 export default function Dashboard() {
   const [todayAppts, setTodayAppts] = useState([]);
-  const [analyticsData, setAnalyticsData] = useState(null);
-  const [stats, setStats] = useState(null);
-  const [payments, setPayments] = useState([]);
-  const [conversations, setConversations] = useState([]);
-  const [clients, setClients] = useState([]);
+  const [monthlySummary, setMonthlySummary] = useState(null);
+  const [appointmentDuration, setAppointmentDuration] = useState(60);
   const [loading, setLoading] = useState(true);
   const { toast, show: showToast } = useToast();
   const { isDark } = useUiTheme();
 
   const loadDashboard = useCallback(async () => {
     setLoading(true);
+
     try {
       const today = getBoliviaDateKey();
-      const [appts, recurring, analytics, paymentsData, convoData, clientsData] = await Promise.all([
+      const { year, month } = getBoliviaDateParts();
+
+      const [appts, recurring, paymentSummary, config] = await Promise.all([
         api.get('/appointments/today'),
         api.get(`/recurring/upcoming?from=${today}&to=${today}`).catch(() => []),
-        api.get('/analytics').catch(() => null),
-        api.get('/payments?limit=12').catch(() => ({ payments: [] })),
-        api.get('/webhook/conversations?limit=6').catch(() => ({ conversations: [] })),
-        api.get('/clients').catch(() => []),
+        api.get(`/payments/summary?year=${year}&month=${month}`).catch(() => null),
+        api.get('/config').catch(() => null),
       ]);
+
       setTodayAppts(mergeTodayAgenda(appts || [], recurring || []));
-      setAnalyticsData(analytics || null);
-      setStats(analytics?.totals || null);
-      setPayments(paymentsData?.payments || []);
-      setConversations(convoData?.conversations || []);
-      setClients(Array.isArray(clientsData) ? clientsData : []);
+      setMonthlySummary(paymentSummary || null);
+      setAppointmentDuration(Number(config?.appointment_duration) || 60);
     } catch (err) {
-      showToast(`Error cargando dashboard: ${err.message}`, 'error');
+      showToast(`Error cargando Hoy: ${err.message}`, 'error');
     } finally {
       setLoading(false);
     }
@@ -296,382 +393,309 @@ export default function Dashboard() {
 
   useEffect(() => { loadDashboard(); }, [loadDashboard]);
 
-  useAdminEvents(
-    ['appointment:change', 'recurring:change', 'payment:change', 'client:change'],
-    loadDashboard,
-  );
+  useAdminEvents(['appointment:change', 'recurring:change', 'payment:change'], loadDashboard);
 
-  async function handlePaymentToggle(appt) {
-    if (!appt.payment_id) return;
-    const newStatus = appt.payment_status === 'Confirmado' ? 'Pendiente' : 'Confirmado';
-    try {
-      await api.put(`/payments/${appt.payment_id}/status`, { status: newStatus });
-      setTodayAppts((prev) => prev.map((item) => (
-        item.id === appt.id ? { ...item, payment_status: newStatus } : item
-      )));
-      showToast(`Pago marcado como ${newStatus.toLowerCase()}`);
-    } catch (err) {
-      showToast(`Error: ${err.message}`, 'error');
-    }
-  }
+  const now = new Date();
+  const nowParts = getBoliviaDateParts(now);
+  const nextAppointment = getNextAppointment(todayAppts, appointmentDuration, now);
+  const nextAppointmentKey = nextAppointment ? buildAgendaKey(nextAppointment) : null;
+  const pendingItems = getPendingItems(todayAppts);
+  const futureGaps = computeFutureGaps(todayAppts, appointmentDuration, now);
 
-  async function handleStatusChange(appt, status) {
-    try {
-      let appointmentId = appt.id;
+  const totalToday = todayAppts.length;
+  const confirmedToday = todayAppts.filter((appt) => getAppointmentStatus(appt) === 'Confirmada').length;
+  const completedToday = todayAppts.filter((appt) => getAppointmentStatus(appt) === 'Completada').length;
+  const unconfirmedToday = todayAppts.filter((appt) => {
+    const status = getAppointmentStatus(appt);
+    return appt.type === 'virtual' || ['Agendada', 'Reagendada'].includes(status);
+  }).length;
+  const unresolvedPaymentsToday = todayAppts.filter((appt) => {
+    const status = getAppointmentStatus(appt);
+    return status === 'Completada' && appt.payment_status !== 'Confirmado';
+  });
+  const unresolvedPaymentsAmount = unresolvedPaymentsToday.reduce((sum, appt) => sum + Number(appt.payment_amount || 0), 0);
 
-      if (appt.type === 'virtual') {
-        const materialized = await api.post(`/recurring/${appt.schedule_id}/materialize`, {
-          date: getBoliviaDateKey(appt.date_time),
-        });
-        appointmentId = materialized?.appointment?.id;
-      }
-
-      if (!appointmentId) {
-        throw new Error('No se pudo materializar la sesión recurrente');
-      }
-
-      await api.put(`/appointments/${appointmentId}/status`, { status });
-
-      await loadDashboard();
-      showToast(appt.type === 'virtual'
-        ? `Sesión recurrente materializada y actualizada a ${status}`
-        : `Cita actualizada a ${status}`);
-    } catch (err) {
-      showToast(`Error: ${err.message}`, 'error');
-    }
-  }
-
-  async function handleTriggerReminder(date) {
-    try {
-      const result = await api.get(`/admin/test-reminder?date=${date}`);
-      if (result.sent > 0) showToast(`${result.sent} recordatorio(s) aceptado(s) por WhatsApp; ${result.skipped || 0} omitido(s) por dedupe`);
-      else showToast(result.skipped > 0 ? 'No hubo pendientes nuevos; lo demás ya estaba enviado' : 'No hubo mensajes para enviar');
-    } catch (err) {
-      showToast(`Error: ${err.message}`, 'error');
-    }
-  }
-
-  const mismatches = payments.filter((payment) => payment.status === 'Mismatch');
-  const pendingPayments = payments.filter((payment) => payment.status === 'Pendiente');
-  const atRiskClients = clients
-    .filter((client) => ['En riesgo', 'Perdido'].includes(client.retention_status))
-    .sort((a, b) => (b.days_since_last_session || 0) - (a.days_since_last_session || 0))
-    .slice(0, 4);
-  const clientsWithNext = clients.filter((client) => client.retention_status === 'Con cita').length;
-  const healthyClients = clients.filter((client) => client.retention_status === 'Al día').length;
-  const lostClients = clients.filter((client) => client.retention_status === 'Perdido').length;
-  const riskClients = clients.filter((client) => client.retention_status === 'En riesgo').length;
-  const inboxThreads = conversations.slice(0, 3);
-  const projectedIncome = (Number(stats?.income_this_month) || 0) + pendingPayments.reduce((sum, payment) => sum + Number(payment.amount || 0), 0);
-  const todayConfirmedRevenue = todayAppts
-    .filter((appt) => appt.payment_status === 'Confirmado')
-    .reduce((sum, appt) => sum + Number(appt.payment_amount || 0), 0);
-  const needsConfirmation = todayAppts.filter((appt) => appt.type === 'virtual' || !['Confirmada', 'Completada'].includes(appt.status)).length;
-  const weekSessions = Number(stats?.sessions_this_week || 0);
-  const recurringClients = Number(analyticsData?.recurring?.active || 0);
-
-  const attentionQueue = [
-    mismatches[0] && {
-      title: 'Pago con mismatch',
-      detail: `${mismatches[0].first_name} ${mismatches[0].last_name || ''} • ${formatMoney(mismatches[0].amount)} pendiente de revisión`,
-      tone: 'rose',
-    },
-    pendingPayments[0] && {
-      title: 'Cobro pendiente',
-      detail: `${pendingPayments[0].first_name} ${pendingPayments[0].last_name || ''} • cita ${pendingPayments[0].date_time ? formatTimeBolivia(pendingPayments[0].date_time) : 'sin hora'}`,
-      tone: 'amber',
-    },
-    atRiskClients[0] && {
-      title: 'Paciente en riesgo',
-      detail: `${atRiskClients[0].first_name} ${atRiskClients[0].last_name} • ${atRiskClients[0].retention_status} • ${atRiskClients[0].days_since_last_session || 0} días`,
-      tone: 'sky',
-    },
-  ].filter(Boolean);
-
-  const priorityStrip = [
-    { label: 'Sin confirmar', value: String(needsConfirmation), tone: 'amber' },
-    { label: 'Recurrentes', value: String(recurringClients), tone: 'blue' },
-    { label: 'Mismatch', value: String(mismatches.length), tone: 'rose' },
-    { label: 'En riesgo', value: String(riskClients), tone: 'sky' },
-  ];
+  const currentMonth = monthlySummary?.current || {};
+  const goalAmount = monthlySummary?.monthly_goal ? Number(monthlySummary.monthly_goal) : null;
+  const confirmedMonth = Number(currentMonth.income_confirmed || 0);
+  const pendingMonth = Number(currentMonth.income_pending || 0);
+  const paidSessionsMonth = Number(currentMonth.paid_sessions || 0);
+  const totalSessionsMonth = Number(currentMonth.total_sessions || 0);
+  const averageFee = paidSessionsMonth > 0 ? confirmedMonth / paidSessionsMonth : 250;
+  const goalProgress = goalAmount ? Math.min((confirmedMonth / goalAmount) * 100, 100) : 0;
+  const goalRemaining = goalAmount ? Math.max(goalAmount - confirmedMonth, 0) : 0;
+  const sessionsNeeded = goalAmount ? Math.ceil(goalRemaining / Math.max(averageFee, 1)) : 0;
+  const daysInMonth = new Date(nowParts.year, nowParts.month, 0).getDate();
+  const expectedByToday = goalAmount ? (goalAmount * nowParts.day) / daysInMonth : 0;
+  const paceGap = goalAmount ? confirmedMonth - expectedByToday : 0;
+  const projectedMonth = confirmedMonth + pendingMonth;
 
   const shellText = isDark ? 'text-slate-100' : 'text-slate-900';
-  const dividerClass = isDark ? 'border-white/10' : 'border-black/5';
-  const badgeClass = isDark ? 'bg-white/6 text-slate-300' : 'bg-white/80 text-slate-500';
-  const bodyTextClass = isDark ? 'text-slate-300' : 'text-slate-500';
-  const subtleTextClass = isDark ? 'text-slate-500' : 'text-slate-400';
-  const quietSurfaceClass = isDark ? 'border-white/10 bg-white/[0.03]' : 'border-slate-200/80 bg-[#fcfbf8]';
-  const dashedSurfaceClass = isDark ? 'border-white/12 text-slate-500' : 'border-slate-200 text-slate-400';
-  const threadCardClass = isDark
-    ? 'border-white/10 bg-[#101923] hover:border-white/16 hover:bg-[#12202c] hover:shadow-[0_18px_36px_rgba(0,0,0,0.22)]'
-    : 'border-slate-200/80 bg-[#fcfbf8] hover:border-slate-300 hover:shadow-[0_18px_36px_rgba(15,23,42,0.06)]';
-  const threadAvatarClass = isDark ? 'bg-[#d8704a] text-white' : 'bg-[#d8704a] text-white';
+  const subtleText = isDark ? 'text-slate-400' : 'text-slate-500';
+  const faintText = isDark ? 'text-slate-500' : 'text-slate-400';
+  const dividerClass = isDark ? 'border-white/10' : 'border-slate-200/80';
+  const pageSurface = isDark ? 'bg-[#071018]' : 'bg-[#f6f3ed]';
+
+  const summaryItems = [
+    {
+      label: 'Citas de hoy',
+      value: String(totalToday),
+      detail: completedToday > 0 ? `${completedToday} ya cerradas` : 'Aún sin cierres',
+      icon: CalendarDays,
+    },
+    {
+      label: 'Sigue',
+      value: nextAppointment ? formatTimeBolivia(nextAppointment.date_time) : 'Sin más citas',
+      detail: nextAppointment ? `${nextAppointment.first_name} ${nextAppointment.last_name || ''}`.trim() : 'El día ya no tiene sesiones futuras',
+      icon: Clock3,
+    },
+    {
+      label: 'Sin confirmar',
+      value: String(unconfirmedToday),
+      detail: confirmedToday > 0 ? `${confirmedToday} confirmadas` : 'Sin confirmadas todavía',
+      icon: CircleAlert,
+    },
+    {
+      label: 'Cobro por cerrar',
+      value: unresolvedPaymentsAmount > 0 ? formatMoney(unresolvedPaymentsAmount) : String(unresolvedPaymentsToday.length),
+      detail: unresolvedPaymentsToday.length > 0 ? `${unresolvedPaymentsToday.length} cita(s) completadas sin cierre` : 'Nada pendiente por cobrar hoy',
+      icon: Wallet,
+    },
+  ];
 
   return (
     <AdminLayout title="Hoy">
       <Toast toast={toast} />
 
-      <div className={`preview-admin-shell relative -mx-4 -mt-4 px-4 pb-6 pt-4 lg:-mx-6 lg:-mt-6 lg:px-6 lg:pb-8 lg:pt-6 ${shellText}`}>
-        <div className="preview-halo preview-halo-a" />
-        <div className="preview-halo preview-halo-b" />
-
-        <div className={`preview-enter border-b pb-6 ${dividerClass}`} style={{ animationDelay: '60ms' }}>
-          <div className="flex flex-col gap-5 xl:flex-row xl:items-center xl:justify-between">
-            <div>
-              <div className={`text-xs font-semibold uppercase tracking-[0.26em] ${subtleTextClass}`}>Operación</div>
-              <div className="mt-2 flex flex-wrap items-center gap-3">
-                <h1 className={`text-[clamp(2rem,3vw,3.25rem)] font-semibold tracking-[-0.04em] ${isDark ? 'text-white' : 'text-slate-950'}`}>Hoy</h1>
-                <span className={`inline-flex items-center gap-2 rounded-full px-3 py-1 text-sm ${badgeClass}`}>
-                  <span className="h-2 w-2 rounded-full bg-emerald-500 shadow-[0_0_0_6px_rgba(16,185,129,0.15)]" />
-                  {loading ? 'Sincronizando' : 'Operación activa'}
-                </span>
+      <div className={`preview-admin-shell relative -mx-4 -mt-4 min-h-full px-4 pb-6 pt-4 lg:-mx-6 lg:-mt-6 lg:px-6 lg:pb-8 lg:pt-6 ${pageSurface} ${shellText}`}>
+        <div className="preview-enter" style={{ animationDelay: '40ms' }}>
+          <div className={`rounded-[32px] border px-6 py-6 ${isDark ? 'border-white/10 bg-[#0b141d]' : 'border-slate-200/80 bg-white/90'}`}>
+            <div className="flex flex-col gap-3 xl:flex-row xl:items-end xl:justify-between">
+              <div>
+                <div className={`text-xs font-semibold uppercase tracking-[0.24em] ${faintText}`}>Operación diaria</div>
+                <h1 className={`mt-2 text-[clamp(2rem,3vw,3.25rem)] font-semibold tracking-[-0.05em] ${isDark ? 'text-white' : 'text-slate-950'}`}>
+                  Hoy
+                </h1>
+                <p className={`mt-3 max-w-2xl text-sm leading-7 ${subtleText}`}>
+                  {formatLongDate()} · agenda, pendientes del día y ritmo real de la meta mensual.
+                </p>
               </div>
-              <p className={`mt-3 max-w-2xl text-sm leading-7 ${bodyTextClass}`}>
-                Agenda, cobros, pacientes e inbox del día en una sola superficie operativa.
-              </p>
+
+              <div className={`rounded-2xl px-4 py-3 ${isDark ? 'bg-white/6 text-slate-200' : 'bg-[#f6f1ea] text-slate-600'}`}>
+                <div className="text-[11px] uppercase tracking-[0.18em]">Meta de {formatMonthLabel()}</div>
+                <div className={`mt-1 text-2xl font-semibold tracking-tight ${isDark ? 'text-white' : 'text-slate-950'}`}>
+                  {goalAmount ? `${Math.round(goalProgress)}%` : 'Sin meta'}
+                </div>
+                <div className={`mt-1 text-sm ${subtleText}`}>
+                  {goalAmount ? `${formatMoney(confirmedMonth)} confirmados` : 'Defínela en Finanzas para ver ritmo'}
+                </div>
+              </div>
             </div>
 
-            <div className="flex flex-wrap items-center gap-3">
-              <button
-                type="button"
-                onClick={() => handleTriggerReminder('today')}
-                className={`rounded-2xl border px-4 py-3 text-sm font-medium transition ${
-                  isDark
-                    ? 'border-white/12 bg-white/6 text-slate-100 hover:bg-white/10'
-                    : 'border-white/70 bg-white/80 text-slate-700 hover:bg-white'
-                }`}
-              >
-                Pendientes hoy
-              </button>
-              <button
-                type="button"
-                onClick={() => handleTriggerReminder('tomorrow')}
-                className={`rounded-2xl px-4 py-3 text-sm font-medium transition ${
-                  isDark
-                    ? 'bg-white text-slate-950 hover:bg-slate-100'
-                    : 'bg-[#1f2937] text-white shadow-[0_16px_34px_rgba(15,23,42,0.18)] hover:bg-slate-800'
-                }`}
-              >
-                Pendientes mañana
-              </button>
+            <div className={`mt-6 grid gap-4 border-t pt-5 sm:grid-cols-2 xl:grid-cols-4 ${dividerClass}`}>
+              {summaryItems.map((item) => {
+                const Icon = item.icon;
+                return (
+                  <div key={item.label} className="min-w-0">
+                    <div className={`flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.18em] ${faintText}`}>
+                      <Icon size={14} />
+                      {item.label}
+                    </div>
+                    <div className={`mt-2 text-2xl font-semibold tracking-tight ${isDark ? 'text-white' : 'text-slate-950'}`}>
+                      {item.value}
+                    </div>
+                    <div className={`mt-1 text-sm leading-6 ${subtleText}`}>{item.detail}</div>
+                  </div>
+                );
+              })}
             </div>
-          </div>
-
-          <div className="mt-5 flex flex-wrap gap-3">
-            {priorityStrip.map((item, index) => (
-              <div
-                key={item.label}
-                className={`preview-enter rounded-2xl border px-4 py-3 ${toneClasses(item.tone, isDark)}`}
-                style={{ animationDelay: `${120 + index * 70}ms` }}
-              >
-                <div className="text-[11px] font-semibold uppercase tracking-[0.18em]">{item.label}</div>
-                <div className="mt-1 text-2xl font-semibold">{item.value}</div>
-              </div>
-            ))}
           </div>
         </div>
 
-        <div className="mt-6 grid gap-6 xl:grid-cols-[minmax(0,1.45fr)_390px]">
+        <div className="mt-6 grid gap-6 xl:grid-cols-[minmax(0,1.5fr)_340px]">
           <div className="space-y-6">
-            <PreviewPanel
-              eyebrow="Agenda"
-              title="Agenda del día"
-              description="Citas de hoy con cobro, contexto y acciones rápidas."
-              delay={140}
+            <Section
+              title="Línea del día"
+              description="Una vista densa de cada cita con estado, cobro y contexto. Sin comandos duplicados."
               isDark={isDark}
+              className="preview-enter"
             >
-              <div className="grid gap-5 px-6 py-6 lg:grid-cols-[minmax(0,1fr)_280px]">
-                <div className="space-y-3">
-                  {loading ? (
-                    <div className={`rounded-[24px] border px-4 py-10 text-center text-sm ${quietSurfaceClass}`}>
-                      Cargando agenda...
-                    </div>
-                  ) : todayAppts.length === 0 ? (
-                    <div className={`rounded-[24px] border px-4 py-10 text-center text-sm ${quietSurfaceClass}`}>
-                      No hay citas hoy.
-                    </div>
-                  ) : (
-                    todayAppts.map((appt, index) => (
-                      <AgendaCard
-                        key={buildAgendaKey(appt)}
-                        appt={appt}
-                        index={index}
-                        isDark={isDark}
-                        onTogglePayment={handlePaymentToggle}
-                        onStatusChange={handleStatusChange}
-                      />
-                    ))
-                  )}
-                </div>
-
-                <div className={`border-t pt-5 lg:border-l lg:border-t-0 lg:pl-5 lg:pt-0 ${isDark ? 'border-white/10' : 'border-slate-200/80'}`}>
-                  <div className={`mb-4 flex items-center gap-2 text-sm font-medium ${isDark ? 'text-slate-100' : 'text-slate-700'}`}>
-                    <BellRing size={16} />
-                    Atención inmediata
-                  </div>
-                  <div className="space-y-3">
-                    {attentionQueue.length === 0 ? (
-                      <div className={`rounded-[22px] border border-dashed px-4 py-5 text-sm ${dashedSurfaceClass}`}>
-                        Sin alertas críticas por ahora.
-                      </div>
-                    ) : (
-                      attentionQueue.map((item) => (
-                        <div key={item.title} className={`rounded-[22px] border px-4 py-4 ${toneClasses(item.tone, isDark)}`}>
-                          <div className="text-sm font-semibold">{item.title}</div>
-                          <div className="mt-1 text-sm leading-6 opacity-90">{item.detail}</div>
-                        </div>
-                      ))
-                    )}
-                  </div>
-                </div>
+              <div className={isDark ? 'divide-y divide-white/10' : 'divide-y divide-slate-200/80'}>
+                {loading ? (
+                  <div className={`px-6 py-12 text-sm ${subtleText}`}>Cargando agenda de hoy…</div>
+                ) : todayAppts.length === 0 ? (
+                  <div className={`px-6 py-12 text-sm ${subtleText}`}>No hay citas cargadas para hoy.</div>
+                ) : (
+                  todayAppts.map((appt) => (
+                    <AgendaRow
+                      key={buildAgendaKey(appt)}
+                      appt={appt}
+                      isDark={isDark}
+                      isNext={buildAgendaKey(appt) === nextAppointmentKey}
+                      durationMinutes={appointmentDuration}
+                    />
+                  ))
+                )}
               </div>
-            </PreviewPanel>
-
-            <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(260px,0.8fr)]">
-              <PreviewPanel
-                eyebrow="Pacientes"
-                title="Radar de cartera"
-                description="Segmentos útiles para seguimiento y reactivación."
-                className="overflow-hidden"
-                delay={210}
-                isDark={isDark}
-              >
-                <div className={`divide-y px-6 ${isDark ? 'divide-white/10' : 'divide-slate-200/70'}`}>
-                  {[
-                    { label: 'Con cita', value: clientsWithNext, sub: 'ya tienen próxima sesión reservada' },
-                    { label: 'Al día', value: healthyClients, sub: 'aún están dentro de su ventana normal' },
-                    { label: 'En riesgo', value: riskClients, sub: 'se están saliendo de su cadencia' },
-                    { label: 'Perdidos', value: lostClients, sub: 'sin retorno dentro del umbral' },
-                  ].map((item) => (
-                    <div key={item.label} className="flex items-center justify-between gap-4 py-4">
-                      <div>
-                        <div className={`text-sm font-medium ${isDark ? 'text-slate-100' : 'text-slate-700'}`}>{item.label}</div>
-                        <div className={`text-sm ${subtleTextClass}`}>{item.sub}</div>
-                      </div>
-                      <div className={`text-3xl font-semibold tracking-tight ${isDark ? 'text-white' : 'text-slate-950'}`}>{item.value}</div>
-                    </div>
-                  ))}
-                </div>
-              </PreviewPanel>
-
-              <PreviewPanel
-                eyebrow="Rutinas"
-                title="Automatizaciones visibles"
-                description="Recordatorios y seguimiento que hoy ya están corriendo."
-                delay={260}
-                isDark={isDark}
-              >
-                <div className="space-y-3 px-6 py-6">
-                  {AUTOMATIONS.map((item) => (
-                    <div
-                      key={item}
-                      className={`flex items-start gap-3 rounded-[20px] px-4 py-4 ${
-                        isDark ? 'bg-white/5 text-slate-200' : 'bg-[#f7f3ee] text-slate-600'
-                      }`}
-                    >
-                      <CheckCheck size={18} className={`mt-0.5 ${isDark ? 'text-amber-300' : 'text-[#b3643d]'}`} />
-                      <div className="text-sm leading-6">{item}</div>
-                    </div>
-                  ))}
-                </div>
-              </PreviewPanel>
-            </div>
+            </Section>
           </div>
 
           <div className="space-y-6">
-            <PreviewPanel
-              eyebrow="Inbox"
-              title="Conversaciones recientes"
-              description="Mensajes vivos para seguimiento, cobro y coordinación."
-              delay={180}
+            <Section
+              title="Próxima cita"
+              description="Lo siguiente en tu jornada, con el mínimo contexto útil."
               isDark={isDark}
+              className="preview-enter"
             >
-              <div className="space-y-3 px-6 py-6">
-                {inboxThreads.length === 0 ? (
-                  <div className={`rounded-[22px] border border-dashed px-4 py-5 text-sm ${dashedSurfaceClass}`}>
-                    Aún no hay hilos recientes.
+              <div className="px-6 py-6">
+                {nextAppointment ? (
+                  <div>
+                    <div className={`text-4xl font-semibold tracking-tight ${isDark ? 'text-white' : 'text-slate-950'}`}>
+                      {formatTimeBolivia(nextAppointment.date_time)}
+                    </div>
+                    <div className={`mt-2 text-lg font-semibold ${isDark ? 'text-slate-100' : 'text-slate-800'}`}>
+                      {`${nextAppointment.first_name || ''} ${nextAppointment.last_name || ''}`.trim()}
+                    </div>
+                    <div className={`mt-2 text-sm ${subtleText}`}>{nextAppointment.client_phone || 'Sin teléfono'}</div>
+                    <div className="mt-4 flex flex-wrap gap-2">
+                      <span className={`rounded-full px-2.5 py-1 text-xs font-medium ${statusPillClasses(getAppointmentStatus(nextAppointment), isDark)}`}>
+                        {getAppointmentStatus(nextAppointment)}
+                      </span>
+                      <span className={`rounded-full px-2.5 py-1 text-xs font-medium ${paymentPillClasses(nextAppointment.payment_status, isDark)}`}>
+                        {nextAppointment.payment_status || 'Sin pago'}
+                      </span>
+                    </div>
+                    <div className={`mt-4 text-sm leading-6 ${nextAppointment.notes || nextAppointment.payment_notes ? subtleText : faintText}`}>
+                      {nextAppointment.notes || nextAppointment.payment_notes || 'Sin nota visible para la próxima cita.'}
+                    </div>
                   </div>
                 ) : (
-                  inboxThreads.map((thread) => (
-                    <div
-                      key={thread.id}
-                      className={`rounded-[24px] border px-4 py-4 transition-all duration-200 ${threadCardClass}`}
-                    >
-                      <div className="flex items-start gap-4">
-                        <div className={`flex h-11 w-11 flex-none items-center justify-center rounded-2xl text-sm font-semibold ${threadAvatarClass}`}>
-                          {(thread.first_name || thread.client_phone || '?').charAt(0)}
+                  <div className={`text-sm leading-6 ${subtleText}`}>
+                    No quedan sesiones futuras hoy. Si entran cambios, esta columna se actualiza sola.
+                  </div>
+                )}
+              </div>
+            </Section>
+
+            <Section
+              title="Pendientes de hoy"
+              description="Lo que todavía exige revisión humana antes de dar el día por cerrado."
+              isDark={isDark}
+              className="preview-enter"
+            >
+              <div className="space-y-3 px-6 py-6">
+                {pendingItems.length === 0 ? (
+                  <div className={`rounded-[22px] border border-dashed px-4 py-5 text-sm ${isDark ? 'border-white/12 text-slate-500' : 'border-slate-200 text-slate-400'}`}>
+                    Nada urgente por revisar ahora mismo.
+                  </div>
+                ) : (
+                  pendingItems.map((item) => (
+                    <div key={item.key} className={`rounded-[22px] border px-4 py-4 ${issueToneClasses(item.tone, isDark)}`}>
+                      <div className="text-sm font-semibold">{item.label}</div>
+                      <div className="mt-1 text-sm opacity-90">{item.detail}</div>
+                    </div>
+                  ))
+                )}
+              </div>
+            </Section>
+
+            <Section
+              title={`Meta de ${formatMonthLabel()}`}
+              description="Lo confirmado, lo que falta y si el ritmo del mes alcanza."
+              isDark={isDark}
+              className="preview-enter"
+            >
+              <div className="space-y-5 px-6 py-6">
+                {goalAmount ? (
+                  <>
+                    <div>
+                      <div className={`flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.18em] ${faintText}`}>
+                        <Target size={14} />
+                        Progreso
+                      </div>
+                      <div className={`mt-2 flex items-end justify-between gap-4 ${isDark ? 'text-white' : 'text-slate-950'}`}>
+                        <div className="text-3xl font-semibold tracking-tight">{Math.round(goalProgress)}%</div>
+                        <div className={`text-sm ${subtleText}`}>{formatMoney(confirmedMonth)} de {formatMoney(goalAmount)}</div>
+                      </div>
+                      <div className="mt-3">
+                        <ProgressBar progress={goalProgress} isDark={isDark} />
+                      </div>
+                    </div>
+
+                    <div className={`grid gap-4 sm:grid-cols-2 ${isDark ? 'text-slate-200' : 'text-slate-700'}`}>
+                      <div>
+                        <div className={`text-xs uppercase tracking-[0.18em] ${faintText}`}>Falta</div>
+                        <div className="mt-1 text-lg font-semibold">{formatMoney(goalRemaining)}</div>
+                        <div className={`mt-1 text-sm ${subtleText}`}>
+                          Aproximadamente {sessionsNeeded} sesiones más.
                         </div>
-                        <div className="min-w-0 flex-1">
-                          <div className="flex items-center justify-between gap-3">
-                            <div className={`text-sm font-semibold ${isDark ? 'text-white' : 'text-slate-900'}`}>
-                              {thread.first_name ? `${thread.first_name} ${thread.last_name || ''}`.trim() : thread.client_phone}
-                            </div>
-                            <div className={`text-xs uppercase tracking-[0.18em] ${subtleTextClass}`}>{formatRelativeTime(thread.created_at)}</div>
-                          </div>
-                          <div className={`mt-1 line-clamp-2 text-sm leading-6 ${bodyTextClass}`}>{thread.content || 'Sin contenido'}</div>
+                      </div>
+
+                      <div>
+                        <div className={`text-xs uppercase tracking-[0.18em] ${faintText}`}>Ritmo</div>
+                        <div className="mt-1 text-lg font-semibold">
+                          {paceGap >= 0 ? 'Por encima' : 'Por debajo'}
                         </div>
-                        <div className={`rounded-full px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] ${
-                          isDark ? 'bg-white/10 text-white' : 'bg-slate-900 text-white'
-                        }`}>
-                          {thread.direction === 'inbound' ? 'Inbox' : 'Salida'}
+                        <div className={`mt-1 text-sm ${subtleText}`}>
+                          {formatMoney(Math.abs(paceGap))} respecto al ritmo esperado de hoy.
                         </div>
+                      </div>
+                    </div>
+
+                    <div className={`rounded-[22px] px-4 py-4 ${isDark ? 'bg-white/5 text-slate-200' : 'bg-[#f6f1ea] text-slate-700'}`}>
+                      <div className="text-sm font-semibold">Si entra todo lo pendiente del mes</div>
+                      <div className="mt-1 text-sm leading-6">
+                        Proyectas {formatMoney(projectedMonth)}. Quedan {daysInMonth - nowParts.day} días para cerrar {formatMonthLabel().toLowerCase()}.
+                      </div>
+                    </div>
+                  </>
+                ) : (
+                  <div className={`text-sm leading-6 ${subtleText}`}>
+                    Aún no hay meta definida. La pantalla puede mostrar progreso y ritmo apenas la fijes en Finanzas.
+                  </div>
+                )}
+
+                <div className={`border-t pt-4 ${dividerClass}`}>
+                  <div className={`text-xs uppercase tracking-[0.18em] ${faintText}`}>Mes actual</div>
+                  <div className={`mt-2 grid gap-3 sm:grid-cols-2 ${subtleText}`}>
+                    <div>
+                      <div className={`text-lg font-semibold ${isDark ? 'text-white' : 'text-slate-950'}`}>{formatMoney(pendingMonth)}</div>
+                      <div className="text-sm">Pendiente de cobro en el mes</div>
+                    </div>
+                    <div>
+                      <div className={`text-lg font-semibold ${isDark ? 'text-white' : 'text-slate-950'}`}>{paidSessionsMonth} / {totalSessionsMonth}</div>
+                      <div className="text-sm">Sesiones cobradas sobre sesiones del mes</div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </Section>
+
+            <Section
+              title="Huecos libres"
+              description="Ventanas de hoy que todavía te dejan aire o movimiento."
+              isDark={isDark}
+              className="preview-enter"
+            >
+              <div className="space-y-3 px-6 py-6">
+                {futureGaps.length === 0 ? (
+                  <div className={`text-sm leading-6 ${subtleText}`}>
+                    No aparecen huecos amplios entre las citas futuras de hoy.
+                  </div>
+                ) : (
+                  futureGaps.map((gap) => (
+                    <div key={gap.key} className={`rounded-[22px] px-4 py-4 ${isDark ? 'bg-white/5 text-slate-200' : 'bg-[#f6f1ea] text-slate-700'}`}>
+                      <div className="text-sm font-semibold">
+                        {formatTimeBolivia(gap.start)} → {formatTimeBolivia(gap.end)}
+                      </div>
+                      <div className={`mt-1 text-sm ${subtleText}`}>
+                        {gap.minutes} minutos libres entre sesiones.
                       </div>
                     </div>
                   ))
                 )}
               </div>
-            </PreviewPanel>
-
-            <PreviewPanel
-              eyebrow="Cobros"
-              title="Pulso comercial"
-              description="Lo confirmado, lo proyectado y lo que necesita revisión."
-              delay={230}
-              isDark={isDark}
-            >
-              <div className="grid gap-4 px-6 py-6">
-                <div className={`rounded-[24px] p-5 ${isDark ? 'bg-white/6 text-white' : 'bg-[#1f2937] text-white'}`}>
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <div className={`text-xs uppercase tracking-[0.18em] ${isDark ? 'text-white/45' : 'text-white/50'}`}>Ingreso proyectado</div>
-                      <div className="mt-2 text-4xl font-semibold tracking-tight">{formatMoney(projectedIncome)}</div>
-                    </div>
-                    <TrendingUp size={24} className="text-emerald-300" />
-                  </div>
-                  <div className={`mt-4 h-2 overflow-hidden rounded-full ${isDark ? 'bg-white/8' : 'bg-white/10'}`}>
-                    <div
-                      className="h-full rounded-full bg-gradient-to-r from-emerald-300 to-cyan-300"
-                      style={{ width: `${Math.min(100, projectedIncome > 0 ? Math.round(((Number(stats?.income_this_month) || 0) / projectedIncome) * 100) : 0)}%` }}
-                    />
-                  </div>
-                  <div className={`mt-3 text-sm ${isDark ? 'text-white/55' : 'text-white/60'}`}>
-                    {formatMoney(stats?.income_this_month || 0)} ya confirmado este mes
-                  </div>
-                </div>
-
-                <div className="grid gap-4 sm:grid-cols-2">
-                  <div className={`rounded-[22px] p-4 ${isDark ? 'bg-white/5' : 'bg-[#f6f1ea]'}`}>
-                    <div className={`flex items-center gap-2 text-sm font-medium ${isDark ? 'text-slate-200' : 'text-slate-500'}`}>
-                      <FileWarning size={16} className="text-rose-500" />
-                      En revisión
-                    </div>
-                    <div className={`mt-3 text-3xl font-semibold ${isDark ? 'text-white' : 'text-slate-950'}`}>
-                      {formatMoney(mismatches.reduce((sum, item) => sum + Number(item.amount || 0), 0))}
-                    </div>
-                    <div className={`mt-1 text-sm ${subtleTextClass}`}>{mismatches.length} pago(s) con duda</div>
-                  </div>
-
-                  <div className={`rounded-[22px] p-4 ${isDark ? 'bg-white/5' : 'bg-[#f6f1ea]'}`}>
-                    <div className={`flex items-center gap-2 text-sm font-medium ${isDark ? 'text-slate-200' : 'text-slate-500'}`}>
-                      <ShieldCheck size={16} className="text-emerald-500" />
-                      Cobrado hoy
-                    </div>
-                    <div className={`mt-3 text-3xl font-semibold ${isDark ? 'text-white' : 'text-slate-950'}`}>{formatMoney(todayConfirmedRevenue)}</div>
-                    <div className={`mt-1 text-sm ${subtleTextClass}`}>{weekSessions} sesiones esta semana</div>
-                  </div>
-                </div>
-              </div>
-            </PreviewPanel>
+            </Section>
           </div>
         </div>
       </div>

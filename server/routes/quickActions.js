@@ -1,7 +1,7 @@
 const { Router } = require('express');
 const { pool, withTransaction } = require('../db');
 const { authMiddleware } = require('../middleware/auth');
-const { sendRescheduleTemplate, sendTextMessage } = require('../services/whatsapp');
+const { sendRescheduleTemplate, sendTextMessage, sendConfirmationTemplate } = require('../services/whatsapp');
 const { sendServerError } = require('../utils/httpErrors');
 const { normalizePhone } = require('../utils/phone');
 const { syncSlotClaimsForStatusTransition } = require('../services/appointmentSlotClaims');
@@ -369,12 +369,77 @@ router.post('/send-reminder', authMiddleware, async (req, res) => {
     const { client_id } = req.body;
     if (!client_id) return res.status(400).json({ error: 'client_id requerido' });
 
+    // 1. Look up the client's next upcoming appointment from DB
+    const [nextAppts] = await pool.query(
+      `SELECT a.id, a.date_time, a.gcal_event_id, a.tenant_id,
+              c.phone, c.first_name, c.id AS client_id
+       FROM appointments a
+       JOIN clients c ON a.client_id = c.id
+       WHERE a.client_id = ? AND a.tenant_id = ?
+         AND a.status IN ('Agendada','Confirmada','Reagendada')
+         AND a.date_time > NOW()
+       ORDER BY a.date_time ASC
+       LIMIT 1`,
+      [client_id, req.tenantId]
+    );
+
+    if (nextAppts.length === 0) {
+      return res.json({
+        success: true,
+        sent: 0,
+        matched: 0,
+        targeted: true,
+        targetFound: false,
+        reason: 'no_upcoming_appointment',
+      });
+    }
+
+    const dbAppt = nextAppts[0];
+    const apptDate = new Date(dbAppt.date_time);
+    const dateStr = `${apptDate.getFullYear()}-${String(apptDate.getMonth() + 1).padStart(2, '0')}-${String(apptDate.getDate()).padStart(2, '0')}`;
+
+    // 2. Try via GCal (same path as Appointments page)
     const { checkAndSendReminders } = require('../services/reminder');
     const result = await checkAndSendReminders({
+      date: dateStr,
       tenantId: req.tenantId,
       force: true,
+      appointmentId: String(dbAppt.id),
       clientId: String(client_id),
     });
+
+    if (result.sent > 0) {
+      return res.json({ success: true, ...result });
+    }
+
+    // 3. Fallback: GCal didn't match, but we have the appointment in DB — send directly
+    if (dbAppt.phone && dbAppt.first_name) {
+      const waResult = await sendConfirmationTemplate(dbAppt.phone, dbAppt.first_name, dbAppt.date_time);
+      await pool.query(
+        `INSERT INTO webhooks_log (tenant_id, event, type, payload, status, client_phone, client_id, appointment_id)
+         VALUES (?, ?, 'reminder_sent', ?, 'enviado', ?, ?, ?)`,
+        [
+          req.tenantId,
+          dbAppt.gcal_event_id || `db-appt-${dbAppt.id}`,
+          JSON.stringify({
+            appointment_id: dbAppt.id,
+            wa_message_id: waResult.messages?.[0]?.id || null,
+            source: 'quick-actions-db-fallback',
+          }),
+          dbAppt.phone,
+          dbAppt.client_id,
+          dbAppt.id,
+        ]
+      );
+      return res.json({
+        success: true,
+        sent: 1,
+        matched: 1,
+        targeted: true,
+        targetFound: true,
+        source: 'database',
+      });
+    }
 
     res.json({ success: true, ...result });
   } catch (err) {

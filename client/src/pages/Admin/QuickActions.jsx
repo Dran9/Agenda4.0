@@ -209,12 +209,16 @@ export default function QuickActions() {
               detail: `Se envió el recordatorio de cita a ${nombre}.`,
             });
           } else {
+            let detail = 'El recordatorio ya fue enviado anteriormente.';
+            if (result.reason === 'no_upcoming_appointment') {
+              detail = 'No se encontró cita próxima para este cliente.';
+            } else if (result.matched === 0 && result.targetFound === false) {
+              detail = 'No se pudo asociar la cita con un evento de Google Calendar, y no se encontró teléfono del cliente.';
+            }
             setActionResult({
               success: false,
               title: 'No se envió recordatorio de cita',
-              detail: result.matched === 0
-                ? 'No se encontró cita próxima en Google Calendar.'
-                : 'El recordatorio ya fue enviado anteriormente.',
+              detail,
             });
           }
           break;

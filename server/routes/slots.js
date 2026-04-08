@@ -1,9 +1,26 @@
 const { Router } = require('express');
-const { getAvailableSlots, getPublicConfig } = require('../services/slots');
+const { getAvailableSlots, getPublicConfig, getAvailableSlotsBatch } = require('../services/slots');
 const { sendServerError } = require('../utils/httpErrors');
 
 const router = Router();
 const DEFAULT_TENANT = 1;
+
+// GET /api/slots/batch?dates=2026-04-08,2026-04-09,...
+router.get('/batch', async (req, res) => {
+  try {
+    const { dates } = req.query;
+    if (!dates) return res.status(400).json({ error: 'Falta parámetro: dates' });
+    const dateList = dates.split(',').filter(d => /^\d{4}-\d{2}-\d{2}$/.test(d));
+    if (dateList.length === 0) return res.status(400).json({ error: 'Sin fechas válidas' });
+    if (dateList.length > 45) return res.status(400).json({ error: 'Máximo 45 fechas por lote' });
+    const tenantId = req.tenantId || DEFAULT_TENANT;
+    const result = await getAvailableSlotsBatch(dateList, tenantId);
+    res.json(result);
+  } catch (err) {
+    console.error('[slots-batch] Error:', err.message);
+    res.json({});
+  }
+});
 
 // GET /api/slots?date=YYYY-MM-DD
 router.get('/', async (req, res) => {

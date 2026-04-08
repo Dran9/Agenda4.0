@@ -401,19 +401,17 @@ export default function BookingFlow() {
   const prefetchDates = useCallback((dates) => {
     const toFetch = dates.filter(d => !slotsCache.has(d));
     if (toFetch.length === 0) return;
-    Promise.all(
-      toFetch.map(date =>
-        api.get(`/slots?date=${date}`)
-          .then(data => ({ date, slots: data.slots || [] }))
-          .catch(() => ({ date, slots: [] }))
-      )
-    ).then(results => {
-      setSlotsCache(prev => {
-        const next = new Map(prev);
-        results.forEach(r => next.set(r.date, r.slots));
-        return next;
-      });
-    });
+    api.get(`/slots/batch?dates=${toFetch.join(',')}`)
+      .then(result => {
+        setSlotsCache(prev => {
+          const next = new Map(prev);
+          for (const [date, slots] of Object.entries(result)) {
+            next.set(date, slots || []);
+          }
+          return next;
+        });
+      })
+      .catch(() => {});
   }, [slotsCache]);
 
   useEffect(() => {
@@ -430,52 +428,28 @@ export default function BookingFlow() {
     }
 
     let cancelled = false;
-    const initialMonthDates = dates.includes(initialDate) ? dates : nextDates;
-    const remainingDates = initialMonthDates.filter(date => date !== initialDate);
-
     setSelectedDate(prev => prev || initialDate);
     setSlotsLoading(true);
 
-    api.get(`/slots?date=${initialDate}`)
-      .then((data) => {
+    // Single batch call for ALL dates
+    api.get(`/slots/batch?dates=${allDates.join(',')}`)
+      .then((result) => {
         if (cancelled) return;
-        const initialSlots = data.slots || [];
-        setSlots(initialSlots);
-        setSlotsCache(prev => {
-          const next = new Map(prev);
-          next.set(initialDate, initialSlots);
-          return next;
-        });
+        const newCache = new Map();
+        for (const [date, slots] of Object.entries(result)) {
+          newCache.set(date, slots || []);
+        }
+        setSlotsCache(newCache);
+        setSlots(newCache.get(initialDate) || []);
       })
       .catch(() => {
         if (cancelled) return;
         setSlots([]);
-        setSlotsCache(prev => {
-          const next = new Map(prev);
-          next.set(initialDate, []);
-          return next;
-        });
       })
       .finally(() => {
         if (cancelled) return;
         setSlotsLoading(false);
         setPrefetchDone(true);
-        if (remainingDates.length > 0) {
-          Promise.all(
-            remainingDates.map(date =>
-              api.get(`/slots?date=${date}`)
-                .then(data => ({ date, slots: data.slots || [] }))
-                .catch(() => ({ date, slots: [] }))
-            )
-          ).then(results => {
-            if (cancelled) return;
-            setSlotsCache(prev => {
-              const next = new Map(prev);
-              results.forEach(r => next.set(r.date, r.slots));
-              return next;
-            });
-          });
-        }
       });
 
     return () => {

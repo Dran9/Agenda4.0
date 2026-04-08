@@ -30,7 +30,7 @@ export default function AdminLayout({ children, title, sidebarSubItems = [] }) {
   }
 
   return (
-    <div className="admin-contrast min-h-screen bg-white flex text-slate-900">
+    <div className="admin-shell admin-contrast min-h-screen bg-transparent flex text-slate-100">
       {/* Sidebar */}
       <aside
         className={`
@@ -41,8 +41,8 @@ export default function AdminLayout({ children, title, sidebarSubItems = [] }) {
         style={{ paddingTop: 'env(safe-area-inset-top, 0px)' }}
       >
         <div className="p-5 border-b border-slate-200">
-          <div className="inline-flex rounded-full bg-[#CFE8E9] px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.24em] text-[#4E769B]">Agenda Daniel MacLean</div>
-          <h1 className="mt-2 font-semibold text-xl text-slate-950 tracking-tight">Admin Desk</h1>
+          <div className="inline-flex rounded-full border border-white/10 bg-white/5 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.24em] text-[#f4c987]">Agenda Daniel MacLean</div>
+          <h1 className="mt-2 font-semibold text-xl text-white tracking-tight">Admin Desk</h1>
         </div>
 
         <nav className="p-3 space-y-1.5">
@@ -57,7 +57,7 @@ export default function AdminLayout({ children, title, sidebarSubItems = [] }) {
                   onClick={() => setSidebarOpen(false)}
                   className={`
                     flex items-center gap-3 px-4 py-3 rounded-2xl text-sm font-medium transition-colors
-                    ${active ? 'bg-[#4E769B] text-white shadow-[0_14px_32px_rgba(78,118,155,0.32)]' : 'text-slate-600 hover:bg-[#CFE8E9] hover:text-slate-900'}
+                    ${active ? 'bg-[linear-gradient(135deg,#d4a857,#7a5f2d)] text-[#071017] shadow-[0_18px_42px_rgba(212,168,87,0.28)]' : 'text-slate-300 hover:bg-white/8 hover:text-white'}
                   `}
                 >
                   <Icon size={18} />
@@ -75,8 +75,8 @@ export default function AdminLayout({ children, title, sidebarSubItems = [] }) {
                           onClick={() => setSidebarOpen(false)}
                           className={`block rounded-xl px-3 py-2 transition-colors ${
                             subActive
-                              ? 'bg-[#CFE8E9] text-slate-900'
-                              : 'text-slate-500 hover:bg-slate-50 hover:text-slate-900'
+                              ? 'bg-white/8 text-white'
+                              : 'text-slate-400 hover:bg-white/6 hover:text-white'
                           }`}
                         >
                           <div className="text-[15px] font-semibold tracking-tight">{subItem.label}</div>
@@ -94,7 +94,7 @@ export default function AdminLayout({ children, title, sidebarSubItems = [] }) {
           <button
             type="button"
             onClick={handleLogout}
-            className="flex items-center gap-3 px-4 py-3 rounded-2xl text-sm font-medium text-slate-600 hover:bg-[#CFE8E9] hover:text-slate-900 w-full"
+            className="flex items-center gap-3 px-4 py-3 rounded-2xl text-sm font-medium text-slate-300 hover:bg-white/8 hover:text-white w-full"
           >
             <LogOut size={18} />
             Cerrar sesión
@@ -118,16 +118,16 @@ export default function AdminLayout({ children, title, sidebarSubItems = [] }) {
             <button
               type="button"
               onClick={() => setSidebarOpen(true)}
-              className="lg:hidden inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-900 shadow-sm"
+            className="lg:hidden inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-white/10 bg-white/6 text-white shadow-[0_10px_24px_rgba(0,0,0,0.22)]"
               aria-label="Abrir menú"
             >
               <Menu size={20} />
             </button>
-            <h2 className="text-lg font-semibold tracking-tight">{title}</h2>
+            <h2 className="text-lg font-semibold tracking-tight text-white">{title}</h2>
           </div>
         </header>
 
-        <main className="p-4 lg:p-6 bg-white">
+        <main className="p-4 lg:p-6 bg-transparent">
           {children}
         </main>
       </div>

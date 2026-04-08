@@ -283,6 +283,46 @@ Ver `.env.example` para la lista completa. Se configuran en hPanel de Hostinger.
   `recurring_schedules` ya tiene UNIQUE KEY `(tenant_id, client_id, day_of_week, time, started_at)`
   todavía no hay un UNIQUE KEY duro para ocurrencias recurrentes en la tabla `appointments`
 
+## Estado admin móvil + recurrencia + voz (2026-04-07)
+- `/admin` ya no debe usarse como dashboard directo:
+  ahora redirige a `Comandos` (`/admin/quick-actions`) si hay sesión
+  el dashboard quedó en `/admin/dashboard`
+- El admin móvil en iPhone necesitó un fix real de safe area:
+  no bastó con `padding-top`
+  hubo que agregar `viewport-fit=cover` en `client/index.html` y un spacer explícito en `client/src/components/AdminLayout.jsx`
+  porque dentro del wrapper el notch no respetaba bien el header y el botón hamburguesa quedaba montado sobre el reloj
+- Recurrencia ya no debe asumir que existe una sesión completada como única base válida:
+  la regla correcta ahora es:
+  1. usar la última cita standalone `Completada`
+  2. si no existe, usar la próxima standalone futura (`Agendada`, `Confirmada`, `Reagendada`)
+  3. si ninguna existe, dejar que el admin cargue día/hora/fecha manualmente
+- `server/services/recurring.js` ahora devuelve metadata transitoria de sync:
+  `gcal_sync_status` e `integration_warning`
+  esto existe para evitar un falso positivo de “Recurrencia activada” cuando la app sí guardó el schedule pero Google Calendar no confirmó la serie
+- `Clients`, `Appointments` y `Quick Actions` deben mirar esa metadata y mostrar advertencia explícita si Google falla
+- Voz ahora comparte la misma lógica de cita base y ya reconoce frases simples como:
+  `pon en recurrencia a Fulano`
+  `poner en recurrencia a Fulano`
+  `pon a Fulano en recurrencia`
+  si el cliente es ambiguo debe pedir aclaración; si falta día/hora debe pedirlos
+
+## Por qué este fix tomó más tiempo de lo deseable
+- No era un bug único:
+  eran al menos 4 problemas distintos que producían síntomas parecidos
+- Capa 1, wrapper/iPhone:
+  el menú del admin parecía solo “muy arriba”, pero el problema real incluía `WKWebView`, notch y safe area mal expuesto
+- Capa 2, routing:
+  el wrapper podía entrar por `/admin`, pero la web seguía teniendo al dashboard como root; había que corregir la semántica del route, no solo el wrapper
+- Capa 3, recurrencia backend:
+  el sistema sí guardaba la recurrencia en DB, pero si Google Calendar fallaba la app seguía respondiendo como éxito
+  eso hacía parecer que “no creó nada” cuando en realidad había una desalineación entre DB y Google
+- Capa 4, UX repartida:
+  `Clients`, `Appointments`, `Quick Actions` y voz no usaban exactamente la misma lógica de cita base ni de manejo de error
+  arreglar solo una superficie habría dejado el sistema inconsistente
+- Regla de trabajo para futuras sesiones:
+  cuando una función exista tanto en admin como en voz, no aceptar fixes parciales
+  la solución correcta debe dejar el criterio unificado en backend/utilidades compartidas y solo después reflejarlo en cada UI
+
 ## Estado SSE / Real-time Admin (2026-04-07)
 - El admin ahora se actualiza en tiempo real sin refresh manual, usando Server-Sent Events (SSE)
 - Endpoint SSE: `GET /api/admin/events` — conexión persistente protegida por JWT

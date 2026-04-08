@@ -31,23 +31,28 @@ export default function Login() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-50 px-4">
+    <div className="min-h-screen flex items-center justify-center bg-[radial-gradient(circle_at_top,_rgba(30,96,134,0.26),_transparent_32%),radial-gradient(circle_at_82%_18%,_rgba(212,168,87,0.15),_transparent_18%),linear-gradient(180deg,_#05090e,_#091019_44%,_#070d13_100%)] px-4">
       <div className="w-full max-w-sm">
-        <h1 className="text-2xl font-bold text-center mb-6">Admin</h1>
-        <form onSubmit={handleSubmit} className="bg-white p-6 rounded-xl shadow-sm border border-gray-200">
-          <label className="block text-sm font-medium text-gray-700 mb-2">Contraseña</label>
+        <div className="mb-6 text-center">
+          <div className="inline-flex rounded-full border border-[#d6b16b]/30 bg-[#d6b16b]/12 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.24em] text-[#f2d39a]">
+            Admin
+          </div>
+          <h1 className="mt-4 text-3xl font-bold text-white">Ingreso nocturno</h1>
+        </div>
+        <form onSubmit={handleSubmit} className="rounded-[1.8rem] border border-white/10 bg-[linear-gradient(180deg,rgba(15,21,29,0.96),rgba(8,12,18,0.96))] p-6 shadow-[0_28px_80px_rgba(0,0,0,0.38)] backdrop-blur-xl">
+          <label className="mb-2 block text-sm font-medium text-slate-300">Contraseña</label>
           <input
             type="password"
             value={password}
             onChange={e => setPassword(e.target.value)}
-            className="w-full px-3 py-2.5 border border-gray-200 rounded-lg text-base focus:outline-none focus:ring-2 focus:ring-gray-300"
+            className="w-full rounded-xl border border-white/10 bg-white/6 px-3 py-3 text-base text-white outline-none transition placeholder:text-slate-500 focus:border-[#7fb5d6] focus:ring-2 focus:ring-[#7fb5d6]/20"
             autoFocus
           />
-          {error && <div className="mt-2 text-sm text-red-600">{error}</div>}
+          {error && <div className="mt-2 text-sm text-red-300">{error}</div>}
           <button
             type="submit"
             disabled={!password || loading}
-            className="w-full mt-4 py-3 bg-gray-900 text-white rounded-lg font-medium disabled:opacity-40 hover:bg-gray-800 transition-colors"
+            className="mt-4 w-full rounded-xl bg-[linear-gradient(135deg,#d4a857,#7a5f2d)] py-3 text-[#071017] font-medium transition hover:brightness-105 disabled:opacity-40"
           >
             {loading ? 'Ingresando...' : 'Ingresar'}
           </button>

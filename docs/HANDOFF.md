@@ -10,8 +10,10 @@ If the task is about the private voice app, also read `docs/VOICE-APP-REPORT.md`
 
 - Date: 2026-04-07
 - Branch: `main`
-- Commit: `9ee8997`
-- Summary: SSE real-time admin updates added; GCal recurring series now deleted when ending recurrence from admin or Quick Actions; Quick Actions cancel route now uses service function instead of direct SQL
+- Commit: `feb7a8b`
+- Summary: admin mobile safe-area/notch fix deployed; `/admin` now resolves to `Comandos`; recurring schedules now choose a better source appointment, surface Google Calendar sync failures, and voice can activate recurrence with simpler phrasing
+- Complexity note: this took longer than expected because the failure was split across 4 layers at once:
+  `WKWebView`/safe-area behavior on iPhone, admin route entry behavior, recurring backend silently swallowing Google Calendar failures, and a separate voice parser path that did not share the same recurrence heuristics
 - Workspace follow-up: booking concurrency hardening is now in progress without changing public UX; active appointments reserve minute-level slot claims in MySQL so overlapping concurrent bookings fail at DB level too
 - UI follow-up: Clients and Appointments now expose a visible `Recurrencia` field/column with quick manual actions, instead of leaving recurrence implied by badges or backend runtime only
 - UI follow-up 2: recurrence no longer depends on opening the full client popup; there is now a dedicated short recurrence modal
@@ -22,9 +24,14 @@ If the task is about the private voice app, also read `docs/VOICE-APP-REPORT.md`
 - Quick Actions fix: cancel route now calls `endRecurringSchedule()` service instead of direct SQL, so GCal deletion also happens from Quick Actions
 - Voice recurring follow-up: the parser now recognizes `Fulano pasa a modo recurrencia`, `Fulano pasa a recurrencia`, and `Fulano está en recurrencia`
 - Voice recurring follow-up 2: the parser now also recognizes `Fulano entra en recurrencia`
+- Voice recurring follow-up 3: the parser now also recognizes simpler phrases like `pon en recurrencia a Fulano` and `pon a Fulano en recurrencia`
 - Voice GCal follow-up: activating recurrence from voice now prefers the client’s latest standalone completed appointment as source, then falls back to the next standalone future appointment
 - Voice status follow-up: voice can now answer whether a client is actively in recurrence, paused, ended, or not recurrent at all
 - Voice integration follow-up: if recurrence is activated in the app but Google Calendar does not confirm the recurring series, voice now answers with an explicit warning instead of a false success
+- Admin mobile follow-up: `/admin` now redirects to `/admin/quick-actions`; the dashboard moved to `/admin/dashboard`
+- Admin mobile follow-up 2: the header/hamburger now respects the iPhone notch using `viewport-fit=cover` plus an explicit safe-area spacer, because relying on header padding alone was not enough inside the wrapper
+- Recurring reliability follow-up: admin recurrence no longer assumes a completed session is mandatory; it now falls back to the next standalone future appointment when no completed base exists
+- Recurring UX follow-up: Clients, Appointments, and Quick Actions now warn explicitly when the recurrence was saved in the app but Google Calendar did not confirm the weekly series
 - Quick Actions follow-up: `/admin/quick-actions` is now a full command center (not a placeholder); it is the first sidebar item
 - Quick Actions scope: 6 client actions (reschedule link, cancel, no-show, reminder, recurring, fee change), instant search, WhatsApp integration, result feedback panel, quick settings toggle
 - Quick Actions backend: `server/routes/quickActions.js` with 6 auth-protected endpoints, all logged to `webhooks_log`
@@ -79,11 +86,20 @@ If the task is about the private voice app, also read `docs/VOICE-APP-REPORT.md`
 - Appointments UI now also shows an explicit `Recurrencia` column tied to the client’s current schedule, with a dedicated short recurrence modal and quick actions to pause, reactivate, or quitar recurrencia directly from the appointments list
 - Appointments UI is now the main fast path for recurrence:
   the quick modal preloads the latest completed session as source and defaults recurrence to the same weekday and hour as that session, while still letting the admin change day, time, or start date
+- Appointments/Clients recurrence base rule is now:
+  latest standalone completed appointment first, otherwise next standalone future appointment (`Agendada`, `Confirmada`, `Reagendada`)
+- Recurring backend now returns transient sync metadata on create/update/resume:
+  `gcal_sync_status` and `integration_warning`
+  admin surfaces must use these fields to avoid fake success when Google Calendar did not confirm the weekly series
 - Analytics now exposes recurring totals, paused/ended counts, 90-day churn, and projected monthly recurring revenue
 - Voice admin now supports `activate_recurring`, `pause_recurring`, `resume_recurring`, and `deactivate_recurring`
 - Voice admin now also supports `recurring_status`
 - Reminder flow now tries recurring matching before the old phone-summary fallback so recurring sessions become real appointments before WhatsApp sends
 - Voice activation of recurrence now prefers converting the latest standalone completed appointment in Google Calendar into a weekly recurring event, then falls back to the next standalone future appointment
+- Voice recurring parser now supports simpler direct phrasing:
+  `pon en recurrencia a Fulano`
+  `poner en recurrencia a Fulano`
+  `pon a Fulano en recurrencia`
 - If recurrence is changed manually in Google Calendar, the daily `recurringSync` cron can import it back into the app from `recurringEventId`
 - Admin pages now auto-refresh via SSE (Server-Sent Events):
   `GET /api/admin/events` is a persistent SSE connection that broadcasts `appointment:change`, `recurring:change`, `payment:change`, `client:change`
@@ -130,6 +146,22 @@ If the task is about the private voice app, also read `docs/VOICE-APP-REPORT.md`
 - `CLAUDE.md`
 - `docs/HANDOFF.md`
 
+## Files Changed In Latest Work (Recurring Reliability + Admin iPhone Safe Area)
+
+- `client/index.html` (`viewport-fit=cover` for iPhone/WKWebView safe area)
+- `client/src/components/AdminLayout.jsx` (real notch spacer + safer mobile hamburger positioning)
+- `client/src/components/RecurringQuickModal.jsx` (less misleading recurrence source copy)
+- `client/src/pages/Admin/Clients.jsx` (recurrence source fallback + explicit Google sync warning)
+- `client/src/pages/Admin/Appointments.jsx` (same recurrence source/sync-warning behavior)
+- `client/src/pages/Admin/QuickActions.jsx` (same recurrence sync-warning behavior)
+- `client/src/utils/recurring.js` (NEW — shared recurrence source + sync-warning helpers)
+- `server/services/recurring.js` (default source fallback, safer source conversion, explicit sync metadata on create/update/resume)
+- `server/services/voice/executeCommand.js` (reuse recurrence source logic + warn when GCal does not confirm update/create/resume)
+- `server/services/voice/parseCommand.js` (recognize `pon en recurrencia a ...` phrasing)
+- `client/dist/` (rebuilt)
+- `CLAUDE.md`
+- `docs/HANDOFF.md`
+
 ## Current Workspace Changes (Booking Concurrency Hardening)
 
 - `server/services/appointmentSlotClaims.js` (NEW — minute-level DB slot claim helper shared across booking/status flows)
@@ -154,6 +186,9 @@ If the task is about the private voice app, also read `docs/VOICE-APP-REPORT.md`
 - Voice recurring scope:
   activation by voice should convert the client’s next standalone future Google Calendar event into a weekly recurrence when possible
   if no suitable source appointment exists, voice may still create a new recurring series
+- Complexity lesson from the latest pass:
+  recurrence could not be fixed correctly in a single file because the visible bug was produced by inconsistent assumptions across backend sync, three admin entry points, and the voice parser
+  similarly, the admin mobile header looked like a CSS-only issue but the real fix also required `viewport-fit=cover` so iPhone would expose the safe area correctly inside the wrapper
 - We did not add any new client-facing step, modal, spinner, or extra API hop for booking concurrency hardening
 - We intentionally kept the current GCal-first booking order and day-scoped advisory lock in this pass to minimize production regression risk
 - Never push automatically. Ask the user explicitly before every push.

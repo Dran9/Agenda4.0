@@ -271,6 +271,13 @@ If the task is about the private voice app, also read `docs/VOICE-APP-REPORT.md`
   `server/routes/quickActions.js`
   `server/cron/scheduler.js`
   `server/db.js`
+- 2026-04-07 — branch `main` — theme sensitivity pass:
+  admin login, admin shell, recurring modal, toast, and `/voice` now support `system | light | dark` via `useUiTheme` + `ThemeModeButton`; system mode follows `prefers-color-scheme`, user override persists in `localStorage`, and `client/dist` was rebuilt
+- 2026-04-07 — not changed intentionally:
+  no Meta reschedule template wiring yet; `POST /api/quick-actions/send-reschedule-link` still sends free-form WhatsApp text because no approved reschedule template name/shape has been wired into `server/services/whatsapp.js`
+- 2026-04-07 — Meta template status:
+  payment reminder is already wired end-to-end via `sendPaymentReminderTemplate()` plus config/env override
+  reschedule link is not; next step is to add a dedicated template sender and switch quick actions to use it
 
 ## Known Follow-Ups
 
@@ -285,6 +292,7 @@ If the task is about the private voice app, also read `docs/VOICE-APP-REPORT.md`
 - DONE: SSE real-time admin updates — Dashboard, Appointments, Clients, Finance, Quick Actions all auto-refresh
 - Optional: add a small recurring trend chart in Analytics if monthly series visibility becomes commercially useful
 - Optional: create WhatsApp templates (Meta-approved) for cancel notification and no-show notification instead of using free-form text messages
+- Pending next step: wire the Meta-approved reschedule-link template into quick actions once the exact approved template name and parameter contract are confirmed
 
 ## Useful Commands
 

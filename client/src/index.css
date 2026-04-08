@@ -101,7 +101,12 @@ body {
   -moz-osx-font-smoothing: grayscale;
 }
 
-.admin-shell {
+body[data-ui-theme='dark'] {
+  background: #070c11;
+  color: #e8edf2;
+}
+
+.admin-shell.theme-dark {
   position: relative;
   background:
     radial-gradient(circle at top, rgba(24, 83, 116, 0.28), transparent 34%),
@@ -110,7 +115,7 @@ body {
   color: #e8edf2;
 }
 
-.admin-shell::before {
+.admin-shell.theme-dark::before {
   content: '';
   position: fixed;
   inset: 0;
@@ -121,161 +126,181 @@ body {
   opacity: 0.9;
 }
 
-.admin-shell > * {
+.admin-shell.theme-dark > * {
   position: relative;
   z-index: 1;
 }
 
-.admin-shell main {
+.admin-shell.theme-dark main {
   background: transparent !important;
 }
 
-.admin-shell aside,
-.admin-shell header,
-.admin-shell .bg-white,
-.admin-shell [class*="bg-white/95"],
-.admin-shell [class*="bg-white/90"] {
+.admin-shell.theme-dark aside,
+.admin-shell.theme-dark header,
+.admin-shell.theme-dark .bg-white,
+.admin-shell.theme-dark [class*="bg-white/95"],
+.admin-shell.theme-dark [class*="bg-white/90"] {
   background-color: rgba(10, 16, 22, 0.8);
   backdrop-filter: blur(20px);
 }
 
-.admin-shell .bg-slate-100,
-.admin-shell .bg-slate-50,
-.admin-shell .bg-gray-50,
-.admin-shell .bg-gray-100 {
+.admin-shell.theme-dark .bg-slate-100,
+.admin-shell.theme-dark .bg-slate-50,
+.admin-shell.theme-dark .bg-gray-50,
+.admin-shell.theme-dark .bg-gray-100 {
   background-color: rgba(255, 255, 255, 0.06);
 }
 
-.admin-shell .bg-blue-50 {
+.admin-shell.theme-dark .bg-blue-50 {
   background-color: rgba(82, 149, 194, 0.16);
 }
 
-.admin-shell .bg-emerald-50 {
+.admin-shell.theme-dark .bg-emerald-50 {
   background-color: rgba(33, 129, 105, 0.18);
 }
 
-.admin-shell .bg-red-50,
-.admin-shell .bg-rose-50 {
+.admin-shell.theme-dark .bg-red-50,
+.admin-shell.theme-dark .bg-rose-50 {
   background-color: rgba(127, 29, 29, 0.2);
 }
 
-.admin-shell .border-slate-200,
-.admin-shell .border-slate-100,
-.admin-shell .border-gray-200,
-.admin-shell .border-gray-100 {
+.admin-shell.theme-dark .border-slate-200,
+.admin-shell.theme-dark .border-slate-100,
+.admin-shell.theme-dark .border-gray-200,
+.admin-shell.theme-dark .border-gray-100 {
   border-color: rgba(255, 255, 255, 0.09);
 }
 
-.admin-shell .border-blue-200 {
+.admin-shell.theme-dark .border-blue-200 {
   border-color: rgba(82, 149, 194, 0.35);
 }
 
-.admin-shell .border-emerald-200 {
+.admin-shell.theme-dark .border-emerald-200 {
   border-color: rgba(33, 129, 105, 0.34);
 }
 
-.admin-shell .border-red-200,
-.admin-shell .border-rose-200 {
+.admin-shell.theme-dark .border-red-200,
+.admin-shell.theme-dark .border-rose-200 {
   border-color: rgba(220, 99, 99, 0.28);
 }
 
-.admin-shell .text-slate-950,
-.admin-shell .text-slate-900,
-.admin-shell .text-gray-900 {
+.admin-shell.theme-dark .text-slate-950,
+.admin-shell.theme-dark .text-slate-900,
+.admin-shell.theme-dark .text-gray-900 {
   color: #f5f7fa;
 }
 
-.admin-shell .text-slate-800,
-.admin-shell .text-slate-700,
-.admin-shell .text-slate-600,
-.admin-shell .text-gray-700,
-.admin-shell .text-gray-600 {
+.admin-shell.theme-dark .text-slate-800,
+.admin-shell.theme-dark .text-slate-700,
+.admin-shell.theme-dark .text-slate-600,
+.admin-shell.theme-dark .text-gray-700,
+.admin-shell.theme-dark .text-gray-600 {
   color: #d5dde6;
 }
 
-.admin-shell .text-slate-500,
-.admin-shell .text-slate-400,
-.admin-shell .text-gray-500,
-.admin-shell .text-gray-400 {
+.admin-shell.theme-dark .text-slate-500,
+.admin-shell.theme-dark .text-slate-400,
+.admin-shell.theme-dark .text-gray-500,
+.admin-shell.theme-dark .text-gray-400 {
   color: #8d9aaa;
 }
 
-.admin-shell .text-emerald-700,
-.admin-shell .text-emerald-600 {
+.admin-shell.theme-dark .text-emerald-700,
+.admin-shell.theme-dark .text-emerald-600 {
   color: #75dfc4;
 }
 
-.admin-shell .text-blue-700,
-.admin-shell .text-blue-600 {
+.admin-shell.theme-dark .text-blue-700,
+.admin-shell.theme-dark .text-blue-600 {
   color: #8ac2e8;
 }
 
-.admin-shell .text-red-700,
-.admin-shell .text-red-600,
-.admin-shell .text-rose-700,
-.admin-shell .text-rose-600 {
+.admin-shell.theme-dark .text-red-700,
+.admin-shell.theme-dark .text-red-600,
+.admin-shell.theme-dark .text-rose-700,
+.admin-shell.theme-dark .text-rose-600 {
   color: #ffb1b1;
 }
 
-.admin-shell input:not([type='checkbox']):not([type='radio']),
-.admin-shell select,
-.admin-shell textarea {
+.admin-shell.theme-dark input:not([type='checkbox']):not([type='radio']),
+.admin-shell.theme-dark select,
+.admin-shell.theme-dark textarea {
   background: rgba(255, 255, 255, 0.06);
   border-color: rgba(255, 255, 255, 0.09);
   color: #f4f7fb;
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03);
 }
 
-.admin-shell input::placeholder,
-.admin-shell textarea::placeholder {
+.admin-shell.theme-dark input::placeholder,
+.admin-shell.theme-dark textarea::placeholder {
   color: #7f8a98;
 }
 
-.admin-shell input:focus,
-.admin-shell select:focus,
-.admin-shell textarea:focus {
+.admin-shell.theme-dark input:focus,
+.admin-shell.theme-dark select:focus,
+.admin-shell.theme-dark textarea:focus {
   border-color: rgba(127, 181, 214, 0.65);
   box-shadow: 0 0 0 3px rgba(82, 149, 194, 0.16);
   outline: none;
 }
 
-.admin-shell .shadow-sm,
-.admin-shell .shadow-lg,
-.admin-shell [class*='shadow-[0_8px_30px'],
-.admin-shell [class*='shadow-[0_14px_32px'],
-.admin-shell [class*='shadow-[0_18px_42px'] {
+.admin-shell.theme-dark .shadow-sm,
+.admin-shell.theme-dark .shadow-lg,
+.admin-shell.theme-dark [class*='shadow-[0_8px_30px'],
+.admin-shell.theme-dark [class*='shadow-[0_14px_32px'],
+.admin-shell.theme-dark [class*='shadow-[0_18px_42px'] {
   box-shadow: 0 18px 44px rgba(0, 0, 0, 0.22);
 }
 
-.admin-shell .hover\:bg-slate-50:hover,
-.admin-shell .hover\:bg-slate-100:hover,
-.admin-shell .hover\:bg-gray-50:hover {
+.admin-shell.theme-dark .hover\:bg-slate-50:hover,
+.admin-shell.theme-dark .hover\:bg-slate-100:hover,
+.admin-shell.theme-dark .hover\:bg-gray-50:hover {
   background-color: rgba(255, 255, 255, 0.08);
 }
 
-.admin-shell .hover\:text-slate-900:hover,
-.admin-shell .hover\:text-slate-600:hover {
+.admin-shell.theme-dark .hover\:text-slate-900:hover,
+.admin-shell.theme-dark .hover\:text-slate-600:hover {
   color: #ffffff;
+}
+
+.admin-shell.theme-dark.admin-contrast .text-slate-400,
+.admin-shell.theme-dark.admin-contrast .text-gray-400 {
+  color: #8d9aaa !important;
+}
+
+.admin-shell.theme-dark.admin-contrast .text-slate-500,
+.admin-shell.theme-dark.admin-contrast .text-gray-500 {
+  color: #a9b6c4 !important;
+}
+
+.admin-shell.theme-dark.admin-contrast .text-slate-600,
+.admin-shell.theme-dark.admin-contrast .text-gray-600 {
+  color: #d5dde6 !important;
+}
+
+.admin-shell.theme-dark.admin-contrast input::placeholder,
+.admin-shell.theme-dark.admin-contrast textarea::placeholder {
+  color: #7f8a98 !important;
 }
 
 .admin-contrast .text-slate-400,
 .admin-contrast .text-gray-400 {
-  color: #8d9aaa;
+  color: #5f6b78;
 }
 
 .admin-contrast .text-slate-500,
 .admin-contrast .text-gray-500 {
-  color: #a9b6c4;
+  color: #4f5c69;
 }
 
 .admin-contrast .text-slate-600,
 .admin-contrast .text-gray-600 {
-  color: #d5dde6;
+  color: #374151;
 }
 
 .admin-contrast .placeholder\:text-slate-400::placeholder,
 .admin-contrast .placeholder\:text-gray-400::placeholder {
-  color: #7f8a98;
+  color: #6b7280;
   opacity: 1;
 }
 

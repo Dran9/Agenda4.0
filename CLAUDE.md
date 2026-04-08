@@ -217,6 +217,31 @@ Ver `.env.example` para la lista completa. Se configuran en hPanel de Hostinger.
 - Backend: `server/routes/quickActions.js` con 6 endpoints protegidos por auth, todos loguean a `webhooks_log`
 - Cada acción de WhatsApp usa `sendTextMessage()` (texto libre), no templates (los templates de Meta requieren aprobación previa)
 
+## Estado tema UI (2026-04-07)
+- Admin y `/voice` ya no quedaron en dark fijo
+- Nuevo sistema de tema compartido:
+  `system | light | dark`
+- `system` sigue `prefers-color-scheme`
+- El override manual persiste en `localStorage`
+- El toggle ya existe en:
+  - login admin
+  - header admin
+  - pantalla `/voice`
+- Archivos base del sistema:
+  - `client/src/hooks/useUiTheme.jsx`
+  - `client/src/components/ThemeModeButton.jsx`
+- El dark anterior estaba muy “inyectado” en CSS global; se encapsuló para que no contamine el modo claro
+
+## Estado Meta templates (2026-04-07)
+- Reminder de pago:
+  ya está enchufado
+  usa `sendPaymentReminderTemplate()` en `server/services/whatsapp.js`
+  y permite override por config/env (`payment_reminder_template`, `WA_PAYMENT_REMINDER_TEMPLATE`)
+- Link de reagendamiento:
+  todavía no está enchufado como template
+  `POST /api/quick-actions/send-reschedule-link` sigue usando `sendTextMessage()`
+  siguiente paso: crear sender dedicado en `server/services/whatsapp.js` y migrar quick actions a template aprobado
+
 ## Bugs corregidos en recurring schedules (2026-04-06)
 - **`eventStart` undefined en reminder.js**: el Try 3 (fallback por teléfono) usaba una variable que no existía. Cambiado a `event.start?.dateTime || event.start?.date`. Sin esto, el reminder crasheaba al matchear por teléfono.
 - **UNIQUE KEY en recurring_schedules**: agregado `UNIQUE KEY (tenant_id, client_id, day_of_week, time, started_at)` como migración en db.js. Sin esto, requests concurrentes podían crear schedules duplicados.

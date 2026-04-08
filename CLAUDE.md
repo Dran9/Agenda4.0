@@ -249,6 +249,17 @@ Ver `.env.example` para la lista completa. Se configuran en hPanel de Hostinger.
   un override global del dark theme estaba rompiendo el `position: fixed` del sidebar móvil y desplazando todo el contenido hacia la derecha en iPhone
   se eliminó ese selector y se regeneró `client/dist`
 
+## Estado Quick Actions mobile (2026-04-08)
+- `Comandos` ahora tiene acción manual para cobro:
+  `Recordar cobro`
+- Labels refinados para móvil:
+  - `Recordar cita`
+  - `Recordar cobro`
+  - `Gestionar recurrencia`
+  - `Ajustar arancel`
+- La grilla soporta labels en dos líneas sin desalinear la altura de los botones
+- `Recordar cobro` usa un endpoint manual específico y no depende de que el scheduler automático esté activo
+
 ## Bugs corregidos en recurring schedules (2026-04-06)
 - **`eventStart` undefined en reminder.js**: el Try 3 (fallback por teléfono) usaba una variable que no existía. Cambiado a `event.start?.dateTime || event.start?.date`. Sin esto, el reminder crasheaba al matchear por teléfono.
 - **UNIQUE KEY en recurring_schedules**: agregado `UNIQUE KEY (tenant_id, client_id, day_of_week, time, started_at)` como migración en db.js. Sin esto, requests concurrentes podían crear schedules duplicados.

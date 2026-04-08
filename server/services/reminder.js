@@ -270,8 +270,17 @@ async function checkAndSendReminders({ date, tenantId, force = false, appointmen
   }
 }
 
-async function checkAndSendPaymentReminders({ tenantId = 1, force = false } = {}) {
+async function checkAndSendPaymentReminders({
+  tenantId = 1,
+  force = false,
+  clientId = null,
+  phone = null,
+  ignoreEnabled = false,
+  ignoreWindow = false,
+} = {}) {
   try {
+    const canonicalPhone = phone ? normalizePhone(phone) : null;
+    const targeted = !!(clientId || canonicalPhone);
     const [cfgRows] = await pool.query(
       `SELECT
          payment_reminder_enabled,
@@ -284,11 +293,34 @@ async function checkAndSendPaymentReminders({ tenantId = 1, force = false } = {}
       [tenantId]
     );
     const cfg = cfgRows[0];
-    if (!cfg?.payment_reminder_enabled) {
+    if (!cfg?.payment_reminder_enabled && !ignoreEnabled) {
       return { sent: 0, skipped: 0, total: 0, enabled: false };
     }
 
     const leadHours = Math.max(1, parseInt(cfg.payment_reminder_hours, 10) || 2);
+    const params = [tenantId];
+    const filters = [
+      `p.tenant_id = ?`,
+      `p.status = 'Pendiente'`,
+      `a.status IN ('Agendada','Confirmada','Reagendada')`,
+      `a.date_time > NOW()`,
+    ];
+
+    if (!ignoreWindow) {
+      filters.push(`a.date_time <= DATE_ADD(NOW(), INTERVAL ? HOUR)`);
+      params.push(leadHours);
+    }
+
+    if (clientId) {
+      filters.push(`p.client_id = ?`);
+      params.push(clientId);
+    }
+
+    if (canonicalPhone) {
+      filters.push(`${normalizedPhoneSql('c.phone')} = ?`);
+      params.push(canonicalPhone);
+    }
+
     const [rows] = await pool.query(
       `SELECT
          p.id AS payment_id,
@@ -302,19 +334,19 @@ async function checkAndSendPaymentReminders({ tenantId = 1, force = false } = {}
        FROM payments p
        JOIN appointments a ON a.id = p.appointment_id AND a.tenant_id = p.tenant_id
        JOIN clients c ON c.id = p.client_id AND c.tenant_id = p.tenant_id
-       WHERE p.tenant_id = ?
-         AND p.status = 'Pendiente'
-         AND a.status IN ('Agendada','Confirmada','Reagendada')
-         AND a.date_time > NOW()
-         AND a.date_time <= DATE_ADD(NOW(), INTERVAL ? HOUR)
+       WHERE ${filters.join('\n         AND ')}
        ORDER BY a.date_time ASC`,
-      [tenantId, leadHours]
+      params
     );
 
     let sent = 0;
     let skipped = 0;
+    let failed = 0;
+    let targetFound = false;
+    const errors = [];
 
     for (const row of rows) {
+      if (targeted) targetFound = true;
       const eventKey = `payment_reminder:${row.payment_id}`;
 
       if (!force) {
@@ -382,10 +414,42 @@ async function checkAndSendPaymentReminders({ tenantId = 1, force = false } = {}
         sent++;
       } catch (waErr) {
         console.error(`[payment-reminder] Failed to send to ${row.phone}:`, waErr.message);
+        failed++;
+        errors.push({
+          phone: row.phone,
+          client_id: row.client_id,
+          payment_id: row.payment_id,
+          appointment_id: row.appointment_id,
+          message: waErr.message,
+        });
       }
     }
 
-    return { sent, skipped, total: rows.length, enabled: true, hoursBefore: leadHours };
+    if (targeted && !targetFound) {
+      return {
+        sent,
+        skipped,
+        failed,
+        total: rows.length,
+        enabled: !!cfg?.payment_reminder_enabled,
+        hoursBefore: leadHours,
+        targeted: true,
+        targetFound: false,
+        errors,
+      };
+    }
+
+    return {
+      sent,
+      skipped,
+      failed,
+      total: rows.length,
+      enabled: !!cfg?.payment_reminder_enabled,
+      hoursBefore: leadHours,
+      targeted,
+      targetFound: targeted ? targetFound : null,
+      errors,
+    };
   } catch (err) {
     console.error('[payment-reminder] Error:', err.message);
     throw err;

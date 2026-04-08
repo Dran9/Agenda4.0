@@ -385,4 +385,28 @@ router.post('/send-reminder', authMiddleware, async (req, res) => {
   }
 });
 
+// ─── POST /api/quick-actions/send-payment-reminder ──────────────
+router.post('/send-payment-reminder', authMiddleware, async (req, res) => {
+  try {
+    const { client_id } = req.body;
+    if (!client_id) return res.status(400).json({ error: 'client_id requerido' });
+
+    const { checkAndSendPaymentReminders } = require('../services/reminder');
+    const result = await checkAndSendPaymentReminders({
+      tenantId: req.tenantId,
+      force: true,
+      clientId: String(client_id),
+      ignoreEnabled: true,
+      ignoreWindow: true,
+    });
+
+    res.json({ success: true, ...result });
+  } catch (err) {
+    sendServerError(res, req, err, {
+      message: 'No se pudo enviar el recordatorio de pago',
+      logLabel: 'quick-actions payment-reminder',
+    });
+  }
+});
+
 module.exports = router;

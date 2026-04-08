@@ -285,6 +285,11 @@ If the task is about the private voice app, also read `docs/VOICE-APP-REPORT.md`
 - 2026-04-07 — Admin mobile layout fix:
   dark theme CSS was forcing `position: relative` onto every direct child of `.admin-shell`, which broke the fixed mobile sidebar and pushed the whole admin canvas to the right on iPhone
   that selector was removed and the frontend bundle was rebuilt
+- 2026-04-08 — Quick Actions naming + payment reminder:
+  admin `Comandos` now includes a dedicated manual action for payment reminders
+  button labels were refined for mobile readability: `Recordar cita`, `Recordar cobro`, `Gestionar recurrencia`, `Ajustar arancel`
+  the action grid now supports two-line labels with consistent height and centered text
+  manual payment reminder bypasses the scheduled toggle/window and targets a single client on purpose
 
 ## Known Follow-Ups
 

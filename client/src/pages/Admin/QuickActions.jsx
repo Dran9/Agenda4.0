@@ -1,14 +1,16 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import {
+  BellRing,
+  CalendarClock,
   CalendarX2,
   Check,
   ChevronDown,
   ChevronUp,
   CircleDollarSign,
+  CreditCard,
   Loader2,
   Repeat,
   Search,
-  Send,
   UserX,
   X,
 } from 'lucide-react';
@@ -23,12 +25,13 @@ import { formatWeekdayShort, formatTimeBolivia, formatDateBolivia } from '../../
 // ─── Constants ────────────────────────────────────────────────────
 
 const ACTIONS = [
-  { id: 'reschedule', label: 'Reagendar', icon: Send, color: 'bg-blue-600', desc: 'Envía link de reagendamiento por WhatsApp' },
+  { id: 'reschedule', label: 'Reagendar', icon: CalendarClock, color: 'bg-blue-600', desc: 'Envía link de reagendamiento por WhatsApp' },
   { id: 'cancel', label: 'Cancelar', icon: CalendarX2, color: 'bg-red-600', desc: 'Cancela la próxima cita' },
   { id: 'noshow', label: 'No-show', icon: UserX, color: 'bg-slate-600', desc: 'Marca como inasistencia' },
-  { id: 'reminder', label: 'Recordatorio', icon: Send, color: 'bg-emerald-600', desc: 'Fuerza envío de recordatorio' },
-  { id: 'recurring', label: 'Recurrencia', icon: Repeat, color: 'bg-violet-600', desc: 'Activar o gestionar sesión semanal' },
-  { id: 'fee', label: 'Arancel', icon: CircleDollarSign, color: 'bg-amber-600', desc: 'Cambiar el arancel del cliente' },
+  { id: 'reminder', label: 'Recordar cita', icon: BellRing, color: 'bg-emerald-600', desc: 'Fuerza envío del recordatorio de cita' },
+  { id: 'payment-reminder', label: 'Recordar cobro', icon: CreditCard, color: 'bg-teal-600', desc: 'Envía el template de cobro pendiente' },
+  { id: 'recurring', label: 'Gestionar recurrencia', icon: Repeat, color: 'bg-violet-600', desc: 'Activa, pausa, reactiva o finaliza la sesión semanal' },
+  { id: 'fee', label: 'Ajustar arancel', icon: CircleDollarSign, color: 'bg-amber-600', desc: 'Cambia el arancel del cliente' },
 ];
 
 // ─── Main Component ──────────────────────────────────────────────
@@ -202,16 +205,36 @@ export default function QuickActions() {
           if (result.sent > 0) {
             setActionResult({
               success: true,
-              title: 'Recordatorio enviado',
-              detail: `Se envió recordatorio a ${nombre}.`,
+              title: 'Recordatorio de cita enviado',
+              detail: `Se envió el recordatorio de cita a ${nombre}.`,
             });
           } else {
             setActionResult({
               success: false,
-              title: 'No se envió recordatorio',
+              title: 'No se envió recordatorio de cita',
               detail: result.matched === 0
                 ? 'No se encontró cita próxima en Google Calendar.'
                 : 'El recordatorio ya fue enviado anteriormente.',
+            });
+          }
+          break;
+        }
+
+        case 'payment-reminder': {
+          result = await api.post('/quick-actions/send-payment-reminder', { client_id: clientId });
+          if (result.sent > 0) {
+            setActionResult({
+              success: true,
+              title: 'Recordatorio de cobro enviado',
+              detail: `Se envió el recordatorio de cobro a ${nombre}.`,
+            });
+          } else {
+            setActionResult({
+              success: false,
+              title: 'No se envió recordatorio de cobro',
+              detail: result.targetFound === false
+                ? 'No se encontró un pago pendiente con cita futura para este cliente.'
+                : 'No había pagos pendientes listos para enviar.',
             });
           }
           break;
@@ -513,14 +536,16 @@ export default function QuickActions() {
                     key={action.id}
                     type="button"
                     onClick={() => setActiveAction(isActive ? null : action.id)}
-                    className={`flex flex-col items-center gap-1.5 rounded-2xl border px-3 py-3 text-center transition active:scale-[0.97] ${
+                    className={`flex min-h-[6.1rem] flex-col items-center justify-center gap-2 rounded-2xl border px-3 py-3 text-center transition active:scale-[0.97] ${
                       isActive
                         ? 'border-slate-900 bg-slate-900 text-white shadow-[0_8px_24px_rgba(0,0,0,0.15)]'
                         : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50'
                     }`}
                   >
                     <Icon size={20} />
-                    <span className="text-xs font-semibold">{action.label}</span>
+                    <span className="flex min-h-[2.35rem] items-center justify-center text-[11px] font-semibold leading-tight">
+                      {action.label}
+                    </span>
                   </button>
                 );
               })}
@@ -641,7 +666,7 @@ export default function QuickActions() {
               Busca un cliente para ejecutar acciones rápidas
             </div>
             <div className="mt-1 text-xs text-slate-400">
-              Reagendar, cancelar, no-show, recurrencia o cambiar arancel
+              Reagendar, recordar, gestionar recurrencia o ajustar arancel
             </div>
           </div>
         )}
@@ -857,6 +882,13 @@ function ActionPanel({
   }
 
   // Default: simple execute button (reschedule, reminder)
+  const primaryLabel = {
+    reschedule: 'Enviar link de reagendamiento',
+    reminder: 'Enviar recordatorio de cita',
+    'payment-reminder': 'Enviar recordatorio de cobro',
+    noshow: 'Marcar no-show',
+  }[actionId] || `Ejecutar ${action.label.toLowerCase()}`;
+
   return (
     <div className="space-y-3">
       <p className="text-sm text-slate-600">{action.desc}</p>
@@ -866,7 +898,7 @@ function ActionPanel({
         disabled={loading}
         className={`w-full rounded-xl px-4 py-3 text-sm font-semibold text-white transition active:scale-[0.97] disabled:opacity-60 ${action.color} hover:opacity-90`}
       >
-        {loading ? <Loader2 size={14} className="mx-auto animate-spin" /> : `Enviar ${action.label.toLowerCase()}`}
+        {loading ? <Loader2 size={14} className="mx-auto animate-spin" /> : primaryLabel}
       </button>
     </div>
   );

@@ -357,13 +357,21 @@ router.get('/summary', authMiddleware, async (req, res) => {
     `, [t, y, m]);
 
     // Get goal from config
-    const [[cfg]] = await pool.query('SELECT monthly_goal FROM config WHERE tenant_id = ?', [t]);
+    const [[cfg]] = await pool.query(
+      'SELECT monthly_goal, default_fee, capital_fee, special_fee FROM config WHERE tenant_id = ?',
+      [t]
+    );
 
     res.json({
       current: { ...current, year: y, month: m },
       history,
       payments,
       monthly_goal: cfg?.monthly_goal || null,
+      pricing: {
+        default_fee: Number(cfg?.default_fee || 250),
+        capital_fee: Number(cfg?.capital_fee || 300),
+        special_fee: Number(cfg?.special_fee || 150),
+      },
     });
   } catch (err) {
     sendServerError(res, req, err, {

@@ -9,6 +9,7 @@ import {
 import AdminLayout from '../../components/AdminLayout';
 import { api } from '../../utils/api';
 import { formatTimeBolivia, getBoliviaDateKey } from '../../utils/dates';
+import { buildGoalSessionMix } from '../../utils/goalMix';
 import { Toast, useToast } from '../../hooks/useToast';
 import useAdminEvents from '../../hooks/useAdminEvents';
 import { useUiTheme } from '../../hooks/useUiTheme';
@@ -281,6 +282,25 @@ function ProgressBar({ progress, isDark }) {
   );
 }
 
+function GoalMixTile({ item, isDark }) {
+  return (
+    <div className={`rounded-[22px] px-4 py-4 ${isDark ? 'bg-white/5 text-slate-200' : 'bg-[#f6f1ea] text-slate-700'}`}>
+      <div className={`text-[11px] font-semibold uppercase tracking-[0.16em] ${isDark ? 'text-slate-500' : 'text-slate-400'}`}>
+        Sesiones de
+      </div>
+      <div className={`mt-1 text-xl font-semibold tracking-tight ${isDark ? 'text-white' : 'text-slate-950'}`}>
+        {formatMoney(item.fee)}
+      </div>
+      <div className={`mt-3 text-3xl font-semibold tracking-tight ${isDark ? 'text-white' : 'text-slate-950'}`}>
+        {item.sessions}
+      </div>
+      <div className={`mt-1 text-sm leading-6 ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
+        para cubrir {formatMoney(item.targetAmount)} del faltante
+      </div>
+    </div>
+  );
+}
+
 function AgendaRow({ appt, isDark, isNext, durationMinutes }) {
   const status = getAppointmentStatus(appt);
   const timelineTone = getTimelineToneClasses(status, isDark, isNext);
@@ -425,6 +445,7 @@ export default function Dashboard() {
   const goalProgress = goalAmount ? Math.min((confirmedMonth / goalAmount) * 100, 100) : 0;
   const goalRemaining = goalAmount ? Math.max(goalAmount - confirmedMonth, 0) : 0;
   const sessionsNeeded = goalAmount ? Math.ceil(goalRemaining / Math.max(averageFee, 1)) : 0;
+  const sessionMix = buildGoalSessionMix(goalRemaining, monthlySummary?.pricing);
   const daysInMonth = new Date(nowParts.year, nowParts.month, 0).getDate();
   const expectedByToday = goalAmount ? (goalAmount * nowParts.day) / daysInMonth : 0;
   const paceGap = goalAmount ? confirmedMonth - expectedByToday : 0;
@@ -648,6 +669,17 @@ export default function Dashboard() {
                         Proyectas {formatMoney(projectedMonth)}. Quedan {daysInMonth - nowParts.day} días para cerrar {formatMonthLabel().toLowerCase()}.
                       </div>
                     </div>
+
+                    {sessionMix.length > 0 ? (
+                      <div>
+                        <div className={`text-xs uppercase tracking-[0.18em] ${faintText}`}>Mezcla sugerida</div>
+                        <div className="mt-3 grid gap-3">
+                          {sessionMix.map((item) => (
+                            <GoalMixTile key={item.key} item={item} isDark={isDark} />
+                          ))}
+                        </div>
+                      </div>
+                    ) : null}
                   </>
                 ) : (
                   <div className={`text-sm leading-6 ${subtleText}`}>

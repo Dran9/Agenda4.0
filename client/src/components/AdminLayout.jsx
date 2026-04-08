@@ -10,7 +10,7 @@ const NAV_ITEMS = [
   { path: '/admin/appointments', label: 'Agenda', icon: CalendarDays },
   { path: '/admin/clients', label: 'Clientes', icon: Users },
   { path: '/admin/whatsapp', label: 'Inbox', icon: MessageSquare },
-  { path: '/admin/finance', label: 'Cobros', icon: DollarSign },
+  { path: '/admin/finance', label: 'Finanzas', icon: DollarSign },
   { path: '/admin/analytics', label: 'Insights', icon: BarChart3 },
   { path: '/admin/config', label: 'Ajustes', icon: Settings },
 ];

@@ -1,11 +1,12 @@
 const { Router } = require('express');
-const { pool } = require('../db');
+const { pool, withTransaction } = require('../db');
 const { authMiddleware } = require('../middleware/auth');
 const { validate, clientSchema } = require('../middleware/validate');
 const { calculateRetentionStatus } = require('../services/retention');
 const { sendServerError } = require('../utils/httpErrors');
 const { normalizePhone, hasPhoneDigits, normalizedPhoneSql } = require('../utils/phone');
 const { broadcast } = require('../services/adminEvents');
+const { deleteFile } = require('../services/storage');
 
 const router = Router();
 
@@ -122,6 +123,70 @@ router.post('/:id/restore', authMiddleware, async (req, res) => {
     sendServerError(res, req, err, {
       message: 'No se pudo restaurar el cliente',
       logLabel: 'clients restore',
+    });
+  }
+});
+
+// DELETE /api/clients/:id/purge — permanently delete archived client (admin)
+router.delete('/:id/purge', authMiddleware, async (req, res) => {
+  try {
+    const receiptKeys = await withTransaction(async (conn) => {
+      const [clientRows] = await conn.query(
+        'SELECT id, phone FROM clients WHERE id = ? AND tenant_id = ? AND deleted_at IS NOT NULL',
+        [req.params.id, req.tenantId]
+      );
+      if (clientRows.length === 0) {
+        return { notFound: true, receiptKeys: [] };
+      }
+
+      const client = clientRows[0];
+      const [paymentRows] = await conn.query(
+        'SELECT receipt_file_key FROM payments WHERE client_id = ? AND tenant_id = ?',
+        [client.id, req.tenantId]
+      );
+      const fileKeys = paymentRows
+        .map((payment) => payment.receipt_file_key)
+        .filter(Boolean);
+
+      await conn.query(
+        'DELETE FROM webhooks_log WHERE tenant_id = ? AND (client_id = ? OR client_phone = ?)',
+        [req.tenantId, client.id, client.phone]
+      );
+      await conn.query(
+        'DELETE FROM wa_conversations WHERE tenant_id = ? AND client_id = ?',
+        [req.tenantId, client.id]
+      );
+      await conn.query(
+        'DELETE FROM payments WHERE tenant_id = ? AND client_id = ?',
+        [req.tenantId, client.id]
+      );
+      await conn.query(
+        'DELETE FROM appointments WHERE tenant_id = ? AND client_id = ?',
+        [req.tenantId, client.id]
+      );
+      await conn.query(
+        'DELETE FROM recurring_schedules WHERE tenant_id = ? AND client_id = ?',
+        [req.tenantId, client.id]
+      );
+      await conn.query(
+        'DELETE FROM clients WHERE tenant_id = ? AND id = ?',
+        [req.tenantId, client.id]
+      );
+
+      return { notFound: false, receiptKeys: fileKeys };
+    });
+
+    if (receiptKeys.notFound) {
+      return res.status(404).json({ error: 'Cliente archivado no encontrado' });
+    }
+
+    await Promise.all(receiptKeys.receiptKeys.map((fileKey) => deleteFile(req.tenantId, fileKey)));
+    broadcast('client:change', { id: Number(req.params.id), action: 'purged' }, req.tenantId);
+    res.json({ success: true, purged: true });
+  } catch (err) {
+    sendServerError(res, req, err, {
+      message: 'No se pudo borrar definitivamente el cliente',
+      logLabel: 'clients purge',
     });
   }
 });

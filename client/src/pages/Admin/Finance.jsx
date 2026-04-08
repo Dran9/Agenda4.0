@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { Target, TrendingUp, ChevronLeft, ChevronRight, Eye } from 'lucide-react';
 import AdminLayout from '../../components/AdminLayout';
 import { api } from '../../utils/api';
+import { buildGoalSessionMix } from '../../utils/goalMix';
 import { useToast, Toast } from '../../hooks/useToast';
 import useAdminEvents from '../../hooks/useAdminEvents';
 
@@ -9,6 +10,17 @@ const MONTHS = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto
 
 function formatCurrency(n) {
   return `Bs ${Number(n || 0).toLocaleString('es-BO', { minimumFractionDigits: 0 })}`;
+}
+
+function SessionMixCard({ item }) {
+  return (
+    <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+      <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-400">Sesiones de</div>
+      <div className="mt-1 text-2xl font-semibold tracking-tight text-slate-900">{formatCurrency(item.fee)}</div>
+      <div className="mt-3 text-3xl font-bold text-slate-950">{item.sessions}</div>
+      <div className="mt-1 text-sm text-slate-500">para cubrir {formatCurrency(item.targetAmount)} del faltante</div>
+    </div>
+  );
 }
 
 function OcrPopover({ payment }) {
@@ -95,6 +107,7 @@ export default function Finance() {
   // Estimate average fee from confirmed payments
   const avgFee = paidSessions > 0 ? confirmed / paidSessions : 250;
   const sessionsNeeded = goalRemaining > 0 ? Math.ceil(goalRemaining / avgFee) : 0;
+  const sessionMix = buildGoalSessionMix(goalRemaining, data?.pricing);
 
   // Days remaining in month
   const daysInMonth = new Date(year, month, 0).getDate();
@@ -176,6 +189,23 @@ export default function Finance() {
               <div className="text-sm text-gray-400">Define una meta mensual para ver tu progreso</div>
             )}
           </div>
+
+          {goalAmount && goalRemaining > 0 && sessionMix.length > 0 && (
+            <div className="bg-white rounded-xl border border-gray-200 p-5 mb-4">
+              <div className="flex items-center justify-between gap-3 mb-4">
+                <div>
+                  <div className="font-semibold text-gray-800">Mezcla sugerida para llegar</div>
+                  <div className="text-sm text-gray-500">Reparte el faltante usando 70% tarifa base, 25% capital y 5% especial.</div>
+                </div>
+                <div className="text-sm text-gray-500">{formatCurrency(goalRemaining)} por cerrar</div>
+              </div>
+              <div className="grid gap-3 md:grid-cols-3">
+                {sessionMix.map((item) => (
+                  <SessionMixCard key={item.key} item={item} />
+                ))}
+              </div>
+            </div>
+          )}
 
           {/* Summary cards */}
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-4">

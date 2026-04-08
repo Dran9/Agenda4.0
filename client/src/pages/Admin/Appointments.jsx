@@ -454,11 +454,11 @@ export default function Appointments() {
         {selected.size > 0 && (
           <InlineConfirmButton
             onConfirm={handleBulkDelete}
-            confirmLabel={`Eliminar ${selected.size}`}
+            confirmLabel="¿Confirmas?"
             cancelLabel="Cancelar"
             wrapperClassName="flex items-center gap-2"
-            idleClassName="flex items-center gap-1.5 rounded-lg bg-red-600 px-3 py-2 text-sm font-medium text-white hover:bg-red-700"
-            confirmClassName="inline-flex items-center gap-1.5 rounded-lg bg-red-700 px-3 py-2 text-sm font-medium text-white hover:bg-red-800"
+            idleClassName="flex items-center gap-1.5 rounded-lg bg-[#B34E35] px-3 py-2 text-sm font-medium text-white transition hover:bg-[#9f452f]"
+            confirmClassName="inline-flex items-center gap-1.5 rounded-lg bg-[#FF2C2C] px-3 py-2 text-sm font-medium text-white transition hover:bg-[#e32727]"
             cancelClassName="inline-flex items-center gap-1 rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm font-medium text-gray-600 hover:bg-gray-50"
           >
             <Trash2 size={16} />
@@ -646,12 +646,12 @@ export default function Appointments() {
                     <td className="p-3 align-top">
                       <InlineConfirmButton
                         onConfirm={() => handleDelete(appt.id)}
-                        confirmLabel="Eliminar"
+                        confirmLabel="¿Confirmas?"
                         cancelLabel="Cancelar"
                         compactCancel
                         wrapperClassName="flex items-center justify-end gap-1"
-                        idleClassName="text-gray-300 hover:text-red-500 transition-colors"
-                        confirmClassName="inline-flex items-center gap-1 rounded-lg border border-rose-200 bg-rose-50 px-2 py-1 text-xs font-medium text-rose-700 hover:bg-rose-100"
+                        idleClassName="inline-flex items-center justify-center rounded-lg bg-[#B34E35] p-1.5 text-white transition hover:bg-[#9f452f]"
+                        confirmClassName="inline-flex items-center gap-1 rounded-lg bg-[#FF2C2C] px-2 py-1 text-xs font-medium text-white transition hover:bg-[#e32727]"
                         cancelClassName="inline-flex items-center justify-center rounded-lg border border-gray-200 p-1 text-gray-500 hover:bg-gray-50"
                         idleTitle="Eliminar"
                       >

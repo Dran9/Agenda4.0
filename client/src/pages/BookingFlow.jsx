@@ -1005,8 +1005,11 @@ export default function BookingFlow() {
             ? (displayName ? `Perfecto ${displayName}, tu cita ha sido reagendada` : 'Tu cita ha sido reagendada')
             : (displayName ? `${displayName}, tu cita está confirmada` : 'Tu cita está confirmada')}
         </h1>
-        <p style={{ fontSize: 24, fontWeight: 600, color: 'var(--turquesa)', textAlign: 'center', marginBottom: 24, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
-          <Heart size={20} color="var(--turquesa)" fill="var(--turquesa)" strokeWidth={2.5} /> {displayName ? `Gracias por tu confianza ${displayName}` : 'Gracias por tu confianza'}
+        <p style={{ fontSize: 24, fontWeight: 600, color: 'var(--turquesa)', textAlign: 'center', marginBottom: 24 }}>
+          <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 8, whiteSpace: 'nowrap' }}>
+            <Heart size={20} color="var(--turquesa)" fill="var(--turquesa)" strokeWidth={2.5} style={{ flexShrink: 0 }} />
+            <span>Gracias por tu confianza</span>
+          </span>
         </p>
         {flow.bookedAppointment && (
           <div className="card" style={{ marginBottom: 16 }}>

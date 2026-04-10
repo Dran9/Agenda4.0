@@ -6,6 +6,7 @@ const { buildCalendarSummary, hasCalendarPaymentMarker, stripCalendarMarkers } =
 const { sendServerError } = require('../utils/httpErrors');
 const { normalizePhone, normalizedPhoneSql } = require('../utils/phone');
 const { broadcast } = require('../services/adminEvents');
+const { extractIdentity, extractStatusIdentity, resolveIdentity } = require('../services/whatsappIdentity');
 
 const router = Router();
 const CALENDAR_ID = () => process.env.CALENDAR_ID || process.env.GOOGLE_CALENDAR_ID || 'danielmacleann@gmail.com';
@@ -217,24 +218,34 @@ router.post('/', async (req, res) => {
         const value = change.value;
         const tenantId = 1; // Default tenant for now
 
+        // Extraer WABA ID y phone_number_id del metadata del webhook (para whatsapp_users)
+        const wabaId = value.metadata?.display_phone_number ? null : null; // Meta no expone WABA ID aquí directamente
+        const webhookPhoneNumberId = value.metadata?.phone_number_id || null;
+
         if (Array.isArray(value.statuses) && value.statuses.length > 0) {
           for (const statusItem of value.statuses) {
             const waStatus = statusItem.status || 'unknown';
-            const recipientPhone = statusItem.recipient_id ? normalizePhone(statusItem.recipient_id) : null;
+
+            // BSUID-aware: extraer identidad del status update
+            const statusIdentity = extractStatusIdentity(statusItem);
+            const recipientPhone = statusIdentity.phone;
+            const recipientBsuid = statusIdentity.bsuid;
             let clientId = null;
 
-            if (recipientPhone) {
-              const [clients] = await pool.query(
-                `SELECT id FROM clients
-                 WHERE ${normalizedPhoneSql('phone')} = ? AND tenant_id = ? LIMIT 1`,
-                [recipientPhone, tenantId]
-              );
-              clientId = clients[0]?.id || null;
+            // Resolver identidad: intenta por BSUID y/o teléfono
+            if (recipientPhone || recipientBsuid) {
+              const resolved = await resolveIdentity({
+                tenantId,
+                phone: recipientPhone,
+                bsuid: recipientBsuid,
+                phoneNumberId: webhookPhoneNumberId,
+              });
+              clientId = resolved.clientId;
             }
 
             await pool.query(
-              `INSERT INTO webhooks_log (tenant_id, event, type, payload, status, client_phone, client_id)
-               VALUES (?, ?, 'status_change', ?, ?, ?, ?)`,
+              `INSERT INTO webhooks_log (tenant_id, event, type, payload, status, client_phone, client_id, bsuid)
+               VALUES (?, ?, 'status_change', ?, ?, ?, ?, ?)`,
               [
                 tenantId,
                 statusItem.id || `wa_status_${Date.now()}`,
@@ -242,6 +253,7 @@ router.post('/', async (req, res) => {
                   kind: 'whatsapp_status',
                   wa_status: waStatus,
                   recipient_id: recipientPhone,
+                  recipient_bsuid: recipientBsuid,
                   conversation: statusItem.conversation || null,
                   pricing: statusItem.pricing || null,
                   errors: statusItem.errors || null,
@@ -250,26 +262,61 @@ router.post('/', async (req, res) => {
                 waStatus === 'failed' ? 'error' : 'procesado',
                 recipientPhone,
                 clientId,
+                recipientBsuid || null,
               ]
             ).catch((err) => {
               console.error('[webhook] Failed to store WhatsApp status:', err.message);
             });
 
-            console.log(`[webhook] WA status ${waStatus} for ${recipientPhone || 'unknown'} (${statusItem.id || 'no-id'})`);
+            console.log(`[webhook] WA status ${waStatus} for ${recipientPhone || recipientBsuid || 'unknown'} (${statusItem.id || 'no-id'})`);
           }
         }
 
         if (!value.messages) continue;
 
         for (const msg of value.messages) {
-          const phone = normalizePhone(msg.from);
           const tenantId = 1; // Default tenant for now
+
+          // --- BSUID-aware identity resolution ---
+          // Extraer todos los identificadores disponibles (viejos y nuevos)
+          const identity = extractIdentity(msg, value);
+
+          // Resolver o crear registro en whatsapp_users (fusiona BSUID ↔ teléfono)
+          const resolved = await resolveIdentity({
+            tenantId,
+            phone: identity.phone,
+            bsuid: identity.bsuid,
+            parentBsuid: identity.parentBsuid,
+            username: identity.username,
+            phoneNumberId: webhookPhoneNumberId,
+          });
+
+          // phone puede venir del mensaje O del registro existente en whatsapp_users
+          // (si Meta ya no manda teléfono pero lo teníamos de antes)
+          const phone = resolved.phone || identity.phone;
+          const bsuid = resolved.bsuid || identity.bsuid;
+          const clientId = resolved.clientId;
+
+          // Logging de monitoreo: detectar cuándo Meta deja de enviar teléfono
+          if (!identity.phone && identity.bsuid) {
+            console.warn(`[webhook] BSUID sin teléfono en mensaje: bsuid=${identity.bsuid}, resolved_phone=${phone || 'NINGUNO'}`);
+          }
+
+          // Resolver nombre del cliente para auto-replies
+          let clientFirstName = null;
+          if (clientId) {
+            const [clientRows] = await pool.query(
+              'SELECT first_name FROM clients WHERE id = ? AND tenant_id = ? LIMIT 1',
+              [clientId, tenantId]
+            );
+            clientFirstName = clientRows[0]?.first_name || null;
+          }
 
           // Mark as read immediately (blue checkmarks ✓✓)
           try {
             const token = process.env.WA_TOKEN;
             const phoneNumberId = process.env.WA_PHONE_ID;
-            await fetch(`https://graph.facebook.com/v18.0/${phoneNumberId}/messages`, {
+            await fetch(`https://graph.facebook.com/v22.0/${phoneNumberId}/messages`, {
               method: 'POST',
               headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
               body: JSON.stringify({ messaging_product: 'whatsapp', status: 'read', message_id: msg.id }),
@@ -277,14 +324,6 @@ router.post('/', async (req, res) => {
           } catch (readErr) {
             // Non-fatal — don't block processing
           }
-
-          // Resolve client
-          const [clients] = await pool.query(
-            `SELECT id, first_name FROM clients
-             WHERE ${normalizedPhoneSql('phone')} = ? AND tenant_id = ? LIMIT 1`,
-            [phone, tenantId]
-          );
-          const clientId = clients[0]?.id || null;
 
           if (msg.type === 'button') {
             // Button reply from template
@@ -294,16 +333,16 @@ router.post('/', async (req, res) => {
 
             // Log to wa_conversations
             await pool.query(
-              `INSERT INTO wa_conversations (tenant_id, client_id, client_phone, direction, message_type, content, button_payload, wa_message_id)
-               VALUES (?, ?, ?, 'inbound', 'button_reply', ?, ?, ?)`,
-              [tenantId, clientId, phone, text, payload, msg.id]
+              `INSERT INTO wa_conversations (tenant_id, client_id, client_phone, direction, message_type, content, button_payload, wa_message_id, bsuid)
+               VALUES (?, ?, ?, 'inbound', 'button_reply', ?, ?, ?, ?)`,
+              [tenantId, clientId, phone, text, payload, msg.id, bsuid || null]
             );
 
             // Log to webhooks_log
             await pool.query(
-              `INSERT INTO webhooks_log (tenant_id, event, type, payload, status, client_phone, client_id)
-               VALUES (?, ?, 'button_reply', ?, 'recibido', ?, ?)`,
-              [tenantId, `button_${payload}_${phone}`, JSON.stringify({ payload, text, wa_message_id: msg.id }), phone, clientId]
+              `INSERT INTO webhooks_log (tenant_id, event, type, payload, status, client_phone, client_id, bsuid)
+               VALUES (?, ?, 'button_reply', ?, 'recibido', ?, ?, ?)`,
+              [tenantId, `button_${payload}_${phone || bsuid}`, JSON.stringify({ payload, text, wa_message_id: msg.id, bsuid }), phone, clientId, bsuid || null]
             );
 
             let confirmedAppointmentId = null;
@@ -332,22 +371,22 @@ router.post('/', async (req, res) => {
                     })
                   );
                   await pool.query(
-                    `INSERT INTO webhooks_log (tenant_id, event, type, payload, status, client_phone, client_id)
-                     VALUES (?, ?, 'status_change', ?, 'procesado', ?, ?)`,
-                    [tenantId, `gcal_check_${match.id}`, JSON.stringify({ action: 'added_check', summary: match.summary, eventId: match.id }), phone, clientId]
+                    `INSERT INTO webhooks_log (tenant_id, event, type, payload, status, client_phone, client_id, bsuid)
+                     VALUES (?, ?, 'status_change', ?, 'procesado', ?, ?, ?)`,
+                    [tenantId, `gcal_check_${match.id}`, JSON.stringify({ action: 'added_check', summary: match.summary, eventId: match.id }), phone, clientId, bsuid || null]
                   );
                 } else {
                   await pool.query(
-                    `INSERT INTO webhooks_log (tenant_id, event, type, payload, status, client_phone, client_id)
-                     VALUES (?, ?, 'status_change', ?, 'error', ?, ?)`,
-                    [tenantId, `gcal_check_miss_${phone}`, JSON.stringify({ action: 'no_match', phone, phoneShort, totalEvents: events.length, terapiaCount: events.filter(e => e.summary?.startsWith('Terapia')).length, terapiaSummaries: events.filter(e => e.summary?.startsWith('Terapia')).map(e => e.summary) }), phone, clientId]
+                    `INSERT INTO webhooks_log (tenant_id, event, type, payload, status, client_phone, client_id, bsuid)
+                     VALUES (?, ?, 'status_change', ?, 'error', ?, ?, ?)`,
+                    [tenantId, `gcal_check_miss_${phone || bsuid}`, JSON.stringify({ action: 'no_match', phone, bsuid, phoneShort, totalEvents: events.length, terapiaCount: events.filter(e => e.summary?.startsWith('Terapia')).length, terapiaSummaries: events.filter(e => e.summary?.startsWith('Terapia')).map(e => e.summary) }), phone, clientId, bsuid || null]
                   );
                 }
               } catch (gcalErr) {
                 await pool.query(
-                  `INSERT INTO webhooks_log (tenant_id, event, type, payload, status, client_phone, client_id)
-                   VALUES (?, ?, 'status_change', ?, 'error', ?, ?)`,
-                  [tenantId, `gcal_check_error_${phone}`, JSON.stringify({ action: 'error', message: gcalErr.message, stack: gcalErr.stack?.split('\n').slice(0, 3) }), phone, clientId]
+                  `INSERT INTO webhooks_log (tenant_id, event, type, payload, status, client_phone, client_id, bsuid)
+                   VALUES (?, ?, 'status_change', ?, 'error', ?, ?, ?)`,
+                  [tenantId, `gcal_check_error_${phone || bsuid}`, JSON.stringify({ action: 'error', message: gcalErr.message, stack: gcalErr.stack?.split('\n').slice(0, 3) }), phone, clientId, bsuid || null]
                 ).catch(() => {});
               }
 
@@ -378,23 +417,28 @@ router.post('/', async (req, res) => {
 
               let replyText = null;
               if (payload === 'CONFIRM_NOW') {
-                const nombre = clients[0]?.first_name || '';
+                const nombre = clientFirstName || '';
                 replyText = `\ud83d\udc4f Perfecto ${nombre}, te esperamos para darle un giro a tu vida.\n\nEn un momento te mandamos el *QR* o _enlace_ para pago adelantado por favor.`;
               } else if (payload === 'REAGEN_NOW') {
-                const nombre = clients[0]?.first_name || '';
+                const nombre = clientFirstName || '';
                 const domain = (await pool.query('SELECT domain FROM tenants WHERE id = ?', [tenantId]))[0]?.[0]?.domain || '';
-                replyText = `${nombre}, vamos a reprogramar tu cita.\n\nhttps://${domain}/?r=${phone}`;
+                // Si no tenemos teléfono (solo BSUID), el link de reagendamiento no va a funcionar
+                // porque usa ?r=phone — en ese caso omitir el link
+                const rescheduleLink = phone ? `\n\nhttps://${domain}/?r=${phone}` : '';
+                replyText = `${nombre}, vamos a reprogramar tu cita.${rescheduleLink}`;
               } else if (payload === 'DANIEL_NOW' && cfg?.auto_reply_contact) {
                 replyText = cfg.auto_reply_contact;
               }
 
               if (replyText) {
                 try {
-                  const result = await sendTextMessage(phone, replyText);
+                  // Enviar usando phone o bsuid (las funciones de whatsapp.js aceptan ambos)
+                  const sendTarget = phone || { bsuid };
+                  const result = await sendTextMessage(sendTarget, replyText);
                   await pool.query(
-                    `INSERT INTO wa_conversations (tenant_id, client_id, client_phone, direction, message_type, content, wa_message_id)
-                     VALUES (?, ?, ?, 'outbound', 'auto_reply', ?, ?)`,
-                    [tenantId, clientId, phone, replyText, result.messages?.[0]?.id]
+                    `INSERT INTO wa_conversations (tenant_id, client_id, client_phone, direction, message_type, content, wa_message_id, bsuid)
+                     VALUES (?, ?, ?, 'outbound', 'auto_reply', ?, ?, ?)`,
+                    [tenantId, clientId, phone, replyText, result.messages?.[0]?.id, bsuid || null]
                   );
 
                   // Send QR payment image after confirmation (delayed 60s to feel natural)
@@ -516,11 +560,12 @@ router.post('/', async (req, res) => {
                         }
 
                         const qrUrl = `https://${domain}/api/config/qr/${qrKey}`;
-                        const qrResult = await sendImageMessage(phone, qrUrl, `QR de pago - Bs ${fee}`);
+                        const qrSendTarget = phone || { bsuid };
+                        const qrResult = await sendImageMessage(qrSendTarget, qrUrl, `QR de pago - Bs ${fee}`);
                         await pool.query(
-                          `INSERT INTO wa_conversations (tenant_id, client_id, client_phone, direction, message_type, content, wa_message_id)
-                           VALUES (?, ?, ?, 'outbound', 'auto_reply', ?, ?)`,
-                          [tenantId, clientId, phone, `QR de pago enviado (${qrKey})`, qrResult.messages?.[0]?.id]
+                          `INSERT INTO wa_conversations (tenant_id, client_id, client_phone, direction, message_type, content, wa_message_id, bsuid)
+                           VALUES (?, ?, ?, 'outbound', 'auto_reply', ?, ?, ?)`,
+                          [tenantId, clientId, phone, `QR de pago enviado (${qrKey})`, qrResult.messages?.[0]?.id, bsuid || null]
                         );
                         await writeQrLog('enviado', {
                           action: 'payment_qr_sent',
@@ -558,10 +603,10 @@ router.post('/', async (req, res) => {
               continue;
             }
 
-            console.log(`[webhook] Text from ${phone}: ${msg.text?.body?.substring(0, 50)} [${classification.contextType}]`);
+            console.log(`[webhook] Text from ${phone || bsuid}: ${msg.text?.body?.substring(0, 50)} [${classification.contextType}]`);
             await pool.query(
-              `INSERT INTO wa_conversations (tenant_id, client_id, client_phone, direction, message_type, content, wa_message_id, metadata)
-               VALUES (?, ?, ?, 'inbound', 'text', ?, ?, ?)`,
+              `INSERT INTO wa_conversations (tenant_id, client_id, client_phone, direction, message_type, content, wa_message_id, metadata, bsuid)
+               VALUES (?, ?, ?, 'inbound', 'text', ?, ?, ?, ?)`,
               [
                 tenantId,
                 clientId,
@@ -569,6 +614,7 @@ router.post('/', async (req, res) => {
                 msg.text?.body,
                 msg.id,
                 buildClassificationMetadata(classification, operationalContext),
+                bsuid || null,
               ]
             );
           } else if (msg.type === 'image' || msg.type === 'document') {
@@ -599,7 +645,7 @@ router.post('/', async (req, res) => {
             try {
               const token = process.env.WA_TOKEN;
               // Step 1: Get media URL
-              const mediaRes = await fetch(`https://graph.facebook.com/v18.0/${mediaId}`, {
+              const mediaRes = await fetch(`https://graph.facebook.com/v22.0/${mediaId}`, {
                 headers: { 'Authorization': `Bearer ${token}` }
               });
               const mediaInfo = await mediaRes.json();
@@ -837,16 +883,16 @@ router.post('/', async (req, res) => {
             } : {});
 
             await pool.query(
-              `INSERT INTO wa_conversations (tenant_id, client_id, client_phone, direction, message_type, content, wa_message_id, metadata)
-               VALUES (?, ?, ?, 'inbound', ?, ?, ?, ?)`,
-              [tenantId, clientId, phone, msg.type, content, msg.id, metadata]
+              `INSERT INTO wa_conversations (tenant_id, client_id, client_phone, direction, message_type, content, wa_message_id, metadata, bsuid)
+               VALUES (?, ?, ?, 'inbound', ?, ?, ?, ?, ?)`,
+              [tenantId, clientId, phone, msg.type, content, msg.id, metadata, bsuid || null]
             );
 
             // Log as potential payment proof
             await pool.query(
-              `INSERT INTO webhooks_log (tenant_id, event, type, payload, status, client_phone, client_id)
-               VALUES (?, ?, 'message_sent', ?, 'recibido', ?, ?)`,
-              [tenantId, `media_${mediaData || mediaId}`, JSON.stringify({ type: msg.type, caption, filename, file_key: mediaData }), phone, clientId]
+              `INSERT INTO webhooks_log (tenant_id, event, type, payload, status, client_phone, client_id, bsuid)
+               VALUES (?, ?, 'message_sent', ?, 'recibido', ?, ?, ?)`,
+              [tenantId, `media_${mediaData || mediaId}`, JSON.stringify({ type: msg.type, caption, filename, file_key: mediaData, bsuid }), phone, clientId, bsuid || null]
             );
           }
         }

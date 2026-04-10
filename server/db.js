@@ -368,6 +368,37 @@ async function initializeDatabase() {
       )
     `);
 
+    // 14. whatsapp_users — BSUID identity resolution layer
+    // Meta está migrando de wa_id (teléfono) a Business-scoped user IDs (BSUID).
+    // Esta tabla mapea BSUIDs ↔ teléfonos ↔ clientes internos.
+    // Un mismo usuario puede llegar primero por teléfono y después por BSUID (o viceversa);
+    // la lógica de resolución en whatsappIdentity.js se encarga de fusionar sin duplicar.
+    await conn.query(`
+      CREATE TABLE IF NOT EXISTS whatsapp_users (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        tenant_id INT NOT NULL,
+        bsuid VARCHAR(255) DEFAULT NULL,
+        parent_bsuid VARCHAR(255) DEFAULT NULL,
+        phone VARCHAR(20) DEFAULT NULL,
+        username VARCHAR(100) DEFAULT NULL,
+        client_id INT DEFAULT NULL,
+        source_waba_id VARCHAR(50) DEFAULT NULL,
+        source_phone_number_id VARCHAR(50) DEFAULT NULL,
+        first_seen_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        last_seen_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        UNIQUE KEY unique_bsuid_tenant (bsuid, tenant_id),
+        UNIQUE KEY unique_phone_tenant (phone, tenant_id),
+        KEY idx_tenant (tenant_id),
+        KEY idx_client (client_id),
+        KEY idx_username (username),
+        KEY idx_parent_bsuid (parent_bsuid),
+        FOREIGN KEY (tenant_id) REFERENCES tenants(id),
+        FOREIGN KEY (client_id) REFERENCES clients(id) ON DELETE SET NULL
+      )
+    `);
+
     // Seed: Daniel as first tenant (idempotent)
     const [tenants] = await conn.query('SELECT id FROM tenants WHERE slug = ?', ['daniel']);
     if (tenants.length === 0) {
@@ -426,6 +457,10 @@ async function initializeDatabase() {
     await conn.query(
       `ALTER TABLE recurring_schedules ADD UNIQUE KEY unique_active_client (tenant_id, client_id, day_of_week, time, started_at)`
     ).catch(() => {});
+    // BSUID migration: agregar columnas para soportar identidad WhatsApp por BSUID además de teléfono
+    await conn.query(`ALTER TABLE wa_conversations ADD COLUMN IF NOT EXISTS bsuid VARCHAR(255) DEFAULT NULL`).catch(() => {});
+    await conn.query(`ALTER TABLE wa_conversations ADD KEY IF NOT EXISTS idx_bsuid (bsuid)`).catch(() => {});
+    await conn.query(`ALTER TABLE webhooks_log ADD COLUMN IF NOT EXISTS bsuid VARCHAR(255) DEFAULT NULL`).catch(() => {});
 
     const slotClaimBackfill = await backfillActiveAppointmentSlotClaims(conn).catch((err) => {
       console.error('[DB] appointment_slot_claims backfill skipped:', err.message);

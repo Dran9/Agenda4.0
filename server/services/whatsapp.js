@@ -1,5 +1,31 @@
-const GRAPH_API_URL = 'https://graph.facebook.com/v18.0';
+const GRAPH_API_URL = 'https://graph.facebook.com/v22.0';
 const DEFAULT_REMINDER_HEADER_IMAGE_URL = 'https://urls.danielmaclean.com/codigs/imago-recordatio-fb.jpg';
+
+/**
+ * Construye el body del mensaje con el destinatario correcto.
+ *
+ * Política de Meta (mayo 2026+):
+ * - `to` = teléfono (wa_id) — el campo clásico
+ * - `recipient` = BSUID — el nuevo campo
+ * - Si mandas AMBOS, `to` tiene prioridad (Meta ignora `recipient`)
+ * - Templates de autenticación SIEMPRE requieren `to` (teléfono)
+ * - Para mensajes normales, si solo tienes BSUID puedes enviar solo con `recipient`
+ *
+ * @param {{ phone?: string, bsuid?: string }} target
+ * @returns {{ to?: string, recipient?: string }}
+ */
+function buildRecipientFields(target) {
+  // Prioridad: teléfono si existe (más confiable, compatible con todo)
+  if (target.phone) {
+    return { to: target.phone };
+  }
+  // Fallback: BSUID (disponible desde mayo 2026)
+  if (target.bsuid) {
+    return { recipient: target.bsuid };
+  }
+  // No debería llegar aquí — el caller debe validar antes
+  throw new Error('Se requiere phone o bsuid para enviar mensaje de WhatsApp');
+}
 
 function getDayInSpanish(date) {
   const days = ['Domingo','Lunes','Martes','Miércoles','Jueves','Viernes','Sábado'];
@@ -28,7 +54,17 @@ function formatFirstName(nombre) {
   return firstName.charAt(0).toUpperCase() + firstName.slice(1).toLowerCase();
 }
 
-async function sendTemplateMessage(phone, template, token, phoneNumberId) {
+/**
+ * Envía un template message. Acepta phone (string) O target ({ phone?, bsuid? }).
+ * Retrocompatible: si recibes un string, se trata como teléfono (comportamiento original).
+ */
+async function sendTemplateMessage(phoneOrTarget, template, token, phoneNumberId) {
+  const target = typeof phoneOrTarget === 'string'
+    ? { phone: phoneOrTarget }
+    : phoneOrTarget;
+
+  const recipientFields = buildRecipientFields(target);
+
   const response = await fetch(`${GRAPH_API_URL}/${phoneNumberId}/messages`, {
     method: 'POST',
     headers: {
@@ -37,7 +73,7 @@ async function sendTemplateMessage(phone, template, token, phoneNumberId) {
     },
     body: JSON.stringify({
       messaging_product: 'whatsapp',
-      to: phone,
+      ...recipientFields,
       type: 'template',
       template,
     })
@@ -138,9 +174,18 @@ async function sendPaymentReminderTemplate(phone, nombre, fechaISO, amount, opti
   }, token, phoneNumberId);
 }
 
-async function sendTextMessage(phone, text) {
+/**
+ * Envía un mensaje de texto libre. Acepta phone (string) O target ({ phone?, bsuid? }).
+ */
+async function sendTextMessage(phoneOrTarget, text) {
   const token = process.env.WA_TOKEN;
   const phoneNumberId = process.env.WA_PHONE_ID;
+
+  const target = typeof phoneOrTarget === 'string'
+    ? { phone: phoneOrTarget }
+    : phoneOrTarget;
+
+  const recipientFields = buildRecipientFields(target);
 
   const response = await fetch(`${GRAPH_API_URL}/${phoneNumberId}/messages`, {
     method: 'POST',
@@ -150,7 +195,7 @@ async function sendTextMessage(phone, text) {
     },
     body: JSON.stringify({
       messaging_product: 'whatsapp',
-      to: phone,
+      ...recipientFields,
       type: 'text',
       text: { body: text }
     })
@@ -164,13 +209,22 @@ async function sendTextMessage(phone, text) {
   return data;
 }
 
-async function sendImageMessage(phone, imageUrl, caption) {
+/**
+ * Envía una imagen. Acepta phone (string) O target ({ phone?, bsuid? }).
+ */
+async function sendImageMessage(phoneOrTarget, imageUrl, caption) {
   const token = process.env.WA_TOKEN;
   const phoneNumberId = process.env.WA_PHONE_ID;
 
+  const target = typeof phoneOrTarget === 'string'
+    ? { phone: phoneOrTarget }
+    : phoneOrTarget;
+
+  const recipientFields = buildRecipientFields(target);
+
   const payload = {
     messaging_product: 'whatsapp',
-    to: phone,
+    ...recipientFields,
     type: 'image',
     image: { link: imageUrl },
   };
@@ -193,4 +247,4 @@ async function sendImageMessage(phone, imageUrl, caption) {
   return data;
 }
 
-module.exports = { sendConfirmationTemplate, sendRescheduleTemplate, sendPaymentReminderTemplate, sendTextMessage, sendImageMessage };
+module.exports = { sendConfirmationTemplate, sendRescheduleTemplate, sendPaymentReminderTemplate, sendTextMessage, sendImageMessage, buildRecipientFields };

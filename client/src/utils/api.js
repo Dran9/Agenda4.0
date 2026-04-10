@@ -28,6 +28,11 @@ async function request(path, options = {}) {
   const data = await response.json();
 
   if (!response.ok) {
+    if (response.status === 401 && token) {
+      localStorage.removeItem('auth_token');
+      window.location.href = '/admin/login';
+      return;
+    }
     throw new Error(data.error || `HTTP ${response.status}`);
   }
 

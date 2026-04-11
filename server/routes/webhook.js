@@ -11,6 +11,68 @@ const { extractIdentity, extractStatusIdentity, resolveIdentity } = require('../
 const router = Router();
 const CALENDAR_ID = () => process.env.CALENDAR_ID || process.env.GOOGLE_CALENDAR_ID || 'danielmacleann@gmail.com';
 
+// ═══════════════════════════════════════════════════════════════════════════════
+// BRIDGE TEMPORAL — agenda4.0 reenvía mensajes de talleres a business-os
+//
+// CONTEXTO: Meta solo permite una webhook URL por WABA. Mientras business-os no
+// tenga su propio número de WhatsApp dedicado, agenda4.0 actúa como hub:
+// recibe todos los mensajes y reenvía a business-os los que son de talleres.
+//
+// PARA ELIMINAR ESTE BRIDGE cuando business-os tenga WA propio:
+//   1. Borrar esta función forwardToBusinessOs
+//   2. Borrar el bloque "BRIDGE TEMPORAL: routing" en el handler msg.type === 'text'
+//   3. Quitar BUSINESS_OS_URL e INTERNAL_SECRET del hPanel de agenda4.0
+//   4. Quitar INTERNAL_SECRET del hPanel de business-os
+//   5. Apuntar el webhook de Meta directo a business-os
+//
+// Variables de entorno requeridas en hPanel de agenda4.0:
+//   BUSINESS_OS_URL = https://darkred-kangaroo-559638.hostingersite.com
+//   INTERNAL_SECRET = (clave compartida, misma que en business-os)
+// ═══════════════════════════════════════════════════════════════════════════════
+async function forwardToBusinessOs(entry, value, msg) {
+  const businessOsUrl = process.env.BUSINESS_OS_URL;
+  const internalSecret = process.env.INTERNAL_SECRET;
+
+  if (!businessOsUrl || !internalSecret) {
+    console.warn('[webhook→business-os] BUSINESS_OS_URL o INTERNAL_SECRET no configurados — forward omitido');
+    return;
+  }
+
+  // Reconstruye un payload mínimo con formato Meta para que business-os
+  // lo procese con su pipeline normal (handleWhatsAppWebhook).
+  const minimalBody = {
+    object: 'whatsapp_business_account',
+    entry: [{
+      id: entry.id,
+      changes: [{
+        field: 'messages',
+        value: {
+          messaging_product: 'whatsapp',
+          metadata: value.metadata,
+          contacts: value.contacts || [],
+          messages: [msg],
+        },
+      }],
+    }],
+  };
+
+  try {
+    const res = await fetch(`${businessOsUrl}/api/webhook/internal`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${internalSecret}`,
+      },
+      body: JSON.stringify(minimalBody),
+    });
+    console.log(`[webhook→business-os] forward msg ${msg.id} desde ${msg.from || 'unknown'}: HTTP ${res.status}`);
+  } catch (err) {
+    // Non-fatal: si business-os no responde, agenda4.0 sigue funcionando normal.
+    console.error('[webhook→business-os] forward failed (non-fatal):', err.message);
+  }
+}
+// ═══ FIN BRIDGE TEMPORAL ═══════════════════════════════════════════════════════
+
 function getWebhookAppSecret() {
   return process.env.WA_APP_SECRET || process.env.META_APP_SECRET || process.env.APP_SECRET || '';
 }
@@ -590,6 +652,31 @@ router.post('/', async (req, res) => {
               }
             }
           } else if (msg.type === 'text') {
+            // ── BRIDGE TEMPORAL: routing hacia business-os ──────────────────
+            // Reenvía a business-os si:
+            //   a) número desconocido (no es cliente de agenda), O
+            //   b) cliente conocido que menciona keywords de talleres
+            //
+            // Los button replies (CONFIRM_NOW / REAGEN_NOW / DANIEL_NOW) nunca
+            // llegan aquí — se manejan arriba en msg.type === 'button'.
+            // Imágenes/documentos (comprobantes) tampoco — se manejan abajo.
+            //
+            // Remover este bloque cuando business-os tenga WA propio.
+            // Ver instrucciones completas en la función forwardToBusinessOs().
+            {
+              const textBody = msg.text?.body || '';
+              const WORKSHOP_KEYWORDS = /taller|constelaciones/i;
+              const isUnknownContact = !clientId;
+              const mentionsWorkshop = WORKSHOP_KEYWORDS.test(textBody);
+
+              if (isUnknownContact || mentionsWorkshop) {
+                console.log(`[webhook→business-os] routing desde ${phone || bsuid} — desconocido=${isUnknownContact}, keyword=${mentionsWorkshop}`);
+                await forwardToBusinessOs(entry, value, msg).catch(() => {});
+                continue; // no procesar en agenda4.0
+              }
+            }
+            // ── FIN BRIDGE TEMPORAL ─────────────────────────────────────────
+
             // Regular text message
             const operationalContext = await getOperationalContext({ tenantId, phone, clientId });
             const classification = classifyIncomingMessage({

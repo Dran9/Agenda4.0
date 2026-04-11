@@ -5,6 +5,18 @@ function getPeopleService() {
   return google.people({ version: 'v1', auth: getOAuthClient() });
 }
 
+async function getOrCreateContactGroup(people, groupName) {
+  const groups = await people.contactGroups.list({ pageSize: 50 });
+  let group = groups.data.contactGroups?.find((item) => item.name === groupName);
+
+  if (group) return group;
+
+  const created = await people.contactGroups.create({
+    requestBody: { contactGroup: { name: groupName } },
+  });
+  return created.data;
+}
+
 async function createContact({ firstName, lastName, phone, city, email }) {
   const people = getPeopleService();
 
@@ -21,23 +33,22 @@ async function createContact({ firstName, lastName, phone, city, email }) {
     contactData.emailAddresses = [{ value: email }];
   }
 
-  // Add to "Pacientes" contact group if it exists, or create it
+  // Add the contact to the tracked Google Contacts labels we use in Agenda 4.0.
   try {
-    const groupName = 'Pacientes';
-    const groups = await people.contactGroups.list({ pageSize: 50 });
-    let group = groups.data.contactGroups?.find(g => g.name === groupName);
+    const groupNames = ['Pacientes', 'Agenda4.0'];
+    const memberships = [];
 
-    if (!group) {
-      const created = await people.contactGroups.create({
-        requestBody: { contactGroup: { name: groupName } },
+    for (const groupName of groupNames) {
+      const group = await getOrCreateContactGroup(people, groupName);
+      if (!group?.resourceName) continue;
+
+      memberships.push({
+        contactGroupMembership: { contactGroupResourceName: group.resourceName },
       });
-      group = created.data;
     }
 
-    if (group?.resourceName) {
-      contactData.memberships = [{
-        contactGroupMembership: { contactGroupResourceName: group.resourceName },
-      }];
+    if (memberships.length > 0) {
+      contactData.memberships = memberships;
     }
   } catch (groupErr) {
     console.error('[contacts] Group error (non-fatal):', groupErr.message);

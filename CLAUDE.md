@@ -1,587 +1,92 @@
-# Proyecto: Agenda Daniel MacLean — Sistema de Agendamiento para Terapeutas
+# agenda4.0 — Daniel MacLean
 
-## Qué es
-Plataforma de agendamiento de sesiones de psicoterapia con admin premium, WhatsApp integrado, contabilidad y analytics. Reemplaza a whatsapp-reminder-engine (repo anterior). Diseñado para vender como producto a otros terapeutas.
+App de agendamiento de sesiones de psicoterapia. Deploy en Hostinger + Render (reminders legacy).
 
-## Dueño
-Daniel MacLean — psicólogo en Cochabamba, Bolivia
-- Teléfono personal: 59172034151
-- WhatsApp Business: 59169650802
+**Dueño:** Daniel MacLean, psicólogo en Cochabamba, Bolivia. Tel: 59172034151. WA Business: 59169650802.
+**URLs:** producción `https://agenda.danielmaclean.com` · health `/api/health` · devmode `/?devmode=1`
+**Repo:** `Dran9/Agenda4.0` rama `main`
 
 ## Stack
-- **Server:** Express + MySQL (Hostinger) — `server/`
-- **Client:** React 18 + Vite + Tailwind + shadcn/ui — `client/`
-- **Integraciones:** Google Calendar, Google Sheets, WhatsApp Cloud API (Meta), Google Vision OCR
-- **Deploy:** Hostinger (Business Web Hosting, Node.js, git push deploy)
+- Backend: Express + MySQL (Hostinger) — `server/`
+- Frontend: React 18 + Vite + Tailwind — `client/`
+- Integraciones: Google Calendar, Google Vision OCR, WhatsApp Cloud API
 
-## Documento de especificaciones
-**LEE `SPECS.md` ANTES DE HACER CUALQUIER COSA.** Contiene:
-- Arquitectura completa del proyecto
-- Flujos de booking (cliente nuevo, antiguo, reagendamiento)
-- Admin ultra-pro: 9 secciones detalladas (Dashboard, CRM, Citas, Analytics, Config, WhatsApp inbox, Contabilidad, OCR, Branding)
-- Campos de base de datos, status automáticos, métricas
-- Stack técnico (shadcn/ui, Recharts, date-fns-tz)
-
-## Repo anterior (referencia)
-`/Users/dran/Documents/Claude Code/whatsapp-reminder-engine/`
-- **Copiar tal cual:** `server/services/calendar.js`, `server/services/whatsapp.js`, `client/src/utils/timezones.js`, `client/src/components/Calendar.jsx`
-- **Copiar lógica, reestructurar:** `createBooking()`, `createClient()`, slot calculation, reminder
-- **NO copiar:** BookingFlow.jsx (reescribir split en 6 componentes), admin (reescribir con shadcn/ui), `src/` (legacy Render, eliminar)
-
-## Reglas críticas (NO ignorar)
-
-### Hostinger
+## Reglas Hostinger (CRÍTICAS)
 - `dns.setDefaultResultOrder('ipv4first')` DEBE ser la primera línea de `server/db.js`
-- `client/dist/` se commitea al repo con hashes en filenames (Vite default)
-- **NUNCA poner `maxAge` ni `immutable` en `express.static()` para assets** — LiteSpeed cachea a nivel proxy y no lo suelta
-- `express.static()` para assets usa `maxAge: 0, etag: false`
-- **El script `build` en package.json raíz es un no-op** — Hostinger ejecuta `npm run build` en cada deploy, y si es un build real sobreescribe nuestro dist con código fuente desactualizado. Dejarlo como no-op.
-- Después de cambios en client/, correr `cd client && npm run build` y commitear `client/dist/`
-- `express.static()` con `fs.existsSync()` guard obligatorio
-- **Nueva MySQL** — base de datos nueva en nuevo site de Hostinger (no la misma del repo anterior)
-- **SPA fallback usa `fs.readFileSync()`** (no `res.sendFile()`) para evitar cache de Express
+- `client/dist/` se commitea al repo — Hostinger no ejecuta builds
+- El script `"build"` en `package.json` raíz es un **no-op** — Hostinger lo ejecuta en cada deploy
+- Después de cambios en `client/`: `cd client && npm run build` → commitear `client/dist/`
+- `express.static()` con `maxAge: 0, etag: false` — LiteSpeed cachea agresivamente
+- SPA fallback usa `fs.readFileSync()`, no `res.sendFile()`
 
-### WhatsApp webhooks
-- Después de configurar Callback URL en Meta, SIEMPRE ejecutar:
+## Reglas React
+- `type="button"` en todo `<button>` que no sea submit de form — sin esto, page reload y React state se borra
+- BookingFlow usa `useReducer`, no múltiples useState
+- Textos en español: NUNCA unicode escapes (`\u00f3`), siempre caracteres directos (`ó`, `é`, `í`, etc.)
+
+## Reglas Timezone
+- Siempre `America/La_Paz` (-04:00). Bolivia no tiene DST
+- `timezone: '-04:00'` en mysql2 pool — NUNCA quitar
+- `toISOString()` devuelve UTC — para mostrar horas en Bolivia usar `toLocaleTimeString('es-BO', { timeZone: 'America/La_Paz' })`
+- NUNCA doble conversión: `toLocaleString()` + `toLocaleTimeString()` resta 4h dos veces
+
+## WhatsApp
+- WABA ID: `1400277624968330` · Phone Number ID: `887756534426165`
+- Graph API: `v22.0`
+- Después de configurar Callback URL en Meta, ejecutar:
   ```bash
-  curl -X POST "https://graph.facebook.com/v18.0/{WABA_ID}/subscribed_apps" \
+  curl -X POST "https://graph.facebook.com/v22.0/1400277624968330/subscribed_apps" \
     -H "Authorization: Bearer {WA_TOKEN}"
   ```
-  Sin esto, los mensajes reales NO llegan (solo los tests de Meta).
-- WABA ID: `1400277624968330`
-- Phone Number ID: `887756534426165`
+  Sin esto los mensajes reales no llegan.
+- Template de recordatorio: `recordatorionovum26`
+- BSUID: infraestructura lista en `server/services/whatsappIdentity.js`
 
-### Textos en español
-- NUNCA usar unicode escapes (\u00f3, \u00e9, etc.) en archivos JSX
-- Siempre escribir los caracteres directamente: ó, é, í, á, ú, ñ, ¿, ¡
-
-### Buttons y state en React
-- SIEMPRE poner `type="button"` en todo `<button>` que NO sea submit de form
-- BookingFlow usa `useReducer` (NO múltiples useState mezclados)
-- Cada screen del booking en su propio componente (`components/booking/`)
-- Reducer en hook separado (`hooks/useBookingReducer.js`)
-
-### Timezone
-- Server: usar `date-fns-tz` con `America/La_Paz`. NUNCA `toLocaleString()` para parsear timezone
-- Client: `utils/timezones.js` con `Intl.DateTimeFormat` (ya probado)
-- Bolivia no tiene DST — simplifica todo
-- `toISOString()` devuelve UTC. Para mostrar horas en Bolivia: `format(utcToZonedTime(date, 'America/La_Paz'), 'HH:mm')`
-
-### Arquitectura
-- **Rutas thin:** routes/ solo validan request → llaman servicio → responden HTTP
-- **Servicios con lógica:** services/ contiene toda la lógica de negocio
-- **Transacciones:** toda operación GCal + DB debe ser atómica (transaction wrapper en db.js)
-- **Concurrencia de booking:** los horarios activos se blindan en DB mediante `appointment_slot_claims`; cualquier flujo que cree, cancele, complete, haga no-show o reactive una cita debe sincronizar esos claims, no solo tocar `appointments`
-- **No volver pesado el booking:** endurecer concurrencia debe ser backend-only; no agregar pasos nuevos, modales extra ni espera visible para el cliente salvo el conflicto `409` cuando el horario ya fue tomado
-- **QR en MySQL BLOB:** NUNCA en disco (desaparecen en deploy)
-- **Hard delete:** clientes se borran con DELETE CASCADE (payments, appointments, wa_conversations). Soft delete causaba UNIQUE constraint violations y ghost records.
-- **Multi-tenant ready:** tabla `tenants`, FK `tenant_id` en todas las tablas principales
-
-### Daniel (preferencias de trabajo)
-- NO usar emojis en la UI (excepto banderas en selector de país)
-- NO usar AskUserQuestion (las tarjetas con opciones lo vuelven loco)
-- Responder a TODAS las preguntas del usuario, no cherry-pick
+## Preferencias de Daniel
+- Sin emojis en la UI (excepto banderas en selector de país)
+- Sin `AskUserQuestion`
+- Responder TODAS las preguntas, sin cherry-pick
+- Nunca hacer push sin pedido explícito
 - Fonts: +2pt respecto al diseño base. No bajarlos
-- Mobile: padding 12px en móvil, 24px en >=520px
+- Mobile: padding 12px móvil, 24px en >=520px
 
-## Estructura del proyecto
+## Archivos clave
+- `client/src/pages/BookingFlow.jsx` — flujo de booking público (screens 1-7)
+- `client/src/utils/api.js` — fetch wrapper con auto-redirect a login en 401
+- `server/routes/webhook.js` — webhook WhatsApp entrante
+- `server/services/whatsappIdentity.js` — resolución BSUID ↔ teléfono
+- `server/services/whatsapp.js` — envío de mensajes WA (phone o BSUID)
+- `server/services/reminder.js` — recordatorios automáticos (cron 18:40 BOT)
+- `server/db.js` — schema MySQL + migraciones (corren al arrancar)
+- `server/routes/booking.js` — API pública de agendamiento
+- `server/routes/clients.js` — CRUD clientes (soft-delete con `deleted_at`)
+- `server/routes/quickActions.js` — 6 acciones admin (reagendar, cancelar, no-show, etc.)
+- `server/middleware/auth.js` — JWT, tokens duran 7 días
+
+## Flujo de booking
 ```
-agenda3.0/
-├── server/
-│   ├── index.js              (Express setup + route mounting)
-│   ├── db.js                 (MySQL pool + schema + transaction helper)
-│   ├── routes/
-│   │   ├── booking.js        (thin: validate → service → respond)
-│   │   ├── slots.js
-│   │   ├── config.js
-│   │   ├── clients.js
-│   │   ├── appointments.js
-│   │   ├── auth.js
-│   │   └── webhook.js        (WhatsApp button responses)
-│   ├── services/
-│   │   ├── booking.js        (createBooking, reschedule, phone check)
-│   │   ├── slots.js          (slot availability calculation)
-│   │   ├── calendar.js       (GCal wrapper)
-│   │   ├── whatsapp.js       (WhatsApp Cloud API)
-│   │   ├── reminder.js       (cron + send logic)
-│   │   ├── storage.js        (MySQL BLOB for files)
-│   │   ├── sheets.js         (Google Sheets sync)
-│   │   └── ocr.js            (Google Vision OCR)
-│   ├── middleware/
-│   │   ├── auth.js           (JWT verification)
-│   │   └── validate.js       (zod schemas)
-│   └── cron/
-│       └── scheduler.js      (reminder scheduling)
-├── client/
-│   ├── src/
-│   │   ├── App.jsx
-│   │   ├── main.jsx
-│   │   ├── index.css
-│   │   ├── pages/
-│   │   │   ├── BookingFlow.jsx       (~200 líneas, orquestador)
-│   │   │   └── Admin/
-│   │   │       ├── Dashboard.jsx
-│   │   │       ├── Analytics.jsx
-│   │   │       ├── Config.jsx
-│   │   │       ├── Clients.jsx
-│   │   │       ├── Appointments.jsx
-│   │   │       ├── WhatsApp.jsx
-│   │   │       └── Finance.jsx
-│   │   ├── components/
-│   │   │   ├── booking/
-│   │   │   │   ├── CalendarScreen.jsx
-│   │   │   │   ├── PhoneScreen.jsx
-│   │   │   │   ├── ConfirmScreen.jsx
-│   │   │   │   ├── SuccessScreen.jsx
-│   │   │   │   ├── ExistingApptScreen.jsx
-│   │   │   │   └── RescheduleConfirm.jsx
-│   │   │   ├── ui/               (shadcn/ui)
-│   │   │   ├── Calendar.jsx
-│   │   │   ├── AdminLayout.jsx
-│   │   │   └── Logo.jsx
-│   │   ├── hooks/
-│   │   │   ├── useBookingReducer.js
-│   │   │   ├── useSlots.js
-│   │   │   └── useConfig.js
-│   │   └── utils/
-│   │       ├── timezones.js
-│   │       ├── api.js
-│   │       └── dates.js
-│   ├── vite.config.js
-│   └── package.json
-├── CLAUDE.md                 (este archivo)
-├── SPECS.md                  (especificaciones completas del producto)
-├── .env.example
-└── package.json
-
-## Flujo de booking (resumen)
+Calendario → Slot → Teléfono → Confirmar
+  → "booked"           → Screen 5 (éxito)
+  → "needs_onboarding" → campos slide-in → resubmit
+  → "has_appointment"  → Screen 6 (cita existente + nueva) → Reagendar/Conservar
 ```
-Cliente NUEVO:
-  Calendario → Slot → Teléfono → Confirmar → needs_onboarding → Datos → Éxito
+Recordatorio diario: GCal mañana → match DB → WhatsApp template → [Confirmo / Reagendar / Daniel]
 
-Cliente ANTIGUO sin cita:
-  Calendario → Slot → Teléfono → Confirmar → Éxito
-
-Cliente ANTIGUO con cita (reagendar):
-  Calendario → Slot → Teléfono → "Ya tienes cita X, elegiste Y" → Reagendar/Conservar → Éxito
-
-Recordatorio (18:40 diario):
-  GCal mañana → match DB → WhatsApp template → [Confirmo/Reagendar/Hablar]
-```
-
-## APIs externas
-- **Google Calendar:** OAuth2 — list events, create event, delete event, update summary
-- **Google Sheets:** OAuth2 (mismas credenciales) — sync tablas clave periódicamente
-- **Google Vision:** API key — OCR de comprobantes de pago (free tier: 1,000/mes)
-- **WhatsApp Cloud API:** template `recordatorionovum26` con header imagen + body (nombre, día, hora) + 3 quick_reply buttons
-- **ipapi.co:** detección de timezone por IP (gratis)
-
-## URLs
-- **Producción:** https://agenda.danielmaclean.com/
-- **API health:** https://agenda.danielmaclean.com/api/health
-- **Dev mode:** https://agenda.danielmaclean.com/?devmode=1
-- **Repo anterior:** https://skyblue-rabbit-531241.hostingersite.com/
+## Modelo de datos WhatsApp
+- `clients` — FK principal: `phone`
+- `wa_conversations` — columnas: `client_phone`, `client_id`, `bsuid`
+- `webhooks_log` — columnas: `client_phone`, `client_id`, `bsuid`
+- `whatsapp_users` — identidad: `bsuid ↔ phone ↔ client_id`
 
 ## Variables de entorno
-Ver `.env.example` para la lista completa. Se configuran en hPanel de Hostinger.
+Ver `.env.example`. Se configuran en hPanel de Hostinger.
 
-## Estado Google OAuth (2026-04-04)
-- Proyecto Google Cloud operativo nuevo: `agenda40`
-- Cliente OAuth operativo: `cliente-agenda40`
-- APIs activas: Google Calendar, Google Sheets, Google People
-- La app OAuth está en modo `Producción`, no en `Prueba`
-- El backend sigue usando el cliente reutilizable actual en `server/services/calendar.js`
-- `server/services/sheets.js` y `server/services/contacts.js` reutilizan ese mismo OAuth client
-- No se creó un segundo módulo `src/lib/googleAuth.js` porque el repo ya tenía esa función cubierta
-- `generate-token.js` fue solo un script de un uso para obtener el refresh token y no debe quedarse como herramienta viva del repo
-- El repo debe permanecer en CommonJS para backend; no dejar `"type": "module"` en el `package.json` raíz
-- Si vuelve a aparecer `invalid_grant`, revisar primero:
-  - `GOOGLE_CLIENT_ID`
-  - `GOOGLE_CLIENT_SECRET`
-  - `GOOGLE_REFRESH_TOKEN`
-  - estado `Producción` del OAuth consent screen
-  - que Hostinger esté usando las credenciales nuevas
-
-## Estado Quick Actions / Comandos (2026-04-06)
-- Nueva pantalla `/admin/quick-actions` — ahora es la primera entrada en el sidebar
-- Diseño mobile-first: buscador instantáneo de clientes con autocomplete (debounced 220ms)
-- 6 acciones contextuales por cliente:
-  - **Reagendar**: envía WhatsApp con link `?r=phone` para que el cliente reagende solo
-  - **Cancelar**: cancela próxima cita + opción de finalizar recurrencia + opción de avisar por WhatsApp
-  - **No-show**: marca inasistencia + opción de avisar por WhatsApp
-  - **Recordatorio**: fuerza envío de reminder WhatsApp a ese cliente específico
-  - **Recurrencia**: activar (abre modal con día/hora manual), pausar, finalizar
-  - **Arancel**: cambiar fee inline con input numérico
-- Panel de resultado con feedback visual (verde éxito / rojo error) después de cada acción
-- Sección colapsable de ajustes rápidos (toggle recordatorios, ver ventana de agenda, estado cobro automático)
-- Backend: `server/routes/quickActions.js` con 6 endpoints protegidos por auth, todos loguean a `webhooks_log`
-- Cada acción de WhatsApp usa `sendTextMessage()` (texto libre), no templates (los templates de Meta requieren aprobación previa)
-
-## Estado tema UI (2026-04-07)
-- Admin y `/voice` ya no quedaron en dark fijo
-- Nuevo sistema de tema compartido:
-  `system | light | dark`
-- `system` sigue `prefers-color-scheme`
-- El override manual persiste en `localStorage`
-- El toggle ya existe en:
-  - login admin
-  - header admin
-  - pantalla `/voice`
-- Archivos base del sistema:
-  - `client/src/hooks/useUiTheme.jsx`
-  - `client/src/components/ThemeModeButton.jsx`
-- El dark anterior estaba muy “inyectado” en CSS global; se encapsuló para que no contamine el modo claro
-
-## Estado Meta templates (2026-04-07)
-- Reminder de pago:
-  ya está enchufado
-  usa `sendPaymentReminderTemplate()` en `server/services/whatsapp.js`
-  y permite override por config/env (`payment_reminder_template`, `WA_PAYMENT_REMINDER_TEMPLATE`)
-- Link de reagendamiento:
-  ya está enchufado como template aprobado `reprogramar_sesion`
-  `{{1}} = nombre`, `{{2}} = link /?r=telefono`
-  `POST /api/quick-actions/send-reschedule-link` ya no usa texto libre
-- Reminder de pago actualizado:
-  el fallback por defecto ya apunta a `recordatorio_pago`
-  el sender actual usa el contrato informado: `{{1}} = nombre`
-  si Meta lo aprobó con más placeholders, habrá que completar ese payload
-- Fix mobile admin layout:
-  un override global del dark theme estaba rompiendo el `position: fixed` del sidebar móvil y desplazando todo el contenido hacia la derecha en iPhone
-  se eliminó ese selector y se regeneró `client/dist`
-
-## Estado Quick Actions mobile (2026-04-08)
-- `Comandos` ahora tiene acción manual para cobro:
-  `Recordar cobro`
-- Labels refinados para móvil:
-  - `Recordar cita`
-  - `Recordar cobro`
-  - `Gestionar recurrencia`
-  - `Ajustar arancel`
-- La grilla soporta labels en dos líneas sin desalinear la altura de los botones
-- `Recordar cobro` usa un endpoint manual específico y no depende de que el scheduler automático esté activo
-
-## Bugs corregidos en recurring schedules (2026-04-06)
-- **`eventStart` undefined en reminder.js**: el Try 3 (fallback por teléfono) usaba una variable que no existía. Cambiado a `event.start?.dateTime || event.start?.date`. Sin esto, el reminder crasheaba al matchear por teléfono.
-- **UNIQUE KEY en recurring_schedules**: agregado `UNIQUE KEY (tenant_id, client_id, day_of_week, time, started_at)` como migración en db.js. Sin esto, requests concurrentes podían crear schedules duplicados.
-- **MRR asumía frecuencia semanal**: el cálculo `SUM(fee) * 4.33` ahora respeta `clients.frequency` — Semanal=4.33, Quincenal=2.17, Mensual=1.
-- Tag de seguridad `pre-recurring-fixes` creado en commit `be55f34` antes de los fixes.
-
-## Estado recurrentes (2026-04-06)
-- Ya existe soporte de `recurring_schedules` con materialización lazy:
-  la app guarda el patrón semanal y solo crea `appointments` cuando hay interacción real
-- Esquema nuevo:
-  `recurring_schedules` + `appointments.source_schedule_id`
-- API admin nueva:
-  `GET/POST/PUT /api/recurring`
-  `PUT /api/recurring/:id/pause`
-  `PUT /api/recurring/:id/resume`
-  `PUT /api/recurring/:id/end`
-  `GET /api/recurring/upcoming`
-  `POST /api/recurring/:id/materialize`
-- Regla crítica:
-  si la ocurrencia ya viene de una serie recurrente en Google Calendar, al materializar NO se crea otro evento en GCal
-  se reutiliza el `event.id` de esa instancia para evitar duplicados
-- Solo se crea un evento individual nuevo en GCal cuando el schedule fue manual y no tiene `gcal_recurring_event_id`
-- Recordatorios:
-  `server/services/reminder.js` ahora intenta matchear recurrencia antes del fallback por teléfono
-  así las sesiones recurrentes quedan materializadas antes de enviar WhatsApp
-- Sync diario:
-  `server/cron/scheduler.js` ahora corre un sync de recurrencia a las 06:00 BOT
-  lee 14 días de GCal y puede auto-crear schedules faltantes por `recurringEventId`
-- Dashboard/Clientes/Analytics/Citas:
-  ya muestran recurrencia activa, sesiones virtuales del día, KPI recurrentes y el ícono de repeat en citas materializadas
-  clientes y citas ahora tienen una columna explícita `Recurrencia`
-  ahí se ve `—`, `Recurrente` o `Pausada`, junto al patrón semanal y la fecha de inicio
-  desde ese campo se puede pausar, reactivar o quitar la recurrencia sin entrar a automatizaciones
-  además, Citas y Clientes ya tienen un modal corto de recurrencia, separado de la ficha completa del cliente
-  el caso principal debe resolverse desde Citas:
-  `Poner en recurrencia` toma por defecto la última sesión completada del cliente y prellena mismo día y misma hora, aunque sigue siendo editable
-- Voz:
-  el shortcut/admin voice ya puede activar, consultar, pausar, reactivar y desactivar recurrencias
-  frases soportadas de forma directa:
-  `Fulano pasa a modo recurrencia`
-  `Fulano pasa a recurrencia`
-  `Fulano entra en recurrencia`
-  `Fulano está en recurrencia`
-- Regla de activación por voz:
-  la activación por voz toma por defecto la última sesión completada del cliente como fuente
-  y convierte ese evento de Google Calendar en una serie semanal
-  si no hay última sesión utilizable, cae a la próxima cita individual futura
-  y si tampoco existe una cita fuente convertible, crea la serie semanal nueva en GCal y deja la recurrencia activa en la app
-- Seguridad operativa de voz:
-  si la app activa la recurrencia pero Google Calendar no confirma la serie, la respuesta de voz lo avisa explícitamente
-- Comandos rápidos:
-  pantalla completa en `/admin/quick-actions` con buscador, 6 acciones y feedback visual
-  es el primer ítem del sidebar (antes de "Hoy")
-  backend en `server/routes/quickActions.js` con 6 endpoints protegidos
-- Decisión operativa actualizada:
-  finalizar (`end`) una recurrencia ahora SÍ elimina la serie maestra en Google Calendar (best-effort, no bloquea si falla)
-  pausar una recurrencia NO toca Google Calendar (intencional — la app deja de materializar y recordar pero no destruye la serie)
-  Quick Actions cancel con `end_recurring=true` ahora llama al servicio `endRecurringSchedule()` en vez de SQL directo, así la eliminación de GCal ocurre también desde Comandos
-- Sync desde Google Calendar:
-  si conviertes la sesión a repetitiva directamente en GCal, el cron `recurringSync` la puede leer y crear el `recurring_schedule`
-  el sync no es realtime; corre a las 06:00 BOT y revisa los próximos 14 días
-- Riesgo conocido:
-  la idempotencia de materialización se protege con advisory lock + verificación previa
-  `recurring_schedules` ya tiene UNIQUE KEY `(tenant_id, client_id, day_of_week, time, started_at)`
-  todavía no hay un UNIQUE KEY duro para ocurrencias recurrentes en la tabla `appointments`
-
-## Estado admin móvil + recurrencia + voz (2026-04-07)
-- `/admin` ya no debe usarse como dashboard directo:
-  ahora redirige a `Comandos` (`/admin/quick-actions`) si hay sesión
-  el dashboard quedó en `/admin/dashboard`
-- El admin móvil en iPhone necesitó un fix real de safe area:
-  no bastó con `padding-top`
-  hubo que agregar `viewport-fit=cover` en `client/index.html` y un spacer explícito en `client/src/components/AdminLayout.jsx`
-  porque dentro del wrapper el notch no respetaba bien el header y el botón hamburguesa quedaba montado sobre el reloj
-- Recurrencia ya no debe asumir que existe una sesión completada como única base válida:
-  la regla correcta ahora es:
-  1. usar la última cita standalone `Completada`
-  2. si no existe, usar la próxima standalone futura (`Agendada`, `Confirmada`, `Reagendada`)
-  3. si ninguna existe, dejar que el admin cargue día/hora/fecha manualmente
-- `server/services/recurring.js` ahora devuelve metadata transitoria de sync:
-  `gcal_sync_status` e `integration_warning`
-  esto existe para evitar un falso positivo de “Recurrencia activada” cuando la app sí guardó el schedule pero Google Calendar no confirmó la serie
-- `Clients`, `Appointments` y `Quick Actions` deben mirar esa metadata y mostrar advertencia explícita si Google falla
-- Voz ahora comparte la misma lógica de cita base y ya reconoce frases simples como:
-  `pon en recurrencia a Fulano`
-  `poner en recurrencia a Fulano`
-  `pon a Fulano en recurrencia`
-  si el cliente es ambiguo debe pedir aclaración; si falta día/hora debe pedirlos
-
-## Por qué este fix tomó más tiempo de lo deseable
-- No era un bug único:
-  eran al menos 4 problemas distintos que producían síntomas parecidos
-- Capa 1, wrapper/iPhone:
-  el menú del admin parecía solo “muy arriba”, pero el problema real incluía `WKWebView`, notch y safe area mal expuesto
-- Capa 2, routing:
-  el wrapper podía entrar por `/admin`, pero la web seguía teniendo al dashboard como root; había que corregir la semántica del route, no solo el wrapper
-- Capa 3, recurrencia backend:
-  el sistema sí guardaba la recurrencia en DB, pero si Google Calendar fallaba la app seguía respondiendo como éxito
-  eso hacía parecer que “no creó nada” cuando en realidad había una desalineación entre DB y Google
-- Capa 4, UX repartida:
-  `Clients`, `Appointments`, `Quick Actions` y voz no usaban exactamente la misma lógica de cita base ni de manejo de error
-  arreglar solo una superficie habría dejado el sistema inconsistente
-- Regla de trabajo para futuras sesiones:
-  cuando una función exista tanto en admin como en voz, no aceptar fixes parciales
-  la solución correcta debe dejar el criterio unificado en backend/utilidades compartidas y solo después reflejarlo en cada UI
-
-## Estado SSE / Real-time Admin (2026-04-07)
-- El admin ahora se actualiza en tiempo real sin refresh manual, usando Server-Sent Events (SSE)
-- Endpoint SSE: `GET /api/admin/events` — conexión persistente protegida por JWT
-- El auth middleware ahora acepta `?token=` como query param además del header `Authorization: Bearer`, porque `EventSource` del browser no puede enviar headers custom
-- Servicio: `server/services/adminEvents.js` — broadcast por tenant, heartbeat cada 25s, cleanup automático al desconectar
-- Eventos emitidos:
-  - `appointment:change` — creación, cambio de status, eliminación, confirmación por WhatsApp, reagendamiento, materialización de recurrencia
-  - `recurring:change` — crear, actualizar, pausar, reactivar, finalizar, cancelar desde Quick Actions
-  - `payment:change` — cambio manual de status, confirmación/mismatch automática por OCR
-  - `client:change` — nuevo cliente por booking público, cambio de arancel desde Quick Actions
-- Hook frontend: `client/src/hooks/useAdminEvents.js` — debounce 400ms, reconexión exponencial, cleanup al desmontar
-- Páginas conectadas: Dashboard, Appointments, Clients, Finance, Quick Actions
-- SSE se emite desde: booking.js, appointments.js, recurring.js, quickActions.js, webhook.js, payments.js
-- No usar SSE para el flujo público de booking ni para el webhook de WhatsApp (esos no son admin)
-- Importante: Hostinger tiene LiteSpeed; el header `X-Accel-Buffering: no` ya se envía para evitar buffering
-
-## Regla de documentación operativa
-- Al cerrar una tarea importante, actualizar SIEMPRE ambos archivos:
-  - `docs/HANDOFF.md`
-  - `CLAUDE.md`
-- `HANDOFF.md` es el snapshot corto para retomar trabajo rápido.
-- `CLAUDE.md` debe contener también el contexto operativo acumulado importante, no solo reglas generales.
-- Si la tarea toca la app de voz como línea de producto, mantener también `docs/VOICE-APP-REPORT.md`.
-
-## Estado operativo actual (2026-04-03)
-
-### Branding y dominio
-- El dominio público canónico es `https://agenda.danielmaclean.com/`
-- El nombre visible de la app debe ser `Agenda Daniel MacLean`
-- No deben quedar referencias operativas al dominio viejo `plum-rhinoceros-787093.hostingersite.com`
-
-### Regla canónica de teléfonos
-- Guardar y comparar teléfonos como solo dígitos
-- Siempre con código de país
-- Sin `+`
-- Sin espacios, guiones ni separadores
-- Esta normalización ya aplica en clientes, booking, reagendamiento, pagos, webhook y recordatorios
-- No se hizo migración agresiva sobre datos viejos
-
-### Estado OCR / pagos
-- La validación de destinatario depende solo de cuentas bancarias whitelisteadas
-- Los nombres del destinatario son informativos; no definen validez
-- La cuenta destino debe compararse tras limpiar espacios y guiones
-- En BNB, hay que priorizar `Nombre del destinatario` y `Se acreditó a la cuenta`
-- En BNB, `La suma de Bs.:` debe reconocerse como monto
-- `Bancarización:` puede usarse como referencia cuando no hay otro código usable
-- La fecha del comprobante se compara contra el último contexto de pago enviado por WhatsApp, no contra la fecha de la cita
-- El inbox de WhatsApp muestra una caja temporal de `OCR bruto` para debug
-- Los mensajes de mismatch deben listar motivos en bullets, no en una sola línea con `/`
-
-### Estado de citas / admin
-- La barra de citas ya distingue claramente `Desde` y `Hasta`
-- La lista de citas soporta ordenamiento por fecha, nombre, fecha de registro y status
-- `client/dist` sigue versionado y debe mantenerse sincronizado para que no falle GitHub `Frontend Guard`
-
-### Estado del módulo de voz
-- El control por voz vive aislado del flujo público y del flujo cliente
-- Endpoint actual: `POST /api/voice/shortcut`
-- Auth por token secreto `VOICE_ADMIN_TOKEN`
-- Soporta audio y texto
-- Cada comando queda auditado en `voice_commands_log`
-- Ya existe una subapp privada principal en `https://agenda.danielmaclean.com/voice`
-- Existe un informe operativo específico para esta línea de producto en `docs/VOICE-APP-REPORT.md`
-- `/voice` usa la sesión normal de admin por JWT; no debe exponer `VOICE_ADMIN_TOKEN` en cliente
-- `/voice` está pensada como la UX principal de voz: audio-first, texto fallback, respuesta textual siempre visible, respuesta hablada opcional e historial reciente
-- El endpoint web privado para esa subapp es `POST /api/voice/admin-command`
-- El TTS privado para esa subapp ahora sale por `POST /api/voice/tts` y debe usar Cartesia server-side si `CARTESIA_API_KEY` está configurado
-- El historial para esa subapp sale por `GET /api/voice/history`
-- `voice_commands_log` ahora también guarda `result_data`, para persistir aclaraciones, opciones de cliente y acciones pendientes entre turnos
-- La arquitectura de comprensión ya no debe ser solo `intent -> switch`:
-  heurísticas directas primero, luego resolución de follow-up con contexto reciente, luego planner con tools de solo lectura, y recién después ejecución
-- Consultas ya soportadas:
-  - agenda hoy/mañana/fecha
-  - pagos pendientes
-  - monto pendiente
-  - sesiones para llegar a meta
-  - búsqueda de cliente
-  - próximas citas de cliente
-  - si se envió recordatorio
-  - si confirmó
-  - reagendados
-  - nuevos por mes
-  - no confirmados mañana
-  - confirmados hoy
-  - citas de la semana
-- Acciones ya soportadas:
-  - crear cita para cliente existente con fecha y hora explícitas
-  - activar recordatorios
-  - desactivar recordatorios
-  - mandar recordatorios para hoy
-  - mandar recordatorios para mañana
-  - actualizar disponibilidad por día
-- La disponibilidad por voz ya entiende frases tipo:
-  - `el jueves solo voy a trabajar de 8 a 12 en la mañana, en la tarde nada`
-  - `el jueves en la mañana de 9 a 12, en la tarde todo igual`
-  - `el viernes solo de 10 a 19`
-- Los rangos continuos deben respetar la pausa del medio; no deben llenar automáticamente el bloque entre mañana y tarde
-- La creación de citas por voz debe tolerar lenguaje natural:
-  - `nueva cita para Fidalgo el martes a las 8`
-  - `crea una cita para Cecilia mañana a las 18`
-- Si el nombre del cliente es ambiguo, la respuesta debe preguntar de forma humana:
-  `¿Te refieres a Cecilia X o Cecilia Y?`
-- Follow-ups como `el otro`, `el de Santa Cruz`, `sí`, `a las 8` deben intentar reutilizar la aclaración o acción pendiente inmediatamente anterior antes de caer en una nueva pregunta desde cero
-- Antes de pedir “fecha exacta”, el parser debe intentar resolver fechas relativas y días de semana por sí mismo
-- Las consultas de agenda deben resolver también rangos naturales como `esta semana` y `la próxima semana` sin depender de que el LLM invente un `date_key`
-- Las etiquetas de fechas puras en respuestas de voz deben tratarse como fechas calendario, no como instantes zonificados; si dices `8 de abril`, la respuesta no puede mostrar `7 de abril`
-- Si falla la creación de cita por `invalid_grant`, la respuesta debe culpar claramente a Google Calendar/autorización, no al comando del usuario ni al LLM
-- Las consultas sobre disponibilidad no deben ejecutar cambios salvo que haya una instrucción explícita de modificación
-- El cliente nunca debe recibir `CARTESIA_API_KEY`; la reproducción con Cartesia debe pasar por backend y usar `speechSynthesis` solo como fallback
-
-### Reglas de trabajo vigentes
-- Nunca hacer push sin que el usuario lo pida explícitamente en ese turno
-- Los archivos mockup sueltos no se commitean:
-  - `Skills/`
-  - `ocr-sample.png`
-  - `ocr-sample-2.png`
-
-## Estado actual (2026-03-29)
-
-### Funcionando
-- **Server Express** corriendo en Hostinger (agenda.danielmaclean.com), auto-deploy desde GitHub
-- **10 tablas MySQL** en `u926460478_agenda30` (localhost en Hostinger, srv2023.hstgr.io remoto)
-- **Google Calendar OAuth** funcionando — slots, eventos, recordatorios
-- **WhatsApp Cloud API** — recordatorios diarios 18:40 BOT, auto-reply a botones CONFIRM/REAGEN/DANIEL
-- **OCR de comprobantes** — Google Vision API reconoce montos, referencias, bancos bolivianos. **Soporta imágenes Y PDFs** (via `files:annotate` endpoint)
-- **Auto-match pagos por teléfono** — imagen/PDF WhatsApp → OCR → match con pago pendiente → confirma automáticamente
-- **QR de pago automático** — al confirmar asistencia, envía QR según arancel del cliente; si la cita vieja/manual no tiene `booking_context`, un teléfono boliviano ya no debe bloquear el envío
-- **Payment badges** — verde "Pagado" / rojo "Pendiente" en Appointments y Dashboard
-- **Hard delete de clientes** — CASCADE por payments, appointments, wa_conversations
-- **Rate limiting** solo en /api/book, /api/reschedule, /api/client (NO en admin routes)
-- **Calendar prefetch por mes** — al cargar y al navegar meses, prefetchea TODOS los días disponibles del mes
-
-### Deploy — Lecciones aprendidas (CRÍTICO)
-- **Hostinger ejecuta `npm run build` en cada deploy** → el script build en package.json raíz DEBE ser no-op
-- **NUNCA usar `maxAge` ni `immutable` en express.static para assets** → LiteSpeed cachea a nivel proxy y no lo suelta
-- **Filenames con hash** (Vite default) son necesarios para invalidar cache de LiteSpeed en cada deploy
-- **`index.html` se sirve con `fs.readFileSync()`** (no sendFile) para evitar cache de Express
-- **Flujo correcto**: cambiar código → `cd client && npm run build` → commitear `client/dist/` → push → Hostinger deploys
-
-### Timezone — Lecciones aprendidas (CRÍTICO)
-- **`server/db.js` tiene `timezone: '-04:00'`** — NUNCA quitar. Sin esto, mysql2 interpreta DATETIME como UTC y todas las horas se muestran -4h
-- **NUNCA hacer doble conversión timezone**: `new Date(date.toLocaleString('en-US', { timeZone: 'America/La_Paz' }))` seguido de `.toLocaleTimeString({ timeZone: 'America/La_Paz' })` resta 4h DOS VECES
-- **Para formatear hora Bolivia**: usar `date.toLocaleTimeString('es-BO', { timeZone: 'America/La_Paz' })` directamente sobre un Date con timezone correcto — UNA sola conversión
-- **`window_days` = días CALENDARIO, no weekdays** — simple: `maxDate = today + windowDays`
-- **Posible bug pendiente**: `NOW()` en queries SQL devuelve hora del server MySQL (probablemente UTC), pero `date_time` en DB es Bolivia. Diferencia de 4h en comparaciones `date_time > NOW()`. No afecta en la práctica excepto citas cerca de medianoche.
-
-### Endpoints de debug (TEMPORALES — borrar cuando todo esté estable)
-- `GET /api/debug-env` — longitud y parciales de credenciales
-- `GET /api/debug-dist` — lista archivos en client/dist en Hostinger
-- `GET /api/admin/test-ocr` — verifica GOOGLE_VISION_API_KEY
-- `GET /api/admin/test-reminder?date=today|tomorrow&force=1` — trigger manual de recordatorios
-
-### Cambios sesión 2026-03-29 (tarde/noche)
-- **Appointments page overhaul**: Status y Pago son dropdowns inline con colores, columna "Registro" (created_at), renombrado "Fecha" → "Fecha agendada", eliminada columna "Acción"
-- **Reschedule DELETE**: Al reagendar, la cita vieja se BORRA del registro. La nueva queda con status "Reagendada". Pagos confirmados se migran automáticamente
-- **URL magic codes**: `?t=phone` (pre-fill teléfono), `?r=phone` (modo reagendar + banner + auto-submit), `?fee=amount` (override de arancel silencioso)
-- **OCR validación 3 criterios**: Destinatario verificado (Daniel Mac), monto coincide con arancel, fecha no muy vieja → "Confirmado". Si falla → "Mismatch" (naranja)
-- **Multi-bank OCR**: Parser mejorado para Mercantil Santa Cruz, BISA, BancoSol, Banco Ganadero, BCP
-- **OCR en WhatsApp inbox**: Datos extraídos del comprobante visibles en mensajes (remitente, monto, fecha, destinatario, banco, ref)
-- **Reminder toggle**: Botón on/off en Config para activar/desactivar recordatorios + time picker
-- **Window days libre**: Input numérico libre (antes era dropdown con valores fijos)
-- **Fix "Copiar a" en Config**: La función de copiar horarios a otros días no aplicaba cambios correctamente. Fix: state update directo + toast de confirmación + limpiar checkboxes al cambiar de día
-
-### Cambios sesión 2026-03-29 (madrugada)
-- **Timezone mysql2**: `timezone: '-04:00'` en db.js — fix raíz para horas correctas en admin y WhatsApp
-- **WhatsApp reminder hora**: eliminada doble conversión timezone, usa Intl.DateTimeFormat directo
-- **Calendar window_days**: revertido a días calendario (no weekdays) en server, Calendar.jsx, CalendarScreen.jsx
-- **Prefetch completo por mes**: BookingFlow prefetchea todos los días del mes + onMonthChange handler
-- **Config dropdown**: extendido hasta 50 días
-- **OCR de PDFs**: `ocr.js` usa `files:annotate` de Vision API para PDFs nativamente
-
-### Cambios sesión 2026-03-28 tarde
-- **Calendario visual**: sin borde, fuentes +2pt, #A4A4A6 para headers y días no disponibles, #000 fw900 para días con slots
-- **Phone input unificado**: eliminado dropdown de país en Screen 2, prefijo derivado de timezone
-- **CONFIRM_NOW WhatsApp**: texto estático sin variables de fecha, delay 60s antes de enviar QR
-- **Diagnóstico QR WhatsApp**: el follow-up posterior a `CONFIRM_NOW` ahora deja entradas `enviado` / `skipped` / `error` en `webhooks_log`
-- **Blue checkmarks**: mensajes se marcan como leídos inmediatamente
-- **Finance page**: conectada con datos reales, goal mensual, tabla de pagos con OCR
-- **Dashboard KPIs**: conectados a datos reales de analytics
-
-### Pendiente — Bugs activos
-- **Recordatorios no envían si no hay registro en DB** — El reminder encuentra eventos en GCal pero la tabla `appointments` tiene 0 registros. Si las citas se crearon directo en GCal (no por la app), el reminder no matchea. Fix: enviar reminder basado solo en datos de GCal cuando no hay match en DB
-- **NOW() en SQL vs Bolivia time** — potencial bug de 4h en queries con `date_time > NOW()`. Fix: SET time_zone = '-04:00' en cada conexión mysql2
-- **Variable `destAccount` sin definir en ocr.js** — referencia huérfana en fallback de referencia, no crashea pero lógica incorrecta
-
-### Pendiente — Verificar en producción
-- **OCR validación end-to-end** — agendar → confirmar asistencia → enviar comprobante → OCR → match → Confirmado o Mismatch
-- **URL magic codes** — `?t=`, `?r=`, `?fee=` (puede ser cache de LiteSpeed)
-
-### Pendiente — Features por implementar
-- **Auto-complete de citas** — cron para marcar "Completada" ~1h después de la hora de la cita
-- **No-show via WhatsApp** — resumen al final del día preguntando a Daniel si todos asistieron
-- **REAGEN_NOW auto-reply** — enviar link de reagendamiento (`?r=phone`) cuando cliente presiona "Reagendar" en WhatsApp
-- **DANIEL_NOW auto-reply** — notificar en dashboard + auto-reply cuando presiona "Hablar con Daniel"
-- **Status automáticos de clientes** — Nuevo/Activo/En pausa/Inactivo/Recurrente calculados por reglas
-- **Métricas por cliente** — total sesiones, tasa asistencia, total pagado, deuda
-- **Vista detalle de cliente** — panel slide-in con historial de citas y pagos
-- **Nota en citas** — agregar notas por cita desde admin
-- **Reagendar desde admin** — botón en Citas para cambiar horario directamente
-- **Analytics page** — gráficos, heatmap horarios, fuente de clientes, tendencias
-- **WhatsApp inbox mejorado** — panel dual, campo de mensaje manual, mensajes rápidos, broadcast
-- **Finance avanzado** — deducciones, ingreso neto, deuda/obligaciones, semanas lectivas
-- **OCR manual desde admin** — subir comprobante desde perfil del cliente
-- **Branding** — logo, colores, slug URL por terapeuta (multi-tenant visual)
-- **Google Sheets sync periódico** — sync automático cada hora (pagos, resumen semanal)
-- **Diseño visual** — branding/colores/tipografía de la app
-- **Limpiar endpoints de debug** cuando todo esté estable
-
-### Numeración de Steps (referencia para hablar con Daniel)
-```
-Step 1       — Calendario + slots (o Step 1 reschedule si viene de reagendar)
-Step 2       — Input teléfono
-Step 3       — Onboarding (cliente nuevo: nombre, edad, ciudad, fuente)
-Step 4       — Ya tiene cita (muestra actual + elegida, botones Reagendar/Conservar)
-Step 4b      — Confirmar reagendamiento (rojo: se cancela, verde: nueva)
-Step 5a      — Éxito primera cita (cliente nuevo)
-Step 5b      — Éxito cliente que retorna
-Step 5c      — Éxito reagendamiento
-```
+## Approach
+- Think before acting. Read existing files before writing code.
+- Be concise in output but thorough in reasoning.
+- Prefer editing over rewriting whole files.
+- Do not re-read files you have already read unless the file may have changed.
+- Test your code before declaring done.
+- No sycophantic openers or closing fluff.
+- Keep solutions simple and direct.
+- User instructions always override this file.

@@ -623,7 +623,8 @@ router.post('/', async (req, res) => {
 
                         const qrUrl = `https://${domain}/api/config/qr/${qrKey}`;
                         const qrSendTarget = phone || { bsuid };
-                        const qrResult = await sendImageMessage(qrSendTarget, qrUrl, `QR de pago - Bs ${fee}`);
+                        const qrCaption = `QR de pago - Bs ${fee}\n\n👉 Por favor sube en este mismo chat el comprobante de tu pago.\nGracias.`;
+                        const qrResult = await sendImageMessage(qrSendTarget, qrUrl, qrCaption);
                         await pool.query(
                           `INSERT INTO wa_conversations (tenant_id, client_id, client_phone, direction, message_type, content, wa_message_id, bsuid)
                            VALUES (?, ?, ?, 'outbound', 'auto_reply', ?, ?, ?)`,

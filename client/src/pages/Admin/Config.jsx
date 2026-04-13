@@ -1252,7 +1252,7 @@ export default function Config() {
           {renderActiveSection()}
         </div>
 
-        <div className="sticky bottom-4 z-20">
+        <div className="fixed bottom-4 left-0 right-0 z-20 px-4 lg:left-64 lg:px-6">
           <div className="rounded-[24px] border border-slate-200 bg-white/95 px-4 py-4 shadow-[0_24px_60px_rgba(15,23,42,0.16)] backdrop-blur-xl">
             <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
               <div>

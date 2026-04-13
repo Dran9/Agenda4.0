@@ -39,13 +39,13 @@ function parseLaPazDate(fechaISO) {
   return new Date(dateStr);
 }
 
-function formatTemplateDateParts(date) {
-  const lpOpts = { timeZone: 'America/La_Paz' };
-  const dayName = new Intl.DateTimeFormat('es-BO', { weekday: 'long', ...lpOpts }).format(date);
-  const dayNum = new Intl.DateTimeFormat('es-BO', { day: 'numeric', ...lpOpts }).format(date);
+function formatTemplateDateParts(date, timeZone = 'America/La_Paz') {
+  const opts = { timeZone };
+  const dayName = new Intl.DateTimeFormat('es', { weekday: 'long', ...opts }).format(date);
+  const dayNum = new Intl.DateTimeFormat('es', { day: 'numeric', ...opts }).format(date);
   return {
     fecha: dayName.charAt(0).toUpperCase() + dayName.slice(1) + ' ' + dayNum,
-    hora: date.toLocaleTimeString('es-BO', { hour: '2-digit', minute: '2-digit', hour12: false, ...lpOpts }),
+    hora: date.toLocaleTimeString('es', { hour: '2-digit', minute: '2-digit', hour12: false, ...opts }),
   };
 }
 
@@ -84,7 +84,7 @@ async function sendTemplateMessage(phoneOrTarget, template, token, phoneNumberId
   return data;
 }
 
-async function sendConfirmationTemplate(phone, nombre, fechaISO) {
+async function sendConfirmationTemplate(phone, nombre, fechaISO, timeZone = 'America/La_Paz') {
   const token = process.env.WA_TOKEN;
   const phoneNumberId = process.env.WA_PHONE_ID;
   const reminderHeaderImageUrl = (process.env.WA_REMINDER_HEADER_IMAGE_URL || DEFAULT_REMINDER_HEADER_IMAGE_URL).trim();
@@ -94,8 +94,8 @@ async function sendConfirmationTemplate(phone, nombre, fechaISO) {
 
   const nombrewa = formatFirstName(nombre);
 
-  // Format day and time in Bolivia timezone (single conversion via Intl — no double-conversion)
-  const { fecha: fechawa, hora: horawa } = formatTemplateDateParts(date);
+  // Format day and time in the client's timezone
+  const { fecha: fechawa, hora: horawa } = formatTemplateDateParts(date, timeZone);
 
   const payload = {
     messaging_product: 'whatsapp',

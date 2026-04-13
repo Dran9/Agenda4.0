@@ -50,7 +50,8 @@ async function wasReminderAlreadySent({ tenantId, appointmentId, eventId, hours 
 }
 
 async function sendAppointmentReminder(appt, eventId) {
-  const result = await sendConfirmationTemplate(appt.phone, appt.first_name, appt.date_time);
+  const tz = appt.timezone && appt.timezone.trim() ? appt.timezone.trim() : 'America/La_Paz';
+  const result = await sendConfirmationTemplate(appt.phone, appt.first_name, appt.date_time, tz);
   await pool.query(
     `INSERT INTO webhooks_log (tenant_id, event, type, payload, status, client_phone, client_id, appointment_id)
      VALUES (?, ?, 'reminder_sent', ?, 'enviado', ?, ?, ?)`,
@@ -115,7 +116,7 @@ async function checkAndSendReminders({ date, tenantId, force = false, appointmen
       const tenantFilter = tenantId ? 'AND a.tenant_id = ?' : '';
       let params = tenantId ? [event.id, tenantId] : [event.id];
       let [appts] = await pool.query(
-        `SELECT a.*, c.phone, c.first_name FROM appointments a
+        `SELECT a.*, c.phone, c.first_name, c.timezone FROM appointments a
          JOIN clients c ON a.client_id = c.id
          WHERE a.gcal_event_id = ? AND a.status IN ('Agendada','Confirmada','Reagendada') ${tenantFilter}`,
         params
@@ -180,7 +181,7 @@ async function checkAndSendReminders({ date, tenantId, force = false, appointmen
           const tenantFilterFb = tenantId ? 'AND c.tenant_id = ?' : '';
           const paramsFb = tenantId ? [phone, tenantId] : [phone];
           [appts] = await pool.query(
-            `SELECT c.id AS client_id, c.phone, c.first_name, c.tenant_id FROM clients c
+            `SELECT c.id AS client_id, c.phone, c.first_name, c.tenant_id, c.timezone FROM clients c
              WHERE ${normalizedPhoneSql('c.phone')} = ? ${tenantFilterFb}`,
             paramsFb
           );
@@ -194,6 +195,7 @@ async function checkAndSendReminders({ date, tenantId, force = false, appointmen
               phone: client.phone,
               first_name: client.first_name,
               tenant_id: client.tenant_id || 1,
+              timezone: client.timezone,
               date_time: eventDateTime,
             }];
             console.log(`[reminder] Matched by phone from event name: ${phone}`);

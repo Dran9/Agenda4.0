@@ -1,6 +1,7 @@
 const { Router } = require('express');
 const { pool, withTransaction } = require('../db');
 const { authMiddleware } = require('../middleware/auth');
+const { publicRateLimit } = require('../middleware/publicRateLimit');
 const { validate, clientSchema } = require('../middleware/validate');
 const { calculateRetentionStatus } = require('../services/retention');
 const { sendServerError } = require('../utils/httpErrors');
@@ -335,7 +336,7 @@ router.delete('/:id', authMiddleware, async (req, res) => {
 });
 
 // POST /api/client/check — public phone check (no auth)
-router.post('/check', async (req, res) => {
+router.post('/check', publicRateLimit, async (req, res) => {
   try {
     if (req.baseUrl === '/api/clients') {
       return res.status(404).json({ error: 'Endpoint no encontrado' });

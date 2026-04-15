@@ -3,11 +3,9 @@ const express = require('express');
 const cors = require('cors');
 const path = require('path');
 const fs = require('fs');
-const rateLimit = require('express-rate-limit');
 
 const { initializeDatabase } = require('./db');
 const { startReminderCron, startAutoCompleteCron, startPaymentReminderCron, startRecurringSyncCron } = require('./cron/scheduler');
-const { isTrustedDevMode } = require('./utils/devmode');
 const { sendServerError } = require('./utils/httpErrors');
 
 // Routes
@@ -36,13 +34,6 @@ app.use(express.json({
   },
 }));
 
-const clientLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: 5,
-  skip: isTrustedDevMode,
-  message: { error: 'Demasiados intentos.' },
-});
-
 // ─── Reminder trigger (admin) ────────────────────────────────────
 const { checkAndSendReminders, checkAndSendPaymentReminders } = require('./services/reminder');
 const { authMiddleware } = require('./middleware/auth');
@@ -54,7 +45,7 @@ app.use('/api/slots', slotsRoutes);
 app.use('/api', slotsRoutes); // /api/config/public lives here
 app.use('/api/config', configRoutes);
 app.use('/api/clients', clientsRoutes);  // admin routes — auth protects, no rate limit
-app.use('/api/client', clientLimiter, clientsRoutes); // public /api/client/check — rate limited
+app.use('/api/client', clientsRoutes); // public /api/client/check — rate limited in-route via DB config
 app.use('/api/appointments', appointmentsRoutes);
 app.use('/api/auth', authRoutes);
 app.use('/api/webhook', webhookRoutes);

@@ -8,9 +8,9 @@ const {
   adminRescheduleSchema,
 } = require('../middleware/validate');
 const { authMiddleware } = require('../middleware/auth');
+const { publicRateLimit } = require('../middleware/publicRateLimit');
 const { checkClientByPhone, createClient, createBooking, rescheduleAppointment } = require('../services/booking');
 const { verifyPublicRescheduleToken, verifyPublicFeeToken } = require('../services/publicBookingToken');
-const { isTrustedDevMode } = require('../utils/devmode');
 const { sendServerError } = require('../utils/httpErrors');
 const { normalizePhone } = require('../utils/phone');
 const { broadcast } = require('../services/adminEvents');
@@ -19,42 +19,6 @@ const router = Router();
 
 // Default tenant (Daniel) — later resolved by domain/slug
 const DEFAULT_TENANT = 1;
-const bookingRateBuckets = new Map();
-
-async function getBookingRateLimitConfig(tenantId) {
-  const [rows] = await pool.query(
-    'SELECT rate_limit_booking, rate_limit_window FROM config WHERE tenant_id = ? LIMIT 1',
-    [tenantId]
-  );
-  const cfg = rows[0] || {};
-  return {
-    max: Math.max(1, parseInt(cfg.rate_limit_booking, 10) || 6),
-    windowMs: Math.max(1, parseInt(cfg.rate_limit_window, 10) || 15) * 60 * 1000,
-  };
-}
-
-async function bookingLimiter(req, res, next) {
-  if (isTrustedDevMode(req)) return next();
-
-  try {
-    const tenantId = req.tenantId || DEFAULT_TENANT;
-    const { max, windowMs } = await getBookingRateLimitConfig(tenantId);
-    const key = `${tenantId}:${req.ip}:${req.path}`;
-    const now = Date.now();
-    const recentHits = (bookingRateBuckets.get(key) || []).filter(hitAt => now - hitAt < windowMs);
-
-    if (recentHits.length >= max) {
-      const waitMinutes = Math.ceil(windowMs / 60000);
-      return res.status(429).json({ error: `Demasiados intentos. Esperá ${waitMinutes} minutos.` });
-    }
-
-    recentHits.push(now);
-    bookingRateBuckets.set(key, recentHits);
-    next();
-  } catch (err) {
-    next(err);
-  }
-}
 
 function sanitizePublicClientStatus(result) {
   if (!result?.status) return { status: 'new' };
@@ -142,7 +106,7 @@ router.post('/admin/book', authMiddleware, validate(adminBookingSchema), async (
 });
 
 // POST /api/book
-router.post('/book', bookingLimiter, validate(publicBookingSchema), async (req, res) => {
+router.post('/book', publicRateLimit, validate(publicBookingSchema), async (req, res) => {
   try {
     const {
       phone,
@@ -236,7 +200,7 @@ router.post('/admin/reschedule', authMiddleware, validate(adminRescheduleSchema)
 });
 
 // POST /api/reschedule
-router.post('/reschedule', bookingLimiter, validate(publicRescheduleSchema), async (req, res) => {
+router.post('/reschedule', publicRateLimit, validate(publicRescheduleSchema), async (req, res) => {
   try {
     const {
       phone,

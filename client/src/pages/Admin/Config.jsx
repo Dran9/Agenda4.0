@@ -432,6 +432,8 @@ export default function Config() {
         retention_risk_template: config.retention_risk_template || '',
         retention_lost_template: config.retention_lost_template || '',
         whatsapp_template_language: config.whatsapp_template_language || 'es',
+        rate_limit_booking: config.rate_limit_booking,
+        rate_limit_window: config.rate_limit_window,
         retention_rules: normalizeRetentionRules(config._retentionRules),
       });
       const updated = await api.get('/config');

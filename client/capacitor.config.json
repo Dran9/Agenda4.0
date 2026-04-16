@@ -1,0 +1,10 @@
+{
+  "appId": "com.danielmaclean.agenda",
+  "appName": "Agenda",
+  "webDir": "dist",
+  "server": {
+    "url": "https://agenda.danielmaclean.com/admin/quick-actions",
+    "androidScheme": "https",
+    "iosScheme": "https"
+  }
+}

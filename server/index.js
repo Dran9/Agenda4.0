@@ -5,7 +5,13 @@ const path = require('path');
 const fs = require('fs');
 
 const { initializeDatabase } = require('./db');
-const { startReminderCron, startAutoCompleteCron, startPaymentReminderCron, startRecurringSyncCron } = require('./cron/scheduler');
+const {
+  startReminderCron,
+  startAutoCompleteCron,
+  startPaymentReminderCron,
+  startRecurringSyncCron,
+  startMetaHealthWatchdogCron,
+} = require('./cron/scheduler');
 const { sendServerError } = require('./utils/httpErrors');
 
 // Routes
@@ -21,6 +27,7 @@ const paymentsRoutes = require('./routes/payments');
 const voiceRoutes = require('./routes/voice');
 const recurringRoutes = require('./routes/recurring');
 const quickActionsRoutes = require('./routes/quickActions');
+const metaHealthRoutes = require('./routes/metaHealth');
 
 const app = express();
 app.set('trust proxy', 1);
@@ -54,6 +61,7 @@ app.use('/api/payments', paymentsRoutes);
 app.use('/api/voice', voiceRoutes);
 app.use('/api/recurring', recurringRoutes);
 app.use('/api/quick-actions', quickActionsRoutes);
+app.use('/api/meta-health', metaHealthRoutes);
 
 // ─── Admin SSE stream (protected) ───────────────────────────────
 app.get('/api/admin/events', authMiddleware, sseHandler);
@@ -175,6 +183,7 @@ async function start() {
     startPaymentReminderCron();
     startAutoCompleteCron();
     startRecurringSyncCron();
+    startMetaHealthWatchdogCron();
     app.listen(PORT, () => {
       console.log(`Agenda Daniel MacLean running on port ${PORT}`);
     });

@@ -7,6 +7,7 @@ let reminderTimer = null;
 let autoCompleteTimer = null;
 let paymentReminderTimer = null;
 let recurringSyncTimer = null;
+let metaHealthWatchdogTimer = null;
 
 const schedulerState = {
   appointmentReminder: {
@@ -44,6 +45,16 @@ const schedulerState = {
     source: 'internal_timer',
     intervalMinutes: 1440,
     enabled: true,
+    nextRunAt: null,
+    lastRunAt: null,
+    lastResult: null,
+    lastError: null,
+  },
+  metaHealthWatchdog: {
+    label: 'Meta health watchdog',
+    source: 'internal_timer',
+    intervalMinutes: 60,
+    enabled: null,
     nextRunAt: null,
     lastRunAt: null,
     lastResult: null,
@@ -245,6 +256,28 @@ function startRecurringSyncCron() {
   scheduleNext();
 }
 
+function startMetaHealthWatchdogCron() {
+  async function run() {
+    try {
+      const { runMetaHealthWatchdogForDueTenants } = require('../services/metaHealth');
+      const result = await runMetaHealthWatchdogForDueTenants();
+      markSuccess('metaHealthWatchdog', result, true);
+    } catch (err) {
+      console.error('[cron] Meta health watchdog error:', err.message);
+      markError('metaHealthWatchdog', err, true);
+    }
+
+    const delay = 60 * 60 * 1000;
+    setNextRun('metaHealthWatchdog', delay);
+    metaHealthWatchdogTimer = setTimeout(run, delay);
+  }
+
+  const initialDelay = 5 * 60 * 1000;
+  schedulerState.metaHealthWatchdog.enabled = true;
+  setNextRun('metaHealthWatchdog', initialDelay);
+  metaHealthWatchdogTimer = setTimeout(run, initialDelay);
+}
+
 function stopReminderCron() {
   if (reminderTimer) clearTimeout(reminderTimer);
   reminderTimer = null;
@@ -267,6 +300,12 @@ function stopRecurringSyncCron() {
   if (recurringSyncTimer) clearTimeout(recurringSyncTimer);
   recurringSyncTimer = null;
   schedulerState.recurringSync.nextRunAt = null;
+}
+
+function stopMetaHealthWatchdogCron() {
+  if (metaHealthWatchdogTimer) clearTimeout(metaHealthWatchdogTimer);
+  metaHealthWatchdogTimer = null;
+  schedulerState.metaHealthWatchdog.nextRunAt = null;
 }
 
 function refreshConfigSchedulers() {
@@ -293,6 +332,8 @@ module.exports = {
   stopPaymentReminderCron,
   startRecurringSyncCron,
   stopRecurringSyncCron,
+  startMetaHealthWatchdogCron,
+  stopMetaHealthWatchdogCron,
   refreshConfigSchedulers,
   getSchedulerRuntime,
 };

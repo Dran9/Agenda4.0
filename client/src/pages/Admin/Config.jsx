@@ -4,6 +4,7 @@ import { useSearchParams } from 'react-router-dom';
 import AdminLayout from '../../components/AdminLayout';
 import { api } from '../../utils/api';
 import { useToast, Toast } from '../../hooks/useToast.jsx';
+import MetaHealthPanel from './MetaHealthPanel';
 
 const DAYS = [
   { key: 'lunes', label: 'Lunes', short: 'Lun' },
@@ -67,6 +68,12 @@ const SETTINGS_SECTIONS = [
     label: 'Retención',
     title: 'Retención y churn',
     description: 'Mantén en un solo lugar los umbrales que alimentan estados como al día, en riesgo o perdido.',
+  },
+  {
+    key: 'meta-health',
+    label: 'Meta health',
+    title: 'Meta health',
+    description: 'Panel webhook-first para vigilar cuenta Meta, número, templates, endpoint, watchdog y continuidad operativa.',
   },
 ];
 
@@ -475,6 +482,10 @@ export default function Config() {
     {
       ...SETTINGS_SECTIONS[4],
       detail: `Semanal en riesgo desde ${config?._retentionRules?.Semanal?.risk_days || DEFAULT_RETENTION_RULES.Semanal.risk_days} días`,
+    },
+    {
+      ...SETTINGS_SECTIONS[5],
+      detail: 'Estado Meta, webhook y watchdog',
     },
   ];
   const sidebarSubItems = sectionItems.map(section => ({
@@ -1222,6 +1233,9 @@ export default function Config() {
           </div>
         );
 
+      case 'meta-health':
+        return <MetaHealthPanel />;
+
       default:
         return null;
     }
@@ -1254,26 +1268,28 @@ export default function Config() {
           {renderActiveSection()}
         </div>
 
-        <div className="fixed bottom-4 left-0 right-0 z-20 px-4 lg:left-64 lg:px-6">
-          <div className="rounded-[24px] border border-slate-200 bg-white/95 px-4 py-4 shadow-[0_24px_60px_rgba(15,23,42,0.16)] backdrop-blur-xl">
-            <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-              <div>
-                <div className="text-sm font-semibold text-slate-900">Guardar cambios</div>
-                <p className="text-sm text-slate-500">
-                  Sección actual: {activeSectionMeta.label}. Los cambios no se guardan automáticamente.
-                </p>
+        {activeSection !== 'meta-health' ? (
+          <div className="fixed bottom-4 left-0 right-0 z-20 px-4 lg:left-64 lg:px-6">
+            <div className="rounded-[24px] border border-slate-200 bg-white/95 px-4 py-4 shadow-[0_24px_60px_rgba(15,23,42,0.16)] backdrop-blur-xl">
+              <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                <div>
+                  <div className="text-sm font-semibold text-slate-900">Guardar cambios</div>
+                  <p className="text-sm text-slate-500">
+                    Sección actual: {activeSectionMeta.label}. Los cambios no se guardan automáticamente.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleSave}
+                  disabled={saving}
+                  className="w-full rounded-xl bg-[#4E769B] px-6 py-3 text-white font-semibold transition-colors hover:bg-[#618BBF] disabled:opacity-40 lg:w-auto"
+                >
+                  {saving ? 'Guardando...' : 'Guardar configuración'}
+                </button>
               </div>
-              <button
-                type="button"
-                onClick={handleSave}
-                disabled={saving}
-                className="w-full rounded-xl bg-[#4E769B] px-6 py-3 text-white font-semibold transition-colors hover:bg-[#618BBF] disabled:opacity-40 lg:w-auto"
-              >
-                {saving ? 'Guardando...' : 'Guardar configuración'}
-              </button>
             </div>
           </div>
-        </div>
+        ) : null}
       </div>
     </AdminLayout>
   );

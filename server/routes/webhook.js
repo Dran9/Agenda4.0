@@ -7,6 +7,7 @@ const { sendServerError } = require('../utils/httpErrors');
 const { normalizePhone, normalizedPhoneSql } = require('../utils/phone');
 const { broadcast } = require('../services/adminEvents');
 const { extractIdentity, extractStatusIdentity, resolveIdentity } = require('../services/whatsappIdentity');
+const { ingestMetaWebhookPayload } = require('../services/metaHealth');
 
 const router = Router();
 const CALENDAR_ID = () => process.env.CALENDAR_ID || process.env.GOOGLE_CALENDAR_ID || 'danielmacleann@gmail.com';
@@ -212,6 +213,20 @@ router.post('/', async (req, res) => {
     const body = req.body;
     if (!body.entry) return;
 
+    const rawPayload = Buffer.isBuffer(req.rawBody) ? req.rawBody.toString('utf8') : JSON.stringify(body || {});
+    const tenantIdForMetaHealth = 1; // Agenda 4.0 currently operates with single webhook tenant.
+    try {
+      await ingestMetaWebhookPayload({
+        tenantId: tenantIdForMetaHealth,
+        body,
+        rawBody: rawPayload,
+        signatureValid: true,
+        source: 'meta_webhook',
+      });
+    } catch (metaHealthErr) {
+      console.error('[webhook] meta-health ingest failed:', metaHealthErr.message);
+    }
+
     for (const entry of body.entry) {
       for (const change of entry.changes || []) {
         if (change.field !== 'messages') continue;
@@ -276,6 +291,24 @@ router.post('/', async (req, res) => {
 
         for (const msg of value.messages) {
           const tenantId = 1; // Default tenant for now
+
+          // Idempotency guard: Meta can retry webhook deliveries.
+          if (msg.id) {
+            const [existingInbound] = await pool.query(
+              `SELECT id
+               FROM wa_conversations
+               WHERE tenant_id = ?
+                 AND direction = 'inbound'
+                 AND wa_message_id = ?
+               LIMIT 1`,
+              [tenantId, msg.id]
+            );
+
+            if (existingInbound.length > 0) {
+              console.log(`[webhook] Duplicate inbound message ignored: ${msg.id}`);
+              continue;
+            }
+          }
 
           // --- BSUID-aware identity resolution ---
           // Extraer todos los identificadores disponibles (viejos y nuevos)

@@ -399,6 +399,197 @@ async function initializeDatabase() {
       )
     `);
 
+    // 15. meta_health_config (monitoring by tenant)
+    await conn.query(`
+      CREATE TABLE IF NOT EXISTS meta_health_config (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        tenant_id INT NOT NULL UNIQUE,
+        monitoring_enabled BOOLEAN DEFAULT TRUE,
+        watchdog_interval_minutes INT DEFAULT 60,
+        silence_warning_minutes INT DEFAULT 180,
+        silence_critical_minutes INT DEFAULT 480,
+        stale_after_minutes INT DEFAULT 360,
+        alert_cooldown_minutes INT DEFAULT 30,
+        alert_info_enabled BOOLEAN DEFAULT FALSE,
+        alert_warning_enabled BOOLEAN DEFAULT TRUE,
+        alert_critical_enabled BOOLEAN DEFAULT TRUE,
+        coexistence_enabled BOOLEAN DEFAULT TRUE,
+        smb_message_echoes_enabled BOOLEAN DEFAULT FALSE,
+        flows_enabled BOOLEAN DEFAULT FALSE,
+        monitored_phone_number_id VARCHAR(120),
+        monitored_waba_id VARCHAR(120),
+        alert_channels JSON,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        KEY idx_monitoring (monitoring_enabled),
+        FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE
+      )
+    `);
+
+    // 16. meta_health_webhook_raw (raw webhook payloads)
+    await conn.query(`
+      CREATE TABLE IF NOT EXISTS meta_health_webhook_raw (
+        id BIGINT AUTO_INCREMENT PRIMARY KEY,
+        tenant_id INT NOT NULL,
+        request_id VARCHAR(100) NOT NULL,
+        source VARCHAR(40) DEFAULT 'meta_webhook',
+        signature_valid BOOLEAN DEFAULT TRUE,
+        field_hint VARCHAR(100),
+        payload_hash VARCHAR(64) NOT NULL,
+        payload JSON NOT NULL,
+        received_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        processed BOOLEAN DEFAULT FALSE,
+        processed_at DATETIME DEFAULT NULL,
+        processing_error TEXT,
+        UNIQUE KEY uniq_request_id (request_id),
+        KEY idx_tenant_received (tenant_id, received_at),
+        KEY idx_payload_hash (tenant_id, payload_hash),
+        KEY idx_processed (tenant_id, processed, received_at),
+        FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE
+      )
+    `);
+
+    // 17. meta_health_events (normalized webhook/watchdog events)
+    await conn.query(`
+      CREATE TABLE IF NOT EXISTS meta_health_events (
+        id BIGINT AUTO_INCREMENT PRIMARY KEY,
+        tenant_id INT NOT NULL,
+        raw_webhook_id BIGINT DEFAULT NULL,
+        source VARCHAR(40) NOT NULL DEFAULT 'meta_webhook',
+        field_name VARCHAR(100) NOT NULL,
+        event_type VARCHAR(160) NOT NULL,
+        severity ENUM('info','warning','critical') NOT NULL DEFAULT 'info',
+        occurred_at DATETIME NOT NULL,
+        received_at DATETIME NOT NULL,
+        waba_id VARCHAR(120),
+        phone_number_id VARCHAR(120),
+        template_name VARCHAR(120),
+        template_language VARCHAR(30),
+        status VARCHAR(120),
+        quality VARCHAR(120),
+        reason TEXT,
+        summary VARCHAR(600),
+        recommended_action VARCHAR(600),
+        normalized_payload JSON,
+        dedupe_key VARCHAR(64) NOT NULL,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        UNIQUE KEY uniq_meta_event_dedupe (tenant_id, dedupe_key),
+        KEY idx_tenant_received (tenant_id, received_at),
+        KEY idx_field (tenant_id, field_name, received_at),
+        KEY idx_severity (tenant_id, severity, received_at),
+        KEY idx_phone (tenant_id, phone_number_id, received_at),
+        FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE,
+        FOREIGN KEY (raw_webhook_id) REFERENCES meta_health_webhook_raw(id) ON DELETE SET NULL
+      )
+    `);
+
+    // 18. meta_health_last_seen (last timestamps by event key)
+    await conn.query(`
+      CREATE TABLE IF NOT EXISTS meta_health_last_seen (
+        tenant_id INT NOT NULL,
+        event_key VARCHAR(180) NOT NULL,
+        last_received_at DATETIME NOT NULL,
+        last_occurred_at DATETIME NOT NULL,
+        last_event_id BIGINT DEFAULT NULL,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        PRIMARY KEY (tenant_id, event_key),
+        KEY idx_last_event_id (last_event_id),
+        FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE,
+        FOREIGN KEY (last_event_id) REFERENCES meta_health_events(id) ON DELETE SET NULL
+      )
+    `);
+
+    // 19. meta_health_state (aggregated dashboard state)
+    await conn.query(`
+      CREATE TABLE IF NOT EXISTS meta_health_state (
+        tenant_id INT PRIMARY KEY,
+        global_status ENUM('green','yellow','red') DEFAULT 'yellow',
+        global_reason VARCHAR(700),
+        last_internal_refresh_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        last_webhook_received_at DATETIME DEFAULT NULL,
+        last_critical_event_at DATETIME DEFAULT NULL,
+        last_event_received_at DATETIME DEFAULT NULL,
+        last_watchdog_run_at DATETIME DEFAULT NULL,
+        watchdog_status VARCHAR(30) DEFAULT 'unknown',
+        pipeline_status VARCHAR(30) DEFAULT 'unknown',
+        cards JSON,
+        diagnostics JSON,
+        metrics JSON,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE
+      )
+    `);
+
+    // 20. meta_health_history (state snapshots)
+    await conn.query(`
+      CREATE TABLE IF NOT EXISTS meta_health_history (
+        id BIGINT AUTO_INCREMENT PRIMARY KEY,
+        tenant_id INT NOT NULL,
+        global_status ENUM('green','yellow','red') NOT NULL,
+        global_reason VARCHAR(700),
+        snapshot JSON,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        KEY idx_tenant_created (tenant_id, created_at),
+        FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE
+      )
+    `);
+
+    // 21. meta_health_alerts (alert dispatch log)
+    await conn.query(`
+      CREATE TABLE IF NOT EXISTS meta_health_alerts (
+        id BIGINT AUTO_INCREMENT PRIMARY KEY,
+        tenant_id INT NOT NULL,
+        event_id BIGINT DEFAULT NULL,
+        alert_type VARCHAR(160) NOT NULL,
+        severity ENUM('info','warning','critical') NOT NULL,
+        channel ENUM('telegram') NOT NULL DEFAULT 'telegram',
+        dedupe_key VARCHAR(64) NOT NULL,
+        status ENUM('queued','sent','error','skipped') NOT NULL DEFAULT 'queued',
+        payload JSON,
+        response_status INT DEFAULT NULL,
+        response_body TEXT,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        sent_at DATETIME DEFAULT NULL,
+        KEY idx_tenant_created (tenant_id, created_at),
+        KEY idx_event (event_id),
+        KEY idx_status (tenant_id, status, created_at),
+        KEY idx_dedupe (tenant_id, channel, dedupe_key, created_at),
+        FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE,
+        FOREIGN KEY (event_id) REFERENCES meta_health_events(id) ON DELETE SET NULL
+      )
+    `);
+
+    // 22. meta_health_watchdog_runs (watchdog execution history)
+    await conn.query(`
+      CREATE TABLE IF NOT EXISTS meta_health_watchdog_runs (
+        id BIGINT AUTO_INCREMENT PRIMARY KEY,
+        tenant_id INT NOT NULL,
+        status ENUM('ok','warning','critical') NOT NULL,
+        checked_at DATETIME NOT NULL,
+        duration_ms INT,
+        result_payload JSON,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        KEY idx_tenant_checked (tenant_id, checked_at),
+        FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE
+      )
+    `);
+
+    // 23. meta_health_pipeline_checks (internal pipeline checks)
+    await conn.query(`
+      CREATE TABLE IF NOT EXISTS meta_health_pipeline_checks (
+        id BIGINT AUTO_INCREMENT PRIMARY KEY,
+        tenant_id INT NOT NULL,
+        check_name VARCHAR(120) NOT NULL,
+        status ENUM('ok','warning','critical') NOT NULL,
+        details JSON,
+        checked_at DATETIME NOT NULL,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        KEY idx_tenant_check (tenant_id, check_name, checked_at),
+        FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE
+      )
+    `);
+
     // Seed: Daniel as first tenant (idempotent)
     const [tenants] = await conn.query('SELECT id FROM tenants WHERE slug = ?', ['daniel']);
     if (tenants.length === 0) {

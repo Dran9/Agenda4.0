@@ -307,17 +307,13 @@ export default function Appointments() {
   }
 
   async function loadDefaultRecurringSource(clientId, fallbackAppointment = null) {
-    if (fallbackAppointment?.status === 'Completada' && !fallbackAppointment?.source_schedule_id) {
-      return fallbackAppointment;
-    }
-
     try {
       const detail = await api.get(`/clients/${clientId}`);
       const appointmentsHistory = Array.isArray(detail?.appointments) ? detail.appointments : [];
-      return pickDefaultRecurringSource(appointmentsHistory, fallbackAppointment);
+      return pickDefaultRecurringSource(appointmentsHistory, fallbackAppointment, { preferFallback: true });
     } catch (err) {
       console.error(err);
-      return pickDefaultRecurringSource([], fallbackAppointment);
+      return pickDefaultRecurringSource([], fallbackAppointment, { preferFallback: true });
     }
   }
 
@@ -467,6 +463,7 @@ export default function Appointments() {
         const updated = await api.put(`/recurring/${recurringModal.schedule.id}`, {
           day_of_week: payload.day_of_week,
           time: payload.time,
+          started_at: payload.started_at,
         });
         const syncIssue = getRecurringSyncIssue(updated, 'update');
         showToast(syncIssue || 'Recurrencia actualizada', syncIssue ? 'error' : 'success');

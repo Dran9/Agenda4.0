@@ -50,6 +50,15 @@ function isValidTime(time) {
   return /^([01]\d|2[0-3]):([0-5]\d)$/.test(String(time || ''));
 }
 
+function toDateKey(value) {
+  if (!value) return '';
+  const raw = String(value).trim();
+  if (isValidDateKey(raw)) return raw;
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return '';
+  return formatInTimeZone(parsed, LA_PAZ_TZ, 'yyyy-MM-dd');
+}
+
 function dateKeyToDate(dateKey) {
   if (!isValidDateKey(dateKey)) {
     throw recurringError(400, 'Fecha inválida');
@@ -105,7 +114,10 @@ function compareDateKeys(a, b) {
 }
 
 function getNextOccurrenceDateKey(startedAt, dayOfWeek) {
-  let current = String(startedAt);
+  let current = toDateKey(startedAt);
+  if (!isValidDateKey(current)) {
+    throw recurringError(400, 'Fecha inválida');
+  }
   for (let i = 0; i < 7; i += 1) {
     if (getDayOfWeekFromDateKey(current) === Number(dayOfWeek)) return current;
     current = addDaysToDateKey(current, 1);
@@ -140,9 +152,13 @@ function isScheduleActive(schedule) {
 }
 
 function isScheduleActiveOnDate(schedule, dateKey) {
-  if (compareDateKeys(dateKey, schedule.started_at) < 0) return false;
-  if (schedule.paused_at && compareDateKeys(dateKey, schedule.paused_at) >= 0) return false;
-  if (schedule.ended_at && compareDateKeys(dateKey, schedule.ended_at) >= 0) return false;
+  const startedAt = toDateKey(schedule.started_at);
+  const pausedAt = toDateKey(schedule.paused_at);
+  const endedAt = toDateKey(schedule.ended_at);
+
+  if (startedAt && compareDateKeys(dateKey, startedAt) < 0) return false;
+  if (pausedAt && compareDateKeys(dateKey, pausedAt) >= 0) return false;
+  if (endedAt && compareDateKeys(dateKey, endedAt) >= 0) return false;
   return true;
 }
 
@@ -209,8 +225,12 @@ async function findDefaultRecurringSourceAppointment(tenantId, clientId, conn = 
   return futureRows[0] || null;
 }
 
-function canConvertSourceAppointment(sourceAppointment, dayOfWeek, time) {
+function canConvertSourceAppointment(sourceAppointment, dayOfWeek, time, startedAt = null) {
   if (!sourceAppointment?.gcal_event_id || sourceAppointment?.source_schedule_id) return false;
+  if (startedAt) {
+    const startedAtKey = toDateKey(startedAt);
+    if (!startedAtKey || getDateKeyInLaPaz(sourceAppointment.date_time) !== startedAtKey) return false;
+  }
 
   return (
     getDayOfWeekInLaPaz(sourceAppointment.date_time) === Number(dayOfWeek) &&
@@ -317,11 +337,18 @@ async function syncAppointmentArtifacts(appointment, client) {
 }
 
 async function createOrUpdateRecurringEvent(schedule, client, dayOfWeek, time, duration, sourceAppointment = null) {
-  const shouldConvertSource = canConvertSourceAppointment(sourceAppointment, dayOfWeek, time);
-  const startedAt = shouldConvertSource && sourceAppointment?.date_time
-    ? getDateKeyInLaPaz(sourceAppointment.date_time)
-    : schedule.started_at;
-  const startDateKey = getNextOccurrenceDateKey(startedAt, dayOfWeek);
+  const scheduleStartDate = toDateKey(schedule.started_at);
+  if (!isValidDateKey(scheduleStartDate)) {
+    throw recurringError(400, 'Fecha inválida');
+  }
+
+  const shouldConvertSource = canConvertSourceAppointment(
+    sourceAppointment,
+    dayOfWeek,
+    time,
+    scheduleStartDate
+  );
+  const startDateKey = getNextOccurrenceDateKey(scheduleStartDate, dayOfWeek);
   const endTime = buildEndTime(time, duration);
   const recurrenceRule = `RRULE:FREQ=WEEKLY;BYDAY=${BYDAY_MAP[Number(dayOfWeek)]}`;
   const payload = {
@@ -455,7 +482,12 @@ async function createRecurringSchedule(tenantId, data = {}) {
     }
   }
 
-  const persistedSourceAppointmentId = canConvertSourceAppointment(sourceAppointment, dayOfWeek, time)
+  const persistedSourceAppointmentId = canConvertSourceAppointment(
+    sourceAppointment,
+    dayOfWeek,
+    time,
+    startedAt
+  )
     ? Number(sourceAppointment.id)
     : null;
 
@@ -504,26 +536,36 @@ async function updateRecurringSchedule(tenantId, scheduleId, updates = {}) {
   const schedule = await getRecurringSchedule(tenantId, scheduleId);
   if (!schedule) throw recurringError(404, 'Sesión recurrente no encontrada');
 
+  const currentStartedAt = toDateKey(schedule.started_at);
   const nextDayOfWeek = updates.day_of_week !== undefined ? Number(updates.day_of_week) : Number(schedule.day_of_week);
   const nextTime = updates.time !== undefined ? String(updates.time).trim() : schedule.time;
+  const nextStartedAt = updates.started_at !== undefined
+    ? String(updates.started_at).trim()
+    : currentStartedAt;
   const nextNotes = updates.notes !== undefined ? (updates.notes != null ? String(updates.notes) : null) : schedule.notes;
 
   if (!Number.isInteger(nextDayOfWeek) || nextDayOfWeek < 0 || nextDayOfWeek > 6) {
     throw recurringError(400, 'day_of_week debe estar entre 0 y 6');
   }
   if (!isValidTime(nextTime)) throw recurringError(400, 'Hora inválida');
+  if (!isValidDateKey(nextStartedAt)) throw recurringError(400, 'Fecha de inicio inválida');
 
   await pool.query(
     `UPDATE recurring_schedules
-     SET day_of_week = ?, time = ?, notes = ?
+     SET day_of_week = ?, time = ?, started_at = ?, notes = ?
      WHERE tenant_id = ? AND id = ?`,
-    [nextDayOfWeek, nextTime, nextNotes, tenantId, scheduleId]
+    [nextDayOfWeek, nextTime, nextStartedAt, nextNotes, tenantId, scheduleId]
   );
 
   const updated = await getRecurringSchedule(tenantId, scheduleId);
   let syncResult = null;
 
-  if (nextDayOfWeek !== Number(schedule.day_of_week) || nextTime !== schedule.time || !updated.gcal_recurring_event_id) {
+  if (
+    nextDayOfWeek !== Number(schedule.day_of_week) ||
+    nextTime !== schedule.time ||
+    nextStartedAt !== currentStartedAt ||
+    !updated.gcal_recurring_event_id
+  ) {
     const sourceAppointment = updated.source_appointment_id
       ? await getSourceAppointment(tenantId, updated.source_appointment_id)
       : await findDefaultRecurringSourceAppointment(tenantId, updated.client_id);

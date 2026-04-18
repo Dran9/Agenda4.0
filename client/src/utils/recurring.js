@@ -2,27 +2,52 @@ function isStandaloneAppointment(appointment) {
   return Boolean(appointment) && !appointment.source_schedule_id;
 }
 
-function isFutureStandaloneAppointment(appointment) {
-  if (!isStandaloneAppointment(appointment)) return false;
-  if (!['Agendada', 'Confirmada', 'Reagendada'].includes(appointment.status)) return false;
-  if (!appointment.date_time) return false;
-  return new Date(appointment.date_time).getTime() > Date.now();
+const ALLOWED_RECURRING_SOURCE_STATUSES = new Set([
+  'Agendada',
+  'Confirmada',
+  'Reagendada',
+  'Completada',
+]);
+
+function getAppointmentDateMs(appointment) {
+  const value = new Date(appointment?.date_time || '').getTime();
+  return Number.isFinite(value) ? value : NaN;
 }
 
-export function pickDefaultRecurringSource(appointments = [], fallbackAppointment = null) {
+function isEligibleRecurringSourceAppointment(appointment) {
+  if (!isStandaloneAppointment(appointment)) return false;
+  if (!ALLOWED_RECURRING_SOURCE_STATUSES.has(appointment.status)) return false;
+  return Number.isFinite(getAppointmentDateMs(appointment));
+}
+
+function isFutureStandaloneAppointment(appointment) {
+  if (!isEligibleRecurringSourceAppointment(appointment)) return false;
+  if (!['Agendada', 'Confirmada', 'Reagendada'].includes(appointment.status)) return false;
+  return getAppointmentDateMs(appointment) > Date.now();
+}
+
+export function pickDefaultRecurringSource(appointments = [], fallbackAppointment = null, options = {}) {
+  const preferFallback = options?.preferFallback === true;
+
+  if (preferFallback && isEligibleRecurringSourceAppointment(fallbackAppointment)) {
+    return fallbackAppointment;
+  }
+
   const standaloneAppointments = Array.isArray(appointments)
-    ? appointments.filter(isStandaloneAppointment)
+    ? appointments.filter(isEligibleRecurringSourceAppointment)
     : [];
 
-  const completed = standaloneAppointments.find((item) => item.status === 'Completada');
+  const completed = standaloneAppointments
+    .filter((item) => item.status === 'Completada')
+    .sort((a, b) => getAppointmentDateMs(b) - getAppointmentDateMs(a))[0];
   if (completed) return completed;
 
   const future = standaloneAppointments
     .filter(isFutureStandaloneAppointment)
-    .sort((a, b) => new Date(a.date_time) - new Date(b.date_time))[0];
+    .sort((a, b) => getAppointmentDateMs(a) - getAppointmentDateMs(b))[0];
   if (future) return future;
 
-  if (isFutureStandaloneAppointment(fallbackAppointment)) {
+  if (isEligibleRecurringSourceAppointment(fallbackAppointment)) {
     return fallbackAppointment;
   }
 

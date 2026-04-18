@@ -362,6 +362,7 @@ export default function Clients() {
         const updated = await api.put(`/recurring/${recurringModal.schedule.id}`, {
           day_of_week: payload.day_of_week,
           time: payload.time,
+          started_at: payload.started_at,
         });
         const syncIssue = getRecurringSyncIssue(updated, 'update');
         showToast(syncIssue || 'Recurrencia actualizada', syncIssue ? 'error' : 'success');

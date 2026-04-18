@@ -136,7 +136,7 @@ export default function Calendar({ onSelectDate, selectedDate, availableDays = [
         marginBottom: calendarGridGap,
       }}>
         {visibleColumns.map(d => (
-          <div key={d.key} style={{ textAlign: 'center', fontSize: 16, fontWeight: 800, textTransform: 'uppercase', color: '#A4A4A6', padding: '4px 0' }}>
+          <div key={d.key} style={{ textAlign: 'center', fontSize: 18, fontWeight: 800, textTransform: 'uppercase', color: '#949495', padding: '4px 0' }}>
             {d.label}
           </div>
         ))}

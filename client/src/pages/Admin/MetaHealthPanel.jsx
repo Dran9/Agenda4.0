@@ -92,6 +92,10 @@ export default function MetaHealthPanel() {
   const [selectedEventIds, setSelectedEventIds] = useState([]);
   const [deletingSingleId, setDeletingSingleId] = useState(null);
   const [deletingBatch, setDeletingBatch] = useState(false);
+  const [armedSingleDeleteId, setArmedSingleDeleteId] = useState(null);
+  const [armedBatchDelete, setArmedBatchDelete] = useState(false);
+  const [successSingleDeleteId, setSuccessSingleDeleteId] = useState(null);
+  const [successBatchDelete, setSuccessBatchDelete] = useState(false);
 
   const [configDraft, setConfigDraft] = useState(null);
   const [savingConfig, setSavingConfig] = useState(false);
@@ -123,6 +127,7 @@ export default function MetaHealthPanel() {
     setTimeline(items);
     setTimelineMeta({ page: data.page || 1, limit: data.limit || timelineLimit, total: data.total || 0 });
     setSelectedEventIds((prev) => prev.filter((id) => items.some((event) => event.id === id)));
+    setArmedSingleDeleteId((current) => (items.some((event) => event.id === current) ? current : null));
     return data;
   }
 
@@ -141,6 +146,34 @@ export default function MetaHealthPanel() {
     bootstrap();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [showFullHistory]);
+
+  useEffect(() => {
+    if (!armedSingleDeleteId || deletingSingleId !== null || deletingBatch) return undefined;
+    const timer = window.setTimeout(() => setArmedSingleDeleteId(null), 4500);
+    return () => window.clearTimeout(timer);
+  }, [armedSingleDeleteId, deletingSingleId, deletingBatch]);
+
+  useEffect(() => {
+    if (!armedBatchDelete || deletingBatch || deletingSingleId !== null) return undefined;
+    const timer = window.setTimeout(() => setArmedBatchDelete(false), 4500);
+    return () => window.clearTimeout(timer);
+  }, [armedBatchDelete, deletingBatch, deletingSingleId]);
+
+  useEffect(() => {
+    if (!successSingleDeleteId) return undefined;
+    const timer = window.setTimeout(() => setSuccessSingleDeleteId(null), 1400);
+    return () => window.clearTimeout(timer);
+  }, [successSingleDeleteId]);
+
+  useEffect(() => {
+    if (!successBatchDelete) return undefined;
+    const timer = window.setTimeout(() => setSuccessBatchDelete(false), 1400);
+    return () => window.clearTimeout(timer);
+  }, [successBatchDelete]);
+
+  useEffect(() => {
+    if (selectedEventIds.length === 0) setArmedBatchDelete(false);
+  }, [selectedEventIds]);
 
   async function handleRefresh() {
     setRefreshing(true);
@@ -215,8 +248,15 @@ export default function MetaHealthPanel() {
   }
 
   async function handleDeleteOne(eventId) {
-    if (!window.confirm('¿Eliminar este log del historial?')) return;
+    if (deletingSingleId !== null || deletingBatch) return;
+    if (armedSingleDeleteId !== eventId) {
+      setArmedSingleDeleteId(eventId);
+      setSuccessSingleDeleteId(null);
+      setSuccessBatchDelete(false);
+      return;
+    }
 
+    setArmedSingleDeleteId(null);
     setDeletingSingleId(eventId);
     try {
       const result = await api.delete(`/meta-health/events/${eventId}`);
@@ -231,6 +271,7 @@ export default function MetaHealthPanel() {
       });
       setSelectedEventIds((prev) => prev.filter((id) => id !== eventId));
       await refreshAfterDelete();
+      setSuccessSingleDeleteId(eventId);
       showToast('Log eliminado');
     } catch (err) {
       showToast(`No se pudo eliminar el log: ${err.message}`, 'error');
@@ -241,8 +282,15 @@ export default function MetaHealthPanel() {
 
   async function handleDeleteBatch() {
     if (selectedEventIds.length === 0) return;
-    if (!window.confirm(`¿Eliminar ${selectedEventIds.length} logs seleccionados?`)) return;
+    if (deletingBatch || deletingSingleId !== null) return;
+    if (!armedBatchDelete) {
+      setArmedBatchDelete(true);
+      setSuccessBatchDelete(false);
+      setSuccessSingleDeleteId(null);
+      return;
+    }
 
+    setArmedBatchDelete(false);
     setDeletingBatch(true);
     try {
       const result = await api.post('/meta-health/events/delete-batch', { ids: selectedEventIds });
@@ -258,6 +306,7 @@ export default function MetaHealthPanel() {
       });
       setSelectedEventIds([]);
       await refreshAfterDelete();
+      setSuccessBatchDelete(true);
       showToast(`Logs eliminados: ${result.deleted}`);
     } catch (err) {
       showToast(`No se pudo eliminar el lote: ${err.message}`, 'error');
@@ -290,6 +339,21 @@ export default function MetaHealthPanel() {
   const selectedCount = selectedEventIds.length;
   const allCurrentPageSelected = currentPageIds.length > 0 && currentPageIds.every((id) => selectedEventIds.includes(id));
   const canDelete = !deletingBatch && deletingSingleId === null;
+  const batchButtonDisabled = !canDelete || (selectedCount === 0 && !successBatchDelete);
+  const batchButtonLabel = deletingBatch
+    ? 'Eliminando...'
+    : successBatchDelete
+      ? 'Eliminado'
+      : armedBatchDelete
+        ? '¿Confirmas?'
+        : 'Eliminar seleccionados';
+  const batchButtonClass = deletingBatch
+    ? 'border-slate-200 bg-slate-100 text-slate-600'
+    : successBatchDelete
+      ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
+      : armedBatchDelete
+        ? 'border-red-600 bg-red-600 text-white'
+        : 'border-red-200 bg-red-50 text-red-700 hover:bg-red-100';
 
   if (loading) {
     return (
@@ -469,12 +533,12 @@ export default function MetaHealthPanel() {
             <span className="text-xs text-slate-500">{selectedCount} seleccionados</span>
             <button
               type="button"
-              disabled={selectedCount === 0 || !canDelete}
+              disabled={batchButtonDisabled}
               onClick={handleDeleteBatch}
-              className="inline-flex items-center gap-1 rounded-lg border border-red-200 bg-red-50 px-3 py-1.5 text-xs font-semibold text-red-700 hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-50"
+              className={`inline-flex items-center gap-1 rounded-lg border px-3 py-1.5 text-xs font-semibold transition disabled:cursor-not-allowed disabled:opacity-50 ${batchButtonClass}`}
             >
               {deletingBatch ? <LoaderCircle size={13} className="animate-spin" /> : <Trash2 size={13} />}
-              Eliminar seleccionados
+              {batchButtonLabel}
             </button>
           </div>
         </div>
@@ -504,6 +568,23 @@ export default function MetaHealthPanel() {
                 timeline.map((event) => {
                   const detail = detailById[event.id];
                   const checked = selectedEventIds.includes(event.id);
+                  const isSingleRunning = deletingSingleId === event.id;
+                  const isSingleArmed = armedSingleDeleteId === event.id;
+                  const isSingleSuccess = successSingleDeleteId === event.id;
+                  const singleButtonLabel = isSingleRunning
+                    ? 'Borrando...'
+                    : isSingleSuccess
+                      ? 'Eliminado'
+                      : isSingleArmed
+                        ? '¿Confirmas?'
+                        : 'Borrar';
+                  const singleButtonClass = isSingleRunning
+                    ? 'border-slate-200 bg-slate-100 text-slate-600'
+                    : isSingleSuccess
+                      ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
+                      : isSingleArmed
+                        ? 'border-red-600 bg-red-600 text-white'
+                        : 'border-red-200 bg-red-50 text-red-700 hover:bg-red-100';
                   return (
                     <Fragment key={event.id}>
                       <tr className="border-t border-slate-100 align-top">
@@ -539,10 +620,10 @@ export default function MetaHealthPanel() {
                               type="button"
                               disabled={!canDelete}
                               onClick={() => handleDeleteOne(event.id)}
-                              className="inline-flex items-center gap-1 rounded-lg border border-red-200 bg-red-50 px-2.5 py-1.5 text-xs text-red-700 hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-50"
+                              className={`inline-flex items-center gap-1 rounded-lg border px-2.5 py-1.5 text-xs transition disabled:cursor-not-allowed disabled:opacity-50 ${singleButtonClass}`}
                             >
-                              {deletingSingleId === event.id ? <LoaderCircle size={13} className="animate-spin" /> : <Trash2 size={13} />}
-                              Borrar
+                              {isSingleRunning ? <LoaderCircle size={13} className="animate-spin" /> : <Trash2 size={13} />}
+                              {singleButtonLabel}
                             </button>
                           </div>
                         </td>

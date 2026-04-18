@@ -154,7 +154,7 @@ router.post('/book', publicRateLimit, validate(publicBookingSchema), async (req,
       if (result.error) return res.status(result.status).json({ error: result.error });
       broadcast('appointment:change', { id: result.appointment_id, action: 'created', source: 'public' }, tenantId);
       broadcast('client:change', { id: newClient.id, action: 'created' }, tenantId);
-      return res.json({ status: 'booked', ...result });
+      return res.json({ status: 'booked', ...result, client_name: newClient.first_name });
     }
 
     if (check.status === 'has_appointment') {
@@ -173,7 +173,7 @@ router.post('/book', publicRateLimit, validate(publicBookingSchema), async (req,
     const result = await createBooking(client, date_time, tenantId, bookingContext);
     if (result.error) return res.status(result.status).json({ error: result.error });
     broadcast('appointment:change', { id: result.appointment_id, action: 'created', source: 'public' }, tenantId);
-    return res.json({ status: 'booked', ...result });
+    return res.json({ status: 'booked', ...result, client_name: client.first_name });
   } catch (err) {
     sendServerError(res, req, err, {
       message: 'No se pudo completar la reserva',

@@ -1,9 +1,11 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import {
+  AlertTriangle,
   BellRing,
   CalendarClock,
   CalendarX2,
   Check,
+  CheckCircle2,
   ChevronDown,
   ChevronUp,
   CircleDollarSign,
@@ -31,8 +33,9 @@ const ACTIONS = [
   { id: 'reminder', label: 'Recordar cita', icon: BellRing, color: 'bg-emerald-600', desc: 'Fuerza envío del recordatorio de cita' },
   { id: 'payment-reminder', label: 'Recordar cobro', icon: CreditCard, color: 'bg-teal-600', desc: 'Envía el template de cobro pendiente' },
   { id: 'recurring', label: 'Gestionar recurrencia', icon: Repeat, color: 'bg-violet-600', desc: 'Activa, pausa, reactiva o finaliza la sesión semanal' },
-  { id: 'fee', label: 'Ajustar arancel', icon: CircleDollarSign, color: 'bg-amber-600', desc: 'Cambia el arancel del cliente' },
 ];
+
+const INLINE_CONFIRM_ACTIONS = new Set(['reschedule', 'cancel', 'noshow', 'reminder', 'payment-reminder']);
 
 // ─── Main Component ──────────────────────────────────────────────
 
@@ -44,6 +47,10 @@ export default function QuickActions() {
   const [activeAction, setActiveAction] = useState(null);
   const [actionLoading, setActionLoading] = useState(false);
   const [actionResult, setActionResult] = useState(null);
+  const [armedActionId, setArmedActionId] = useState(null);
+  const [runningActionId, setRunningActionId] = useState(null);
+  const [successActionId, setSuccessActionId] = useState(null);
+  const [errorActionId, setErrorActionId] = useState(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
 
   // Fee editing
@@ -91,12 +98,34 @@ export default function QuickActions() {
     refreshSearch,
   );
 
+  useEffect(() => {
+    if (!armedActionId || runningActionId) return undefined;
+    const timer = window.setTimeout(() => setArmedActionId(null), 4500);
+    return () => window.clearTimeout(timer);
+  }, [armedActionId, runningActionId]);
+
+  useEffect(() => {
+    if (!successActionId) return undefined;
+    const timer = window.setTimeout(() => setSuccessActionId(null), 1400);
+    return () => window.clearTimeout(timer);
+  }, [successActionId]);
+
+  useEffect(() => {
+    if (!errorActionId) return undefined;
+    const timer = window.setTimeout(() => setErrorActionId(null), 1600);
+    return () => window.clearTimeout(timer);
+  }, [errorActionId]);
+
   // Debounced search
   const handleSearch = useCallback((value) => {
     setQuery(value);
     setSelectedClient(null);
     setActiveAction(null);
     setActionResult(null);
+    setArmedActionId(null);
+    setRunningActionId(null);
+    setSuccessActionId(null);
+    setErrorActionId(null);
 
     if (debounceRef.current) clearTimeout(debounceRef.current);
 
@@ -125,6 +154,10 @@ export default function QuickActions() {
     setQuery('');
     setActiveAction(null);
     setActionResult(null);
+    setArmedActionId(null);
+    setRunningActionId(null);
+    setSuccessActionId(null);
+    setErrorActionId(null);
     setFeeValue(String(client.fee || 250));
     setCancelEndRecurring(client.has_recurring > 0);
   }
@@ -133,16 +166,56 @@ export default function QuickActions() {
     setSelectedClient(null);
     setActiveAction(null);
     setActionResult(null);
+    setArmedActionId(null);
+    setRunningActionId(null);
+    setSuccessActionId(null);
+    setErrorActionId(null);
     setQuery('');
     setTimeout(() => searchRef.current?.focus(), 50);
+  }
+
+  async function handleInlineActionConfirm(actionId) {
+    if (!selectedClient || runningActionId) return;
+
+    if (armedActionId !== actionId) {
+      setArmedActionId(actionId);
+      setSuccessActionId(null);
+      setErrorActionId(null);
+      return;
+    }
+
+    setArmedActionId(null);
+    setRunningActionId(actionId);
+    setSuccessActionId(null);
+    setErrorActionId(null);
+
+    const ok = await executeAction(actionId);
+    setRunningActionId(null);
+    if (ok) setSuccessActionId(actionId);
+    else setErrorActionId(actionId);
+  }
+
+  function handleActionButtonClick(actionId) {
+    if (!selectedClient || actionLoading || runningActionId) return;
+
+    if (INLINE_CONFIRM_ACTIONS.has(actionId)) {
+      handleInlineActionConfirm(actionId);
+      return;
+    }
+
+    setArmedActionId(null);
+    setSuccessActionId(null);
+    setErrorActionId(null);
+    setActiveAction((current) => (current === actionId ? null : actionId));
   }
 
   // ─── Execute action ─────────────────────────────────────────────
 
   async function executeAction(actionId) {
-    if (!selectedClient) return;
+    if (!selectedClient) return false;
     setActionLoading(true);
     setActionResult(null);
+    let wasSuccess = true;
 
     try {
       let result;
@@ -213,6 +286,7 @@ export default function QuickActions() {
               title: 'No se envió recordatorio de cita',
               detail,
             });
+            wasSuccess = false;
           }
           break;
         }
@@ -233,6 +307,7 @@ export default function QuickActions() {
                 ? 'No se encontró un pago pendiente con cita futura para este cliente.'
                 : 'No había pagos pendientes listos para enviar.',
             });
+            wasSuccess = false;
           }
           break;
         }
@@ -241,7 +316,8 @@ export default function QuickActions() {
           const newFee = parseInt(feeValue, 10);
           if (isNaN(newFee) || newFee < 0) {
             setActionResult({ success: false, title: 'Arancel inválido', detail: 'Ingresa un número válido.' });
-            break;
+            wasSuccess = false;
+            return false;
           }
           result = await api.post('/quick-actions/update-fee', { client_id: clientId, fee: newFee });
           setActionResult({
@@ -256,12 +332,14 @@ export default function QuickActions() {
         default:
           break;
       }
+      return wasSuccess;
     } catch (err) {
       setActionResult({
         success: false,
         title: 'Error',
         detail: err.message || 'No se pudo ejecutar la acción.',
       });
+      return false;
     } finally {
       setActionLoading(false);
     }
@@ -524,32 +602,92 @@ export default function QuickActions() {
             </div>
 
             {/* Action buttons */}
-            <div className="grid grid-cols-3 gap-2 px-4 py-4">
+            <div className="grid grid-cols-3 gap-3 px-4 py-4">
               {ACTIONS.map((action) => {
                 const Icon = action.icon;
+                const isInline = INLINE_CONFIRM_ACTIONS.has(action.id);
                 const isActive = activeAction === action.id;
+                const isArmed = armedActionId === action.id;
+                const isRunning = runningActionId === action.id;
+                const isSuccess = successActionId === action.id;
+                const isError = errorActionId === action.id;
+
+                const buttonClass = isInline
+                  ? isSuccess
+                    ? 'border-emerald-300 bg-emerald-100 text-emerald-800 shadow-[0_10px_22px_rgba(16,185,129,0.2)]'
+                    : isRunning
+                      ? 'border-emerald-300 bg-emerald-50 text-emerald-700'
+                      : isArmed
+                        ? 'border-red-300 bg-red-50 text-red-700 shadow-[0_10px_22px_rgba(239,68,68,0.2)]'
+                        : isError
+                          ? 'border-rose-300 bg-rose-50 text-rose-700'
+                          : 'border-slate-200 bg-white text-slate-700 hover:border-slate-400 hover:bg-slate-50 hover:shadow-[0_10px_22px_rgba(15,23,42,0.1)]'
+                  : isActive
+                    ? 'border-slate-900 bg-slate-900 text-white shadow-[0_10px_22px_rgba(15,23,42,0.2)]'
+                    : 'border-slate-200 bg-white text-slate-700 hover:border-slate-400 hover:bg-slate-50 hover:shadow-[0_10px_22px_rgba(15,23,42,0.1)]';
+
+                let buttonLabel = action.label;
+                if (isInline) {
+                  if (isRunning) buttonLabel = 'Procesando...';
+                  else if (isSuccess) buttonLabel = 'Listo';
+                  else if (isArmed) buttonLabel = '¿Confirmas?';
+                  else if (isError) buttonLabel = 'Error';
+                }
+
                 return (
                   <button
                     key={action.id}
                     type="button"
-                    onClick={() => setActiveAction(isActive ? null : action.id)}
-                    className={`flex min-h-[6.1rem] flex-col items-center justify-center gap-2 rounded-2xl border px-3 py-3 text-center transition active:scale-[0.97] ${
-                      isActive
-                        ? 'border-slate-900 bg-slate-900 text-white shadow-[0_8px_24px_rgba(0,0,0,0.15)]'
-                        : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50'
-                    }`}
+                    onClick={() => handleActionButtonClick(action.id)}
+                    disabled={actionLoading || !!runningActionId}
+                    className={`flex min-h-[6.9rem] flex-col items-center justify-center gap-2 rounded-2xl border px-3 py-3 text-center transition active:scale-[0.98] disabled:opacity-65 disabled:cursor-not-allowed ${buttonClass}`}
                   >
-                    <Icon size={20} />
-                    <span className="flex min-h-[2.35rem] items-center justify-center text-[11px] font-semibold leading-tight">
-                      {action.label}
+                    {isRunning ? (
+                      <Loader2 size={24} className="animate-spin" />
+                    ) : isSuccess ? (
+                      <CheckCircle2 size={24} />
+                    ) : isArmed ? (
+                      <AlertTriangle size={24} />
+                    ) : (
+                      <Icon size={24} />
+                    )}
+                    <span className="flex min-h-[2.7rem] items-center justify-center text-[13px] font-semibold leading-tight">
+                      {buttonLabel}
                     </span>
                   </button>
                 );
               })}
             </div>
 
+            {/* Quick fee editor */}
+            <div className="border-t border-slate-100 px-4 py-4">
+              <div className="mb-2 flex items-center gap-2 text-sm font-semibold text-slate-700">
+                <CircleDollarSign size={16} />
+                Ajustar arancel
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-sm font-medium text-slate-500">Bs</span>
+                <input
+                  type="number"
+                  value={feeValue}
+                  onChange={(e) => setFeeValue(e.target.value)}
+                  className="w-24 rounded-xl border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-slate-400"
+                  min="0"
+                  step="10"
+                />
+                <button
+                  type="button"
+                  onClick={() => executeAction('fee')}
+                  disabled={actionLoading || !!runningActionId}
+                  className="rounded-xl bg-amber-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-amber-700 active:scale-[0.97] disabled:opacity-60"
+                >
+                  {actionLoading ? <Loader2 size={14} className="animate-spin" /> : 'Guardar'}
+                </button>
+              </div>
+            </div>
+
             {/* Action detail panel */}
-            {activeAction && (
+            {activeAction === 'recurring' && (
               <div className="border-t border-slate-100 px-4 py-4">
                 <ActionPanel
                   actionId={activeAction}

@@ -540,10 +540,18 @@ export default function BookingFlow() {
       const body = buildBookingPayload(`${selectedDate}T${selectedSlot}`);
       const data = await api.post('/book', body);
       if (data.status === 'needs_onboarding') dispatch({ type: 'PHONE_NEW' });
-      else if (data.status === 'booked') dispatch({ type: 'BOOK_SUCCESS', appointment: { date: selectedDate, time: selectedSlot } });
+      else if (data.status === 'booked') {
+        dispatch({
+          type: 'BOOK_SUCCESS',
+          appointment: { date: selectedDate, time: selectedSlot },
+          clientName: data.client_name || flow.clientName,
+        });
+      }
       else if (data.status === 'has_appointment') dispatch({
         type: 'PHONE_HAS_APPOINTMENT',
         appointment: data.appointment,
+        clientName: data.client_name,
+        clientId: data.client_id,
         rescheduleToken: data.reschedule_token,
       });
     } catch (err) { dispatch({ type: 'PHONE_ERROR', error: err.message }); }
@@ -558,9 +566,17 @@ export default function BookingFlow() {
       else if (data.status === 'has_appointment') dispatch({
         type: 'BOOK_HAS_APPOINTMENT',
         appointment: data.appointment,
+        clientName: data.client_name,
+        clientId: data.client_id,
         rescheduleToken: data.reschedule_token,
       });
-      else if (data.status === 'booked') dispatch({ type: 'BOOK_SUCCESS', appointment: { date: selectedDate, time: selectedSlot }, clientName: onboarding?.first_name || flow.clientName });
+      else if (data.status === 'booked') {
+        dispatch({
+          type: 'BOOK_SUCCESS',
+          appointment: { date: selectedDate, time: selectedSlot },
+          clientName: data.client_name || onboarding?.first_name || flow.clientName,
+        });
+      }
     } catch (err) { dispatch({ type: 'BOOK_ERROR', error: err.message }); }
   }
 
@@ -696,10 +712,18 @@ export default function BookingFlow() {
         const body = buildBookingPayload(`${selectedDate}T${time}`);
         const data = await api.post('/book', body);
         if (data.status === 'needs_onboarding') dispatch({ type: 'PHONE_NEW' });
-        else if (data.status === 'booked') dispatch({ type: 'BOOK_SUCCESS', appointment: { date: selectedDate, time } });
+        else if (data.status === 'booked') {
+          dispatch({
+            type: 'BOOK_SUCCESS',
+            appointment: { date: selectedDate, time },
+            clientName: data.client_name || flow.clientName,
+          });
+        }
         else if (data.status === 'has_appointment') dispatch({
           type: 'PHONE_HAS_APPOINTMENT',
           appointment: data.appointment,
+          clientName: data.client_name,
+          clientId: data.client_id,
           rescheduleToken: data.reschedule_token,
         });
       } catch (err) { dispatch({ type: 'PHONE_ERROR', error: err.message }); }
@@ -1003,7 +1027,7 @@ export default function BookingFlow() {
         <h1 style={{ fontSize: 28, fontWeight: 600, textAlign: 'center', color: 'var(--negro)', marginBottom: 6 }}>
           {flow.wasRescheduled
             ? (displayName ? `Perfecto ${displayName}, tu cita ha sido reagendada` : 'Tu cita ha sido reagendada')
-            : (displayName ? `${displayName}, tu cita está confirmada` : 'Tu cita está confirmada')}
+            : (displayName ? `${displayName}, tu cita está confirmada.` : 'Tu cita está confirmada.')}
         </h1>
         <p style={{ fontSize: 24, fontWeight: 600, color: 'var(--turquesa)', textAlign: 'center', marginBottom: 24 }}>
           <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 8, whiteSpace: 'nowrap' }}>

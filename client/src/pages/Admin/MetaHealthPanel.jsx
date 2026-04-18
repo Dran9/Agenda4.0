@@ -3,6 +3,7 @@ import {
   RefreshCw,
   History,
   Eye,
+  Trash2,
   AlertTriangle,
   ShieldCheck,
   Save,
@@ -88,6 +89,9 @@ export default function MetaHealthPanel() {
   const [detailById, setDetailById] = useState({});
   const [loadingDetailId, setLoadingDetailId] = useState(null);
   const [showFullHistory, setShowFullHistory] = useState(false);
+  const [selectedEventIds, setSelectedEventIds] = useState([]);
+  const [deletingSingleId, setDeletingSingleId] = useState(null);
+  const [deletingBatch, setDeletingBatch] = useState(false);
 
   const [configDraft, setConfigDraft] = useState(null);
   const [savingConfig, setSavingConfig] = useState(false);
@@ -115,8 +119,11 @@ export default function MetaHealthPanel() {
     if (filters.date_to) params.set('date_to', filters.date_to);
 
     const data = await api.get(`/meta-health/events?${params.toString()}`);
-    setTimeline(data.items || []);
+    const items = data.items || [];
+    setTimeline(items);
     setTimelineMeta({ page: data.page || 1, limit: data.limit || timelineLimit, total: data.total || 0 });
+    setSelectedEventIds((prev) => prev.filter((id) => items.some((event) => event.id === id)));
+    return data;
   }
 
   async function bootstrap() {
@@ -177,6 +184,88 @@ export default function MetaHealthPanel() {
     }
   }
 
+  function toggleEventSelected(eventId, checked) {
+    setSelectedEventIds((prev) => {
+      if (checked) return prev.includes(eventId) ? prev : [...prev, eventId];
+      return prev.filter((id) => id !== eventId);
+    });
+  }
+
+  function toggleSelectCurrentPage(checked) {
+    const pageIds = timeline.map((event) => event.id);
+    if (checked) {
+      setSelectedEventIds((prev) => [...new Set([...prev, ...pageIds])]);
+      return;
+    }
+    setSelectedEventIds((prev) => prev.filter((id) => !pageIds.includes(id)));
+  }
+
+  async function refreshAfterDelete() {
+    const currentPage = timelineMeta.page || 1;
+    const currentData = await loadEvents({ page: currentPage });
+    const total = Number(currentData?.total || 0);
+    const limit = Number(currentData?.limit || timelineLimit);
+    const maxPageAfterDelete = Math.max(1, Math.ceil(total / Math.max(1, limit)));
+
+    if (currentPage > maxPageAfterDelete) {
+      await loadEvents({ page: maxPageAfterDelete });
+    }
+
+    await loadPanel();
+  }
+
+  async function handleDeleteOne(eventId) {
+    if (!window.confirm('¿Eliminar este log del historial?')) return;
+
+    setDeletingSingleId(eventId);
+    try {
+      const result = await api.delete(`/meta-health/events/${eventId}`);
+      if (!result?.deleted) {
+        showToast('El log ya no existe o no se pudo eliminar', 'error');
+        return;
+      }
+      setDetailById((prev) => {
+        const next = { ...prev };
+        delete next[eventId];
+        return next;
+      });
+      setSelectedEventIds((prev) => prev.filter((id) => id !== eventId));
+      await refreshAfterDelete();
+      showToast('Log eliminado');
+    } catch (err) {
+      showToast(`No se pudo eliminar el log: ${err.message}`, 'error');
+    } finally {
+      setDeletingSingleId(null);
+    }
+  }
+
+  async function handleDeleteBatch() {
+    if (selectedEventIds.length === 0) return;
+    if (!window.confirm(`¿Eliminar ${selectedEventIds.length} logs seleccionados?`)) return;
+
+    setDeletingBatch(true);
+    try {
+      const result = await api.post('/meta-health/events/delete-batch', { ids: selectedEventIds });
+      if (!result?.deleted) {
+        showToast('No se eliminaron logs para la selección actual', 'error');
+        return;
+      }
+      const deletedIds = new Set((result.deleted_ids || []).map(Number));
+      setDetailById((prev) => {
+        const next = { ...prev };
+        for (const id of deletedIds) delete next[id];
+        return next;
+      });
+      setSelectedEventIds([]);
+      await refreshAfterDelete();
+      showToast(`Logs eliminados: ${result.deleted}`);
+    } catch (err) {
+      showToast(`No se pudo eliminar el lote: ${err.message}`, 'error');
+    } finally {
+      setDeletingBatch(false);
+    }
+  }
+
   async function saveConfig() {
     if (!configDraft) return;
 
@@ -196,6 +285,11 @@ export default function MetaHealthPanel() {
     if (!timelineMeta.total || !timelineMeta.limit) return 1;
     return Math.max(1, Math.ceil(timelineMeta.total / timelineMeta.limit));
   }, [timelineMeta]);
+
+  const currentPageIds = useMemo(() => timeline.map((event) => event.id), [timeline]);
+  const selectedCount = selectedEventIds.length;
+  const allCurrentPageSelected = currentPageIds.length > 0 && currentPageIds.every((id) => selectedEventIds.includes(id));
+  const canDelete = !deletingBatch && deletingSingleId === null;
 
   if (loading) {
     return (
@@ -361,10 +455,35 @@ export default function MetaHealthPanel() {
           </div>
         </div>
 
+        <div className="flex flex-col gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 sm:flex-row sm:items-center sm:justify-between">
+          <label className="inline-flex items-center gap-2 text-xs font-medium text-slate-700">
+            <input
+              type="checkbox"
+              checked={allCurrentPageSelected}
+              onChange={(e) => toggleSelectCurrentPage(e.target.checked)}
+              className="h-4 w-4 rounded border-slate-300 text-[#4E769B] focus:ring-[#4E769B]"
+            />
+            Seleccionar página actual
+          </label>
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-slate-500">{selectedCount} seleccionados</span>
+            <button
+              type="button"
+              disabled={selectedCount === 0 || !canDelete}
+              onClick={handleDeleteBatch}
+              className="inline-flex items-center gap-1 rounded-lg border border-red-200 bg-red-50 px-3 py-1.5 text-xs font-semibold text-red-700 hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {deletingBatch ? <LoaderCircle size={13} className="animate-spin" /> : <Trash2 size={13} />}
+              Eliminar seleccionados
+            </button>
+          </div>
+        </div>
+
         <div className="overflow-x-auto rounded-xl border border-slate-200">
           <table className="min-w-full text-sm">
             <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
               <tr>
+                <th className="px-3 py-2 w-12 text-center">Sel</th>
                 <th className="px-3 py-2">Fecha/hora</th>
                 <th className="px-3 py-2">Severidad</th>
                 <th className="px-3 py-2">Tipo</th>
@@ -377,16 +496,25 @@ export default function MetaHealthPanel() {
             <tbody>
               {timeline.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="px-3 py-8 text-center text-sm text-slate-500">
+                  <td colSpan={8} className="px-3 py-8 text-center text-sm text-slate-500">
                     No hay eventos para los filtros seleccionados.
                   </td>
                 </tr>
               ) : (
                 timeline.map((event) => {
                   const detail = detailById[event.id];
+                  const checked = selectedEventIds.includes(event.id);
                   return (
                     <Fragment key={event.id}>
                       <tr className="border-t border-slate-100 align-top">
+                        <td className="px-3 py-2 text-center">
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            onChange={(e) => toggleEventSelected(event.id, e.target.checked)}
+                            className="h-4 w-4 rounded border-slate-300 text-[#4E769B] focus:ring-[#4E769B]"
+                          />
+                        </td>
                         <td className="px-3 py-2 text-xs text-slate-600">{formatDateTime(event.received_at)}</td>
                         <td className="px-3 py-2">
                           <span className={`inline-flex rounded-full px-2 py-1 text-[11px] font-semibold ${SEVERITY_CLASSES[event.severity] || SEVERITY_CLASSES.info}`}>
@@ -398,20 +526,31 @@ export default function MetaHealthPanel() {
                         <td className="px-3 py-2 text-slate-600 max-w-[420px]">{event.summary || '—'}</td>
                         <td className="px-3 py-2 text-slate-600">{event.status || event.quality || '—'}</td>
                         <td className="px-3 py-2 text-right">
-                          <button
-                            type="button"
-                            onClick={() => loadEventDetail(event.id)}
-                            className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs text-slate-700 hover:bg-slate-50"
-                          >
-                            {loadingDetailId === event.id ? <LoaderCircle size={13} className="animate-spin" /> : <Eye size={13} />}
-                            {detail ? 'Ocultar' : 'Ver detalle'}
-                          </button>
+                          <div className="inline-flex items-center gap-1">
+                            <button
+                              type="button"
+                              onClick={() => loadEventDetail(event.id)}
+                              className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs text-slate-700 hover:bg-slate-50"
+                            >
+                              {loadingDetailId === event.id ? <LoaderCircle size={13} className="animate-spin" /> : <Eye size={13} />}
+                              {detail ? 'Ocultar' : 'Ver detalle'}
+                            </button>
+                            <button
+                              type="button"
+                              disabled={!canDelete}
+                              onClick={() => handleDeleteOne(event.id)}
+                              className="inline-flex items-center gap-1 rounded-lg border border-red-200 bg-red-50 px-2.5 py-1.5 text-xs text-red-700 hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-50"
+                            >
+                              {deletingSingleId === event.id ? <LoaderCircle size={13} className="animate-spin" /> : <Trash2 size={13} />}
+                              Borrar
+                            </button>
+                          </div>
                         </td>
                       </tr>
 
                       {detail ? (
                         <tr className="border-t border-slate-100 bg-slate-50/70">
-                          <td colSpan={7} className="px-3 py-3">
+                          <td colSpan={8} className="px-3 py-3">
                             <div className="grid grid-cols-1 gap-3 xl:grid-cols-2">
                               <div className="rounded-lg border border-slate-200 bg-white p-3">
                                 <div className="text-xs font-semibold uppercase tracking-[0.1em] text-slate-500 mb-2">Evento normalizado</div>

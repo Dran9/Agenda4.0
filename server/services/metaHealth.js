@@ -2382,6 +2382,58 @@ async function getMetaHealthEventDetail(tenantId, eventId) {
   };
 }
 
+async function deleteMetaHealthEvents(tenantId, { ids = [] } = {}) {
+  const uniqueIds = [...new Set(
+    (Array.isArray(ids) ? ids : [])
+      .map((value) => Number(value))
+      .filter((value) => Number.isInteger(value) && value > 0)
+  )].slice(0, 500);
+
+  if (uniqueIds.length === 0) {
+    return {
+      requested: 0,
+      matched: 0,
+      deleted: 0,
+    };
+  }
+
+  const placeholders = uniqueIds.map(() => '?').join(',');
+  const [matchedRows] = await pool.query(
+    `SELECT id
+       FROM meta_health_events
+      WHERE tenant_id = ?
+        AND id IN (${placeholders})`,
+    [tenantId, ...uniqueIds]
+  );
+
+  const matchedIds = matchedRows.map((row) => Number(row.id)).filter((id) => Number.isInteger(id) && id > 0);
+
+  if (matchedIds.length === 0) {
+    return {
+      requested: uniqueIds.length,
+      matched: 0,
+      deleted: 0,
+    };
+  }
+
+  const deletePlaceholders = matchedIds.map(() => '?').join(',');
+  const [deleteResult] = await pool.query(
+    `DELETE FROM meta_health_events
+      WHERE tenant_id = ?
+        AND id IN (${deletePlaceholders})`,
+    [tenantId, ...matchedIds]
+  );
+
+  await rebuildMetaHealthState(tenantId, { trigger: 'events_delete' });
+
+  return {
+    requested: uniqueIds.length,
+    matched: matchedIds.length,
+    deleted: Number(deleteResult.affectedRows || 0),
+    deleted_ids: matchedIds,
+  };
+}
+
 async function listMetaHealthHistory(tenantId, { limit = 50 } = {}) {
   const normalizedLimit = toInt(limit, 50, 1, 200);
   const [rows] = await pool.query(
@@ -2765,6 +2817,7 @@ module.exports = {
   getMetaHealthPanel,
   listMetaHealthEvents,
   getMetaHealthEventDetail,
+  deleteMetaHealthEvents,
   listMetaHealthHistory,
   listMetaHealthAlerts,
   rebuildMetaHealthState,

@@ -5,6 +5,7 @@ const {
   getMetaHealthPanel,
   listMetaHealthEvents,
   getMetaHealthEventDetail,
+  deleteMetaHealthEvents,
   listMetaHealthHistory,
   listMetaHealthAlerts,
   getMetaHealthConfig,
@@ -86,6 +87,41 @@ router.get('/events/:id', authMiddleware, async (req, res) => {
     sendServerError(res, req, err, {
       message: 'No se pudo cargar el detalle del evento',
       logLabel: 'meta-health event detail',
+    });
+  }
+});
+
+// DELETE /api/meta-health/events/:id — delete single timeline event
+router.delete('/events/:id', authMiddleware, async (req, res) => {
+  try {
+    const eventId = Number(req.params.id);
+    if (!eventId || Number.isNaN(eventId)) {
+      return res.status(400).json({ error: 'ID de evento inválido' });
+    }
+
+    const result = await deleteMetaHealthEvents(req.tenantId, { ids: [eventId] });
+    if (result.deleted === 0) return res.status(404).json({ error: 'Evento no encontrado' });
+
+    res.json({ success: true, ...result });
+  } catch (err) {
+    sendServerError(res, req, err, {
+      message: 'No se pudo eliminar el evento',
+      logLabel: 'meta-health event delete',
+    });
+  }
+});
+
+// POST /api/meta-health/events/delete-batch — delete multiple timeline events
+router.post('/events/delete-batch', authMiddleware, async (req, res) => {
+  try {
+    const ids = Array.isArray(req.body?.ids) ? req.body.ids : [];
+    const result = await deleteMetaHealthEvents(req.tenantId, { ids });
+
+    res.json({ success: true, ...result });
+  } catch (err) {
+    sendServerError(res, req, err, {
+      message: 'No se pudo eliminar el lote de eventos',
+      logLabel: 'meta-health events delete-batch',
     });
   }
 });

@@ -643,15 +643,15 @@ export default function QuickActions() {
                     className={`flex min-h-[8.1rem] flex-col items-center justify-center gap-2.5 rounded-2xl border px-3.5 py-3.5 text-center transition active:scale-[0.98] disabled:opacity-65 disabled:cursor-not-allowed ${buttonClass}`}
                   >
                     {isRunning ? (
-                      <Loader2 size={28} className="animate-spin" />
+                      <Loader2 size={34} className="animate-spin" />
                     ) : isSuccess ? (
-                      <CheckCircle2 size={28} />
+                      <CheckCircle2 size={34} />
                     ) : isArmed ? (
-                      <AlertTriangle size={28} />
+                      <AlertTriangle size={34} />
                     ) : (
-                      <Icon size={28} />
+                      <Icon size={34} />
                     )}
-                    <span className="flex min-h-[3rem] items-center justify-center text-[18px] font-semibold leading-tight">
+                    <span className="flex min-h-[3rem] items-center justify-center text-[22px] font-semibold leading-tight">
                       {buttonLabel}
                     </span>
                   </button>

@@ -1,5 +1,15 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Trash2, Search, BellRing, RotateCcw, ArrowUpDown, Repeat } from 'lucide-react';
+import {
+  Trash2,
+  Search,
+  BellRing,
+  RotateCcw,
+  ArrowUpDown,
+  Repeat,
+  AlertTriangle,
+  CheckCircle2,
+  LoaderCircle,
+} from 'lucide-react';
 import AdminLayout from '../../components/AdminLayout';
 import InlineConfirmButton from '../../components/InlineConfirmButton';
 import RecurringQuickModal from '../../components/RecurringQuickModal';
@@ -152,6 +162,90 @@ function getRecurringFieldMeta(schedule) {
   };
 }
 
+function ReminderActionButton({
+  icon: Icon,
+  label,
+  confirmLabel,
+  successLabel,
+  title,
+  disabled = false,
+  onConfirm,
+}) {
+  const [phase, setPhase] = useState('idle'); // idle | armed | loading | success | error
+
+  useEffect(() => {
+    if (phase !== 'armed') return undefined;
+    const timer = window.setTimeout(() => setPhase('idle'), 5000);
+    return () => window.clearTimeout(timer);
+  }, [phase]);
+
+  useEffect(() => {
+    if (!['success', 'error'].includes(phase)) return undefined;
+    const timer = window.setTimeout(() => setPhase('idle'), 1300);
+    return () => window.clearTimeout(timer);
+  }, [phase]);
+
+  useEffect(() => {
+    if (disabled) setPhase('idle');
+  }, [disabled]);
+
+  async function handleClick() {
+    if (disabled || phase === 'loading' || phase === 'success') return;
+
+    if (phase === 'idle' || phase === 'error') {
+      setPhase('armed');
+      return;
+    }
+
+    if (phase === 'armed') {
+      setPhase('loading');
+      try {
+        const result = await onConfirm();
+        setPhase(result === false ? 'error' : 'success');
+      } catch (_) {
+        setPhase('error');
+      }
+    }
+  }
+
+  const classByPhase = {
+    idle: 'border-slate-300 bg-gradient-to-r from-slate-50 to-white text-slate-700 hover:border-[#4E769B] hover:text-[#335c7a] hover:shadow-[0_8px_20px_rgba(78,118,155,0.18)]',
+    armed: 'border-red-300 bg-red-50 text-red-700 shadow-[0_10px_24px_rgba(239,68,68,0.18)]',
+    loading: 'border-emerald-300 bg-emerald-50 text-emerald-700',
+    success: 'border-emerald-300 bg-emerald-100 text-emerald-700 shadow-[0_10px_24px_rgba(16,185,129,0.18)]',
+    error: 'border-rose-300 bg-rose-50 text-rose-700',
+  };
+
+  return (
+    <button
+      type="button"
+      onClick={handleClick}
+      disabled={disabled}
+      title={title}
+      className={`inline-flex min-w-[120px] items-center justify-center gap-1.5 rounded-xl border px-3 py-1.5 text-xs font-semibold transition-all disabled:cursor-not-allowed disabled:opacity-50 ${classByPhase[phase]}`}
+    >
+      {phase === 'armed' ? (
+        <AlertTriangle size={13} />
+      ) : phase === 'loading' ? (
+        <LoaderCircle size={13} className="animate-spin" />
+      ) : phase === 'success' ? (
+        <CheckCircle2 size={13} />
+      ) : (
+        <Icon size={13} />
+      )}
+      {phase === 'armed'
+        ? confirmLabel
+        : phase === 'loading'
+          ? 'Enviando...'
+          : phase === 'success'
+            ? successLabel
+            : phase === 'error'
+              ? 'Error'
+              : label}
+    </button>
+  );
+}
+
 export default function Appointments() {
   const [appointments, setAppointments] = useState([]);
   const [recurringSchedules, setRecurringSchedules] = useState([]);
@@ -164,6 +258,7 @@ export default function Appointments() {
   const [savingRecurringClientId, setSavingRecurringClientId] = useState(null);
   const [recurringModal, setRecurringModal] = useState(null);
   const [loadingRecurringModal, setLoadingRecurringModal] = useState(false);
+  const [sendingReminderAppointmentId, setSendingReminderAppointmentId] = useState(null);
 
   const refreshAll = useCallback(() => {
     fetchAppointments();
@@ -257,11 +352,12 @@ export default function Appointments() {
   }
 
   async function handleReminderSend(appt, force = false) {
+    setSendingReminderAppointmentId(appt.id);
     try {
       const appointmentDate = getBoliviaDateKey(appt.date_time);
       if (!appointmentDate) {
         showToast('No se pudo determinar la fecha de esta cita', 'error');
-        return;
+        return false;
       }
       const params = new URLSearchParams({
         date: appointmentDate,
@@ -271,23 +367,27 @@ export default function Appointments() {
       const result = await api.get(`/admin/test-reminder?${params.toString()}`);
       if (result.targetFound === false) {
         showToast('No se encontró la cita en los eventos elegibles para recordatorio', 'error');
-        return;
+        return false;
       }
       if (result.sent > 0) {
         showToast(force ? 'Recordatorio aceptado por WhatsApp para reenvío' : 'Recordatorio aceptado por WhatsApp');
-        return;
+        return true;
       }
       if (result.failed > 0) {
         showToast(`Error al ${force ? 'reenviar' : 'enviar'} recordatorio: ${result.errors?.[0]?.message || 'falló el envío a WhatsApp'}`, 'error');
-        return;
+        return false;
       }
       if (result.skipped > 0) {
         showToast('Esta cita ya tenía recordatorio enviado. Usa reenviar si quieres repetirlo.');
-        return;
+        return true;
       }
       showToast('No correspondía enviar recordatorio para esta cita');
+      return true;
     } catch (err) {
       showToast('Error: ' + err.message, 'error');
+      return false;
+    } finally {
+      setSendingReminderAppointmentId(current => (current === appt.id ? null : current));
     }
   }
 
@@ -610,25 +710,25 @@ export default function Appointments() {
                     </td>
                     <td className="p-3 align-top">
                       {['Agendada', 'Confirmada', 'Reagendada'].includes(appt.status) ? (
-                        <div className="flex items-center gap-1">
-                          <button
-                            type="button"
-                            onClick={() => handleReminderSend(appt, false)}
-                            className="inline-flex items-center gap-1 rounded-lg border border-gray-200 px-2 py-1 text-xs text-gray-600 hover:bg-gray-50"
+                        <div className="flex flex-wrap items-center gap-2">
+                          <ReminderActionButton
+                            icon={BellRing}
+                            label="Enviar"
+                            confirmLabel="¿Enviar?"
+                            successLabel="Enviado"
                             title="Enviar solo a esta cita si aún no salió"
-                          >
-                            <BellRing size={12} />
-                            Enviar
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => handleReminderSend(appt, true)}
-                            className="inline-flex items-center gap-1 rounded-lg border border-amber-200 px-2 py-1 text-xs text-amber-700 hover:bg-amber-50"
+                            disabled={sendingReminderAppointmentId === appt.id}
+                            onConfirm={() => handleReminderSend(appt, false)}
+                          />
+                          <ReminderActionButton
+                            icon={RotateCcw}
+                            label="Reenviar"
+                            confirmLabel="¿Reenviar?"
+                            successLabel="Reenviado"
                             title="Reenviar solo a esta cita"
-                          >
-                            <RotateCcw size={12} />
-                            Reenviar
-                          </button>
+                            disabled={sendingReminderAppointmentId === appt.id}
+                            onConfirm={() => handleReminderSend(appt, true)}
+                          />
                         </div>
                       ) : (
                         <span className="text-xs text-gray-300">—</span>

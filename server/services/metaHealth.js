@@ -2571,9 +2571,9 @@ async function runMetaHealthWatchdogForTenant(tenantId, { force = false } = {}) 
   if (silenceMinutes === null) {
     checks.push({
       check_name: 'webhook_silence',
-      status: 'warning',
-      message: 'Aún no hay webhooks registrados para este tenant.',
-      details: { events_24h: events24h },
+      status: 'ok',
+      message: 'Sin webhooks iniciales aún; se activa monitoreo de silencio tras el primer evento.',
+      details: { events_24h: events24h, baseline_established: false },
     });
   } else if (silenceMinutes > config.silence_critical_minutes) {
     checks.push({

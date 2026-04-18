@@ -1,10 +1,10 @@
-const crypto = require('crypto');
 const { Router } = require('express');
 const { pool } = require('../db');
 const { getOperationalContext, classifyIncomingMessage, buildClassificationMetadata } = require('../services/messageContext');
 const { buildCalendarSummary, hasCalendarPaymentMarker, stripCalendarMarkers } = require('../services/calendarSummary');
 const { sendServerError } = require('../utils/httpErrors');
 const { normalizePhone, normalizedPhoneSql } = require('../utils/phone');
+const { verifyWebhookSignatureFromReq } = require('../utils/webhookSignature');
 const { broadcast } = require('../services/adminEvents');
 const { extractIdentity, extractStatusIdentity, resolveIdentity } = require('../services/whatsappIdentity');
 const { ingestMetaWebhookPayload } = require('../services/metaHealth');
@@ -12,37 +12,7 @@ const { ingestMetaWebhookPayload } = require('../services/metaHealth');
 const router = Router();
 const CALENDAR_ID = () => process.env.CALENDAR_ID || process.env.GOOGLE_CALENDAR_ID || 'danielmacleann@gmail.com';
 
-function getWebhookAppSecret() {
-  return process.env.WA_APP_SECRET || process.env.META_APP_SECRET || process.env.APP_SECRET || '';
-}
-
-function verifyWebhookSignature(req) {
-  const appSecret = getWebhookAppSecret();
-  if (!appSecret) {
-    return { ok: false, status: 500, error: 'Webhook app secret no configurado' };
-  }
-
-  const signature = req.get('x-hub-signature-256');
-  if (!signature || !signature.startsWith('sha256=')) {
-    return { ok: false, status: 401, error: 'Firma faltante o inválida' };
-  }
-
-  if (!Buffer.isBuffer(req.rawBody)) {
-    return { ok: false, status: 400, error: 'Payload sin firma verificable' };
-  }
-
-  const expected = Buffer.from(
-    `sha256=${crypto.createHmac('sha256', appSecret).update(req.rawBody).digest('hex')}`,
-    'utf8'
-  );
-  const received = Buffer.from(signature, 'utf8');
-
-  if (expected.length !== received.length || !crypto.timingSafeEqual(expected, received)) {
-    return { ok: false, status: 401, error: 'Firma inválida' };
-  }
-
-  return { ok: true };
-}
+const verifyWebhookSignature = verifyWebhookSignatureFromReq;
 
 function sanitizeReceiptDate(value) {
   return value ? String(value).trim().slice(0, 50) : null;

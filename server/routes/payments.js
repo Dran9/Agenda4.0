@@ -1,6 +1,7 @@
 const { Router } = require('express');
 const { pool } = require('../db');
 const { authMiddleware } = require('../middleware/auth');
+const { validate, paymentGoalSchema, paymentStatusSchema } = require('../middleware/validate');
 const { saveFile, getFile } = require('../services/storage');
 const { extractReceiptData } = require('../services/ocr');
 const { updateEventSummary, getOAuthClient } = require('../services/calendar');
@@ -70,11 +71,9 @@ router.get('/', authMiddleware, async (req, res) => {
 });
 
 // PUT /api/payments/:id/status — toggle payment status (manual)
-router.put('/:id/status', authMiddleware, async (req, res) => {
+router.put('/:id/status', authMiddleware, validate(paymentStatusSchema), async (req, res) => {
   try {
-    const { status } = req.body;
-    const valid = ['Pendiente', 'Confirmado', 'Rechazado', 'Mismatch'];
-    if (!valid.includes(status)) return res.status(400).json({ error: 'Status inválido' });
+    const { status } = req.validated;
 
     // Update payment
     const confirmedAt = status === 'Confirmado' ? new Date() : null;
@@ -382,9 +381,9 @@ router.get('/summary', authMiddleware, async (req, res) => {
 });
 
 // PUT /api/payments/goal — set monthly income goal
-router.put('/goal', authMiddleware, async (req, res) => {
+router.put('/goal', authMiddleware, validate(paymentGoalSchema), async (req, res) => {
   try {
-    const { goal } = req.body;
+    const { goal } = req.validated;
     await pool.query(
       'UPDATE config SET monthly_goal = ? WHERE tenant_id = ?',
       [goal, req.tenantId]

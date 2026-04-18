@@ -77,6 +77,27 @@ const clientSchema = z.object({
   notes: z.string().optional(),
 });
 
+const paymentGoalSchema = z.object({
+  goal: z.union([z.number(), z.string()])
+    .transform((v) => (v === null || v === undefined || v === '' ? null : Number(v)))
+    .refine((v) => v === null || (Number.isFinite(v) && v >= 0 && v <= 1_000_000), {
+      message: 'Meta inválida',
+    })
+    .nullable(),
+});
+
+const appointmentNotesSchema = z.object({
+  notes: z.string().max(5000).nullable().optional(),
+});
+
+const appointmentStatusSchema = z.object({
+  status: z.enum(['Agendada', 'Confirmada', 'Reagendada', 'Cancelada', 'Completada', 'No-show']),
+});
+
+const paymentStatusSchema = z.object({
+  status: z.enum(['Pendiente', 'Confirmado', 'Rechazado', 'Mismatch']),
+});
+
 // Middleware factory
 function validate(schema) {
   return (req, res, next) => {
@@ -97,4 +118,8 @@ module.exports = {
   publicRescheduleSchema,
   adminRescheduleSchema,
   clientSchema,
+  paymentGoalSchema,
+  paymentStatusSchema,
+  appointmentStatusSchema,
+  appointmentNotesSchema,
 };

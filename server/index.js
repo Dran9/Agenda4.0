@@ -5,6 +5,7 @@ const path = require('path');
 const fs = require('fs');
 
 const { initializeDatabase } = require('./db');
+const { runMigrations } = require('./migrations');
 const {
   startReminderCron,
   startAutoCompleteCron,
@@ -44,7 +45,13 @@ app.use(express.json({
 // ─── Reminder trigger (admin) ────────────────────────────────────
 const { checkAndSendReminders, checkAndSendPaymentReminders } = require('./services/reminder');
 const { authMiddleware } = require('./middleware/auth');
+const { authGate } = require('./middleware/authGate');
 const { sseHandler, connectedCount } = require('./services/adminEvents');
+
+// ─── Auth gate global ────────────────────────────────────────────
+// Por defecto, toda ruta /api/* requiere JWT. Las excepciones públicas
+// están declaradas explícitamente en middleware/authGate.js.
+app.use(authGate);
 
 // ─── Mount routes ────────────────────────────────────────────────
 app.use('/api', bookingRoutes);  // booking routes handle their own limiting
@@ -179,6 +186,7 @@ const PORT = process.env.PORT || 3000;
 async function start() {
   try {
     await initializeDatabase();
+    await runMigrations();
     startReminderCron();
     startPaymentReminderCron();
     startAutoCompleteCron();

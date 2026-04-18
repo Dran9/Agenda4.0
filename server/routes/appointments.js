@@ -1,6 +1,7 @@
 const { Router } = require('express');
 const { pool, withTransaction } = require('../db');
 const { authMiddleware } = require('../middleware/auth');
+const { validate, appointmentStatusSchema, appointmentNotesSchema } = require('../middleware/validate');
 const { deleteEvent } = require('../services/calendar');
 const {
   isSlotClaimConflictError,
@@ -101,11 +102,9 @@ router.get('/', authMiddleware, async (req, res) => {
 });
 
 // PUT /api/appointments/:id/status — quick status change (admin)
-router.put('/:id/status', authMiddleware, async (req, res) => {
+router.put('/:id/status', authMiddleware, validate(appointmentStatusSchema), async (req, res) => {
   try {
-    const { status } = req.body;
-    const valid = ['Agendada', 'Confirmada', 'Reagendada', 'Cancelada', 'Completada', 'No-show'];
-    if (!valid.includes(status)) return res.status(400).json({ error: 'Status inválido' });
+    const { status } = req.validated;
 
     const result = await withTransaction(async (conn) => {
       const [appointments] = await conn.query(
@@ -179,9 +178,9 @@ router.put('/:id/status', authMiddleware, async (req, res) => {
 });
 
 // PUT /api/appointments/:id/notes — add note (admin)
-router.put('/:id/notes', authMiddleware, async (req, res) => {
+router.put('/:id/notes', authMiddleware, validate(appointmentNotesSchema), async (req, res) => {
   try {
-    const { notes } = req.body;
+    const { notes } = req.validated;
     await pool.query(
       'UPDATE appointments SET notes = ? WHERE id = ? AND tenant_id = ?',
       [notes, req.params.id, req.tenantId]

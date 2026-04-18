@@ -6,7 +6,8 @@
   "scripts": {
     "start": "node server/index.js",
     "dev": "concurrently \"node --watch server/index.js\" \"cd client && npx vite\"",
-    "build": "echo 'client/dist is pre-built and committed — skipping build'"
+    "build": "echo 'client/dist is pre-built and committed — skipping build'",
+    "test": "node --test \"test/**/*.test.js\""
   },
   "dependencies": {
     "cors": "^2.8.5",

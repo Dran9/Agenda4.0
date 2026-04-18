@@ -114,6 +114,7 @@ export default function Calendar({ onSelectDate, selectedDate, availableDays = [
 
   const canGoPrev = viewYear > today.getFullYear() || viewMonth > today.getMonth();
   const canGoNext = new Date(viewYear, viewMonth + 1, 1) <= maxDate;
+  const calendarGridGap = 6;
 
   return (
     <div className="calendar-card">
@@ -121,21 +122,32 @@ export default function Calendar({ onSelectDate, selectedDate, availableDays = [
         <button type="button" onClick={prevMonth} disabled={!canGoPrev} className="cal-nav-btn">
           <ChevronLeft size={16} />
         </button>
-        <span style={{ fontWeight: 600, fontSize: 20 }}>{MONTH_NAMES[viewMonth]} {viewYear}</span>
+        <span style={{ fontWeight: 600, fontSize: 24 }}>{MONTH_NAMES[viewMonth]} {viewYear}</span>
         <button type="button" onClick={nextMonth} disabled={!canGoNext} className="cal-nav-btn">
           <ChevronRight size={16} />
         </button>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: `repeat(${visibleColumns.length}, 1fr)`, gap: 2, marginBottom: 4 }}>
+      <div style={{
+        display: 'grid',
+        gridTemplateColumns: `repeat(${visibleColumns.length}, 1fr)`,
+        columnGap: calendarGridGap,
+        rowGap: calendarGridGap,
+        marginBottom: calendarGridGap,
+      }}>
         {visibleColumns.map(d => (
-          <div key={d.key} style={{ textAlign: 'center', fontSize: 14, fontWeight: 800, textTransform: 'uppercase', color: '#A4A4A6', padding: '4px 0' }}>
+          <div key={d.key} style={{ textAlign: 'center', fontSize: 16, fontWeight: 800, textTransform: 'uppercase', color: '#A4A4A6', padding: '4px 0' }}>
             {d.label}
           </div>
         ))}
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: `repeat(${visibleColumns.length}, 1fr)`, gap: 2 }}>
+      <div style={{
+        display: 'grid',
+        gridTemplateColumns: `repeat(${visibleColumns.length}, 1fr)`,
+        columnGap: calendarGridGap,
+        rowGap: calendarGridGap,
+      }}>
         {cells.map((cell, i) => {
           if (!cell) return <div key={i} />;
           const enabled = isEnabled(cell);
@@ -158,7 +170,7 @@ export default function Calendar({ onSelectDate, selectedDate, availableDays = [
             <button
               type="button" key={i} onClick={() => handleClick(cell)} disabled={!enabled}
               style={{
-                height: 44, borderRadius: 10, fontSize: 20, display: 'flex',
+                height: 44, borderRadius: 10, fontSize: 22, display: 'flex',
                 alignItems: 'center', justifyContent: 'center', border: 'none',
                 background: bg, cursor: enabled ? 'pointer' : 'not-allowed',
                 transition: 'all 200ms', fontWeight: fw, color,

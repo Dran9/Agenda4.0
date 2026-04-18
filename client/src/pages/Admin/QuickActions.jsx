@@ -602,7 +602,7 @@ export default function QuickActions() {
             </div>
 
             {/* Action buttons */}
-            <div className="grid grid-cols-3 gap-3 px-4 py-4">
+            <div className="grid grid-cols-2 gap-3.5 px-4 py-4">
               {ACTIONS.map((action) => {
                 const Icon = action.icon;
                 const isInline = INLINE_CONFIRM_ACTIONS.has(action.id);
@@ -640,18 +640,18 @@ export default function QuickActions() {
                     type="button"
                     onClick={() => handleActionButtonClick(action.id)}
                     disabled={actionLoading || !!runningActionId}
-                    className={`flex min-h-[6.9rem] flex-col items-center justify-center gap-2 rounded-2xl border px-3 py-3 text-center transition active:scale-[0.98] disabled:opacity-65 disabled:cursor-not-allowed ${buttonClass}`}
+                    className={`flex min-h-[8.1rem] flex-col items-center justify-center gap-2.5 rounded-2xl border px-3.5 py-3.5 text-center transition active:scale-[0.98] disabled:opacity-65 disabled:cursor-not-allowed ${buttonClass}`}
                   >
                     {isRunning ? (
-                      <Loader2 size={24} className="animate-spin" />
+                      <Loader2 size={28} className="animate-spin" />
                     ) : isSuccess ? (
-                      <CheckCircle2 size={24} />
+                      <CheckCircle2 size={28} />
                     ) : isArmed ? (
-                      <AlertTriangle size={24} />
+                      <AlertTriangle size={28} />
                     ) : (
-                      <Icon size={24} />
+                      <Icon size={28} />
                     )}
-                    <span className="flex min-h-[2.7rem] items-center justify-center text-[13px] font-semibold leading-tight">
+                    <span className="flex min-h-[3rem] items-center justify-center text-[18px] font-semibold leading-tight">
                       {buttonLabel}
                     </span>
                   </button>

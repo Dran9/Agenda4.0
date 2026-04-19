@@ -19,7 +19,7 @@ import {
 import AdminLayout from '../../components/AdminLayout';
 import RecurringQuickModal from '../../components/RecurringQuickModal';
 import { api } from '../../utils/api';
-import { getRecurringSyncIssue } from '../../utils/recurring';
+import { getRecurringSyncIssue, pickDefaultRecurringSource } from '../../utils/recurring';
 import { useToast, Toast } from '../../hooks/useToast';
 import useAdminEvents from '../../hooks/useAdminEvents';
 import { formatWeekdayShort, formatTimeBolivia, formatDateBolivia, formatRelativeDay } from '../../utils/dates';
@@ -62,6 +62,7 @@ export default function QuickActions() {
   // Recurring modal
   const [recurringModalOpen, setRecurringModalOpen] = useState(false);
   const [recurringSaving, setRecurringSaving] = useState(false);
+  const [recurringSourceAppointment, setRecurringSourceAppointment] = useState(null);
 
   // Config quick settings
   const [config, setConfig] = useState(null);
@@ -160,6 +161,8 @@ export default function QuickActions() {
     setErrorActionId(null);
     setFeeValue(String(client.fee || 250));
     setCancelEndRecurring(client.has_recurring > 0);
+    setRecurringModalOpen(false);
+    setRecurringSourceAppointment(null);
   }
 
   function clearClient() {
@@ -171,6 +174,8 @@ export default function QuickActions() {
     setSuccessActionId(null);
     setErrorActionId(null);
     setQuery('');
+    setRecurringModalOpen(false);
+    setRecurringSourceAppointment(null);
     setTimeout(() => searchRef.current?.focus(), 50);
   }
 
@@ -354,6 +359,24 @@ export default function QuickActions() {
 
   // ─── Recurring handlers ─────────────────────────────────────────
 
+  async function loadDefaultRecurringSource(clientId) {
+    try {
+      const detail = await api.get(`/clients/${clientId}`);
+      const appointmentsHistory = Array.isArray(detail?.appointments) ? detail.appointments : [];
+      return pickDefaultRecurringSource(appointmentsHistory);
+    } catch (err) {
+      console.error(err);
+      return null;
+    }
+  }
+
+  async function openRecurringModal() {
+    if (!selectedClient) return;
+    const sourceAppointment = await loadDefaultRecurringSource(selectedClient.id);
+    setRecurringSourceAppointment(sourceAppointment);
+    setRecurringModalOpen(true);
+  }
+
   async function handleRecurringSubmit(formData) {
     if (!selectedClient) return;
     setRecurringSaving(true);
@@ -364,6 +387,7 @@ export default function QuickActions() {
       });
       const syncIssue = getRecurringSyncIssue(created, 'activate');
       setRecurringModalOpen(false);
+      setRecurringSourceAppointment(null);
       setActionResult({
         success: !syncIssue,
         title: syncIssue ? 'Recurrencia guardada en la app' : 'Recurrencia activada',
@@ -698,7 +722,7 @@ export default function QuickActions() {
                   cancelEndRecurring={cancelEndRecurring}
                   setCancelEndRecurring={setCancelEndRecurring}
                   onExecute={executeAction}
-                  onRecurringActivate={() => setRecurringModalOpen(true)}
+                  onRecurringActivate={openRecurringModal}
                   onRecurringPause={handleRecurringPause}
                   onRecurringResume={handleRecurringResume}
                   onRecurringEnd={handleRecurringEnd}
@@ -853,15 +877,12 @@ export default function QuickActions() {
         open={recurringModalOpen}
         clientName={selectedClient ? `${selectedClient.first_name} ${selectedClient.last_name}` : ''}
         schedule={null}
-        sourceAppointment={
-          selectedClient?.last_completed_id
-            ? { id: selectedClient.last_completed_id, date_time: selectedClient.last_completed_date }
-            : selectedClient?.next_appointment_id
-              ? { id: selectedClient.next_appointment_id, date_time: selectedClient.next_appointment }
-              : null
-        }
+        sourceAppointment={recurringSourceAppointment}
         saving={recurringSaving}
-        onClose={() => setRecurringModalOpen(false)}
+        onClose={() => {
+          setRecurringModalOpen(false);
+          setRecurringSourceAppointment(null);
+        }}
         onSubmit={handleRecurringSubmit}
       />
     </AdminLayout>

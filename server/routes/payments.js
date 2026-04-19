@@ -299,19 +299,18 @@ router.get('/summary', authMiddleware, async (req, res) => {
     const [[current]] = await pool.query(`
       SELECT
         COUNT(*) as total_sessions,
-        COALESCE(SUM(p.has_confirmed), 0) as paid_sessions,
-        COALESCE(SUM(p.has_pending), 0) as pending_sessions,
-        COALESCE(SUM(p.income_confirmed), 0) as income_confirmed,
-        COALESCE(SUM(p.income_pending), 0) as income_pending
+        COALESCE(SUM(CASE WHEN p.has_confirmed = 1 THEN 1 ELSE 0 END), 0) as paid_sessions,
+        COALESCE(SUM(CASE WHEN p.has_confirmed = 0 AND p.has_pending = 1 THEN 1 ELSE 0 END), 0) as pending_sessions,
+        COALESCE(SUM(CASE WHEN p.has_confirmed = 1 THEN COALESCE(c.fee, 0) ELSE 0 END), 0) as income_confirmed,
+        COALESCE(SUM(CASE WHEN p.has_confirmed = 0 AND p.has_pending = 1 THEN COALESCE(c.fee, 0) ELSE 0 END), 0) as income_pending
       FROM appointments a
+      JOIN clients c ON c.id = a.client_id AND c.tenant_id = a.tenant_id
       LEFT JOIN (
         SELECT
           tenant_id,
           appointment_id,
           MAX(CASE WHEN status = 'Confirmado' THEN 1 ELSE 0 END) as has_confirmed,
-          MAX(CASE WHEN status = 'Pendiente' THEN 1 ELSE 0 END) as has_pending,
-          SUM(CASE WHEN status = 'Confirmado' THEN amount ELSE 0 END) as income_confirmed,
-          SUM(CASE WHEN status = 'Pendiente' THEN amount ELSE 0 END) as income_pending
+          MAX(CASE WHEN status = 'Pendiente' THEN 1 ELSE 0 END) as has_pending
         FROM payments
         WHERE tenant_id = ?
         GROUP BY tenant_id, appointment_id
@@ -326,13 +325,14 @@ router.get('/summary', authMiddleware, async (req, res) => {
         YEAR(a.date_time) as year,
         MONTH(a.date_time) as month,
         COUNT(*) as sessions,
-        COALESCE(SUM(p.income_confirmed), 0) as income
+        COALESCE(SUM(CASE WHEN p.has_confirmed = 1 THEN COALESCE(c.fee, 0) ELSE 0 END), 0) as income
       FROM appointments a
+      JOIN clients c ON c.id = a.client_id AND c.tenant_id = a.tenant_id
       LEFT JOIN (
         SELECT
           tenant_id,
           appointment_id,
-          SUM(CASE WHEN status = 'Confirmado' THEN amount ELSE 0 END) as income_confirmed
+          MAX(CASE WHEN status = 'Confirmado' THEN 1 ELSE 0 END) as has_confirmed
         FROM payments
         WHERE tenant_id = ?
         GROUP BY tenant_id, appointment_id
@@ -346,6 +346,7 @@ router.get('/summary', authMiddleware, async (req, res) => {
     // Payment detail for current month
     const [payments] = await pool.query(`
       SELECT p.*, c.first_name, c.last_name, c.phone as client_phone, c.fee as client_fee,
+             COALESCE(c.fee, p.amount) as effective_amount,
              a.date_time, a.status as appt_status, a.session_number,
              p.ocr_extracted_amount, p.ocr_extracted_ref
       FROM payments p

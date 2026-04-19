@@ -271,7 +271,7 @@ export default function Finance() {
                         {p.date_time ? new Date(p.date_time).toLocaleDateString('es-BO', { day: '2-digit', month: 'short', timeZone: 'America/La_Paz' }) : '-'}
                       </td>
                       <td className="p-3">{p.first_name} {p.last_name || ''}</td>
-                      <td className="p-3 font-medium">{formatCurrency(p.amount)}</td>
+                      <td className="p-3 font-medium">{formatCurrency(p.effective_amount ?? p.client_fee ?? p.amount)}</td>
                       <td className="p-3">
                         <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
                           p.status === 'Confirmado' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'
@@ -289,7 +289,11 @@ export default function Finance() {
                   <tr className="border-t border-gray-200 bg-gray-50 font-semibold text-sm">
                     <td className="p-3" colSpan={2}>Total</td>
                     <td className="p-3 text-green-700">
-                      {formatCurrency(data?.payments?.filter(p => p.status === 'Confirmado').reduce((s, p) => s + parseFloat(p.amount), 0))}
+                      {formatCurrency(
+                        data?.payments
+                          ?.filter((p) => p.status === 'Confirmado')
+                          .reduce((s, p) => s + parseFloat(p.effective_amount ?? p.client_fee ?? p.amount), 0)
+                      )}
                     </td>
                     <td className="p-3" colSpan={2}>
                       <span className="font-normal text-xs text-gray-500">{data?.payments?.length} pago(s)</span>

@@ -405,7 +405,7 @@ router.post('/send-reminder', authMiddleware, async (req, res) => {
     // 1. Look up the client's next upcoming appointment from DB
     const [nextAppts] = await pool.query(
       `SELECT a.id, a.date_time, a.gcal_event_id, a.tenant_id,
-              c.phone, c.first_name, c.id AS client_id
+              c.phone, c.first_name, c.id AS client_id, c.timezone
        FROM appointments a
        JOIN clients c ON a.client_id = c.id
        WHERE a.client_id = ? AND a.tenant_id = ?
@@ -447,7 +447,12 @@ router.post('/send-reminder', authMiddleware, async (req, res) => {
 
     // 3. Fallback: GCal didn't match, but we have the appointment in DB — send directly
     if (dbAppt.phone && dbAppt.first_name) {
-      const waResult = await sendConfirmationTemplate(dbAppt.phone, dbAppt.first_name, dbAppt.date_time);
+      const waResult = await sendConfirmationTemplate(
+        dbAppt.phone,
+        dbAppt.first_name,
+        dbAppt.date_time,
+        dbAppt.timezone || 'America/La_Paz'
+      );
       await pool.query(
         `INSERT INTO webhooks_log (tenant_id, event, type, payload, status, client_phone, client_id, appointment_id)
          VALUES (?, ?, 'reminder_sent', ?, 'enviado', ?, ?, ?)`,

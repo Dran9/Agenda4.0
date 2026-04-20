@@ -68,6 +68,19 @@ export const TIMEZONE_GROUPS = [
 
 export const ALL_TIMEZONES = TIMEZONE_GROUPS.flatMap(g => g.zones);
 export const DEFAULT_TZ = ALL_TIMEZONES.find(z => z.tz === 'America/La_Paz');
+const TIMEZONE_BY_TZ = new Map(ALL_TIMEZONES.map((zone) => [zone.tz, zone]));
+
+export const TIMEZONE_OPTIONS = ALL_TIMEZONES.map((zone) => ({
+  tz: zone.tz,
+  label: `${zone.label} (${zone.tz})`,
+}));
+
+export function formatTimezoneLabel(tz) {
+  const safeTz = tz || 'America/La_Paz';
+  const timezoneMeta = TIMEZONE_BY_TZ.get(safeTz);
+  if (!timezoneMeta) return safeTz;
+  return `${timezoneMeta.label} (${timezoneMeta.tz})`;
+}
 
 const COUNTRY_INFO_BY_CODE = {
   BO: { code: 'BO', name: 'Bolivia' },

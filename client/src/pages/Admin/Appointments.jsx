@@ -18,6 +18,7 @@ import { getRecurringSyncIssue, pickDefaultRecurringSource } from '../../utils/r
 import { useToast, Toast } from '../../hooks/useToast';
 import useAdminEvents from '../../hooks/useAdminEvents';
 import { formatDateBolivia, formatTimeBolivia, formatWeekdayShort } from '../../utils/dates';
+import { TIMEZONE_OPTIONS, formatTimezoneLabel } from '../../utils/timezones';
 
 function formatReceiptAmount(amount) {
   if (amount == null) return '—';
@@ -95,6 +96,15 @@ const SORT_OPTIONS = [
   { value: 'status:asc', label: 'Status A-Z' },
   { value: 'status:desc', label: 'Status Z-A' },
 ];
+
+const TIMEZONE_SET = new Set(TIMEZONE_OPTIONS.map((option) => option.tz));
+
+function getTimezoneOptions(currentTimezone) {
+  if (currentTimezone && !TIMEZONE_SET.has(currentTimezone)) {
+    return [{ tz: currentTimezone, label: currentTimezone }, ...TIMEZONE_OPTIONS];
+  }
+  return TIMEZONE_OPTIONS;
+}
 
 function formatRegistro(dateStr) {
   if (!dateStr) return '—';
@@ -336,6 +346,21 @@ export default function Appointments() {
     }
   }
 
+  async function handleClientTimezoneChange(clientId, timezone) {
+    const nextTimezone = timezone || 'America/La_Paz';
+    const previous = appointments;
+    setAppointments((prev) => prev.map((appt) => (
+      appt.client_id === clientId ? { ...appt, client_timezone: nextTimezone } : appt
+    )));
+    try {
+      await api.put(`/clients/${clientId}`, { timezone: nextTimezone });
+      showToast('Zona horaria actualizada');
+    } catch (err) {
+      setAppointments(previous);
+      showToast('Error: ' + err.message, 'error');
+    }
+  }
+
   async function handleDelete(id) {
     try {
       await api.delete(`/appointments/${id}`);
@@ -571,7 +596,7 @@ export default function Appointments() {
           <div className="p-8 text-center text-gray-400">Cargando...</div>
         ) : (
           <>
-            <table className="w-full min-w-[1900px] text-sm">
+            <table className="w-full min-w-[2080px] text-sm">
               <thead>
                 <tr className="text-xs text-gray-500 border-b border-gray-100 bg-gray-50">
                   <th className="p-3 w-10">
@@ -586,6 +611,7 @@ export default function Appointments() {
                   <th className="text-left p-3 font-medium min-w-[90px]">Hora</th>
                   <th className="text-left p-3 font-medium min-w-[220px]">Cliente</th>
                   <th className="text-left p-3 font-medium min-w-[170px]">Teléfono</th>
+                  <th className="text-left p-3 font-medium min-w-[280px]">Zona horaria</th>
                   <th className="text-left p-3 font-medium min-w-[210px]">Recurrencia</th>
                   <th className="text-left p-3 font-medium min-w-[110px]">Registro</th>
                   <th className="text-left p-3 font-medium min-w-[150px]">Status</th>
@@ -599,6 +625,7 @@ export default function Appointments() {
                 {appointments.map(appt => {
                   const recurringSchedule = recurringByClient.get(appt.client_id) || null;
                   const recurringMeta = getRecurringFieldMeta(recurringSchedule);
+                  const timezoneValue = appt.client_timezone || 'America/La_Paz';
                   return (
                   <tr key={appt.id} className="border-b border-gray-50 hover:bg-gray-50">
                     <td className="p-3">
@@ -621,6 +648,20 @@ export default function Appointments() {
                       <a href={`https://wa.me/${appt.client_phone}`} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">
                         {appt.client_phone}
                       </a>
+                    </td>
+                    <td className="p-3 align-top">
+                      <select
+                        value={timezoneValue}
+                        onChange={e => handleClientTimezoneChange(appt.client_id, e.target.value)}
+                        className="w-full rounded-lg border border-gray-200 bg-white px-2 py-1 text-xs text-gray-600"
+                      >
+                        {getTimezoneOptions(timezoneValue).map((zone) => (
+                          <option key={zone.tz} value={zone.tz}>
+                            {zone.label}
+                          </option>
+                        ))}
+                      </select>
+                      <div className="mt-1 text-[11px] text-gray-400">{formatTimezoneLabel(timezoneValue)}</div>
                     </td>
                     <td className="p-3 align-top">
                       <div className="space-y-1">
@@ -758,7 +799,7 @@ export default function Appointments() {
                   </tr>
                 )})}
                 {appointments.length === 0 && (
-                  <tr><td colSpan={12} className="p-8 text-center text-gray-400">Sin citas</td></tr>
+                  <tr><td colSpan={13} className="p-8 text-center text-gray-400">Sin citas</td></tr>
                 )}
               </tbody>
             </table>

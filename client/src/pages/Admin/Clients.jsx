@@ -8,6 +8,7 @@ import { getRecurringSyncIssue, pickDefaultRecurringSource } from '../../utils/r
 import { useToast, Toast } from '../../hooks/useToast';
 import useAdminEvents from '../../hooks/useAdminEvents';
 import { formatTimeBolivia, formatWeekdayShort, getBoliviaDateKey } from '../../utils/dates';
+import { TIMEZONE_OPTIONS, formatTimezoneLabel } from '../../utils/timezones';
 
 const DEFAULT_STATUSES = [
   { name: 'Nuevo', color: '#3B82F6' },
@@ -22,11 +23,14 @@ const DEFAULT_SOURCES = [
   'Referencia de amigos', 'Redes sociales', 'Otro',
 ];
 
-const TIMEZONES = [
-  'America/La_Paz', 'America/Lima', 'America/Bogota', 'America/Santiago',
-  'America/Buenos_Aires', 'America/Mexico_City', 'America/New_York',
-  'Europe/Madrid', 'UTC',
-];
+const TIMEZONE_SET = new Set(TIMEZONE_OPTIONS.map((option) => option.tz));
+
+function getTimezoneOptions(currentTimezone) {
+  if (currentTimezone && !TIMEZONE_SET.has(currentTimezone)) {
+    return [{ tz: currentTimezone, label: currentTimezone }, ...TIMEZONE_OPTIONS];
+  }
+  return TIMEZONE_OPTIONS;
+}
 
 function normalizePhoneInput(value) {
   return String(value || '').replace(/\D/g, '');
@@ -539,7 +543,7 @@ export default function Clients() {
                   </td>
                   <td className="p-3 text-gray-600">{client.city || '-'}</td>
                   <td className="p-3 text-gray-600">{client.country || '-'}</td>
-                  <td className="p-3 text-gray-500 text-xs">{(client.timezone || 'America/La_Paz').replace('America/', '')}</td>
+                  <td className="p-3 text-gray-500 text-xs">{formatTimezoneLabel(client.timezone || 'America/La_Paz')}</td>
                   <td className="p-3">
                     <div className="space-y-1">
                       <div className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-semibold ${isArchived ? 'border-gray-200 bg-gray-100 text-gray-500' : recurringMeta.className}`}>
@@ -824,7 +828,9 @@ function CreateClientModal({ onClose, onCreate, saving, sources }) {
             </Field>
             <Field label="Zona horaria">
               <select value={form.timezone} onChange={e => set('timezone', e.target.value)} className="input">
-                {TIMEZONES.map(tz => <option key={tz} value={tz}>{tz.replace('America/', '')}</option>)}
+                {getTimezoneOptions(form.timezone).map((zone) => (
+                  <option key={zone.tz} value={zone.tz}>{zone.label}</option>
+                ))}
               </select>
             </Field>
             <Field label="Modalidad">
@@ -1010,7 +1016,9 @@ function EditClientModal({ client, recurringSchedule, onClose, onSave, onRecurri
             </Field>
             <Field label="Zona horaria">
               <select value={form.timezone || 'America/La_Paz'} onChange={e => set('timezone', e.target.value)} className="input">
-                {TIMEZONES.map(tz => <option key={tz} value={tz}>{tz.replace('America/', '')}</option>)}
+                {getTimezoneOptions(form.timezone || 'America/La_Paz').map((zone) => (
+                  <option key={zone.tz} value={zone.tz}>{zone.label}</option>
+                ))}
               </select>
             </Field>
             <Field label="Modalidad">

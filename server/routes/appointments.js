@@ -69,7 +69,7 @@ router.get('/', authMiddleware, async (req, res) => {
     params.push(parseInt(limit), offset);
 
     const [rows] = await pool.query(
-      `SELECT a.*, c.first_name, c.last_name, c.phone as client_phone,
+      `SELECT a.*, c.first_name, c.last_name, c.phone as client_phone, c.timezone as client_timezone,
               p.status as payment_status, p.id as payment_id, p.amount as payment_amount,
               p.ocr_extracted_amount, p.ocr_extracted_ref, p.ocr_extracted_date, p.ocr_extracted_dest_name,
               p.receipt_file_key, p.notes as payment_notes
@@ -198,7 +198,7 @@ router.put('/:id/notes', authMiddleware, validate(appointmentNotesSchema), async
 router.get('/today', authMiddleware, async (req, res) => {
   try {
     const [rows] = await pool.query(
-      `SELECT a.*, c.first_name, c.last_name, c.phone as client_phone,
+      `SELECT a.*, c.first_name, c.last_name, c.phone as client_phone, c.timezone as client_timezone,
               p.status as payment_status, p.id as payment_id, p.amount as payment_amount,
               p.ocr_extracted_amount, p.ocr_extracted_ref, p.ocr_extracted_date, p.ocr_extracted_dest_name,
               p.receipt_file_key, p.notes as payment_notes

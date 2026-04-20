@@ -8,8 +8,92 @@ const {
   materializeRecurringOccurrence,
 } = require('./recurring');
 
+const LA_PAZ_TIMEZONE = 'America/La_Paz';
+const timezoneValidityCache = new Map();
+
+function resolveTimeZone(timeZone) {
+  const normalized = typeof timeZone === 'string' ? timeZone.trim() : '';
+  if (!normalized) return LA_PAZ_TIMEZONE;
+  if (!timezoneValidityCache.has(normalized)) {
+    try {
+      new Intl.DateTimeFormat('en-US', { timeZone: normalized });
+      timezoneValidityCache.set(normalized, true);
+    } catch (_) {
+      timezoneValidityCache.set(normalized, false);
+    }
+  }
+  return timezoneValidityCache.get(normalized) ? normalized : LA_PAZ_TIMEZONE;
+}
+
 function pad(d) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+function getDateKeyInTimeZone(value, timeZone = LA_PAZ_TIMEZONE) {
+  const date = value instanceof Date ? value : new Date(value);
+  if (!date || Number.isNaN(date.getTime())) return null;
+  const formatter = new Intl.DateTimeFormat('en-CA', {
+    timeZone: resolveTimeZone(timeZone),
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  });
+  const parts = formatter.formatToParts(date);
+  const year = parts.find((part) => part.type === 'year')?.value;
+  const month = parts.find((part) => part.type === 'month')?.value;
+  const day = parts.find((part) => part.type === 'day')?.value;
+  if (!year || !month || !day) return null;
+  return `${year}-${month}-${day}`;
+}
+
+function addDaysToDateKey(dateKey, days = 0) {
+  const baseDate = new Date(`${dateKey}T12:00:00Z`);
+  if (Number.isNaN(baseDate.getTime())) return null;
+  baseDate.setUTCDate(baseDate.getUTCDate() + days);
+  return baseDate.toISOString().slice(0, 10);
+}
+
+function getTargetDateKeyForTimezone(date, timeZone) {
+  if (date && /^\d{4}-\d{2}-\d{2}$/.test(date)) return date;
+  const todayKey = getDateKeyInTimeZone(new Date(), timeZone);
+  if (!todayKey) return null;
+  if (date === 'today') return todayKey;
+  return addDaysToDateKey(todayKey, 1);
+}
+
+function getEventDateKeyInTimeZone(event, timeZone) {
+  const eventStart = event.start?.dateTime
+    || (event.start?.date ? `${event.start.date}T12:00:00Z` : null);
+  if (!eventStart) return null;
+  return getDateKeyInTimeZone(eventStart, timeZone);
+}
+
+function buildEventScanWindow(date) {
+  let anchorDay;
+  if (date && /^\d{4}-\d{2}-\d{2}$/.test(date)) {
+    anchorDay = new Date(`${date}T00:00:00-04:00`);
+    anchorDay.setHours(0, 0, 0, 0);
+  } else {
+    anchorDay = new Date(new Date().toLocaleString('en-US', { timeZone: LA_PAZ_TIMEZONE }));
+    anchorDay.setHours(0, 0, 0, 0);
+    if (date !== 'today') {
+      anchorDay.setDate(anchorDay.getDate() + 1);
+    }
+  }
+
+  const windowStart = new Date(anchorDay);
+  windowStart.setDate(windowStart.getDate() - 1);
+  windowStart.setHours(0, 0, 0, 0);
+
+  const windowEnd = new Date(anchorDay);
+  windowEnd.setDate(windowEnd.getDate() + 3);
+  windowEnd.setHours(0, 0, 0, 0);
+
+  return {
+    timeMin: new Date(`${pad(windowStart)}T00:00:00-04:00`).toISOString(),
+    timeMax: new Date(`${pad(windowEnd)}T00:00:00-04:00`).toISOString(),
+    label: date === 'today' || date === 'tomorrow' ? date : pad(anchorDay),
+  };
 }
 
 function parseJsonSafe(value) {
@@ -50,7 +134,7 @@ async function wasReminderAlreadySent({ tenantId, appointmentId, eventId, hours 
 }
 
 async function sendAppointmentReminder(appt, eventId) {
-  const tz = appt.timezone && appt.timezone.trim() ? appt.timezone.trim() : 'America/La_Paz';
+  const tz = resolveTimeZone(appt.timezone);
   const result = await sendConfirmationTemplate(appt.phone, appt.first_name, appt.date_time, tz);
   await pool.query(
     `INSERT INTO webhooks_log (tenant_id, event, type, payload, status, client_phone, client_id, appointment_id)
@@ -74,30 +158,18 @@ async function checkAndSendReminders({ date, tenantId, force = false, appointmen
     const calendarId = process.env.CALENDAR_ID || 'danielmacleann@gmail.com';
     const canonicalPhone = phone ? normalizePhone(phone) : null;
     const targeted = !!(appointmentId || clientId || canonicalPhone);
-
-    // Determine target day in La Paz
-    let targetDay;
-    if (date && /^\d{4}-\d{2}-\d{2}$/.test(date)) {
-      targetDay = new Date(`${date}T00:00:00-04:00`);
-      targetDay.setHours(0, 0, 0, 0);
-    } else if (date === 'today') {
-      targetDay = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/La_Paz' }));
-      targetDay.setHours(0, 0, 0, 0);
-    } else {
-      targetDay = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/La_Paz' }));
-      targetDay.setDate(targetDay.getDate() + 1);
-      targetDay.setHours(0, 0, 0, 0);
-    }
-
-    const dayAfter = new Date(targetDay);
-    dayAfter.setDate(dayAfter.getDate() + 1);
-
-    const timeMin = new Date(`${pad(targetDay)}T00:00:00-04:00`).toISOString();
-    const timeMax = new Date(`${pad(dayAfter)}T00:00:00-04:00`).toISOString();
-
-    const label = date === 'today' || date === 'tomorrow' ? date : pad(targetDay);
+    const { timeMin, timeMax, label } = buildEventScanWindow(date);
     const events = await listEvents(calendarId, timeMin, timeMax);
-    console.log(`[reminder] Found ${events.length} events for ${label}`);
+    console.log(`[reminder] Found ${events.length} events for ${label} (scan ${timeMin} -> ${timeMax})`);
+
+    const targetDateByTimezone = new Map();
+    const getTargetDateKey = (timeZone) => {
+      const safeTimezone = resolveTimeZone(timeZone);
+      if (!targetDateByTimezone.has(safeTimezone)) {
+        targetDateByTimezone.set(safeTimezone, getTargetDateKeyForTimezone(date, safeTimezone));
+      }
+      return targetDateByTimezone.get(safeTimezone);
+    };
 
     let sent = 0;
     let skipped = 0;
@@ -208,6 +280,8 @@ async function checkAndSendReminders({ date, tenantId, force = false, appointmen
         continue;
       }
       const appt = appts[0];
+      const apptTimezone = resolveTimeZone(appt.timezone);
+      appt.timezone = apptTimezone;
       matched++;
 
       if (appointmentId && String(appt.id) !== String(appointmentId)) continue;
@@ -215,6 +289,14 @@ async function checkAndSendReminders({ date, tenantId, force = false, appointmen
       if (canonicalPhone && normalizePhone(appt.phone) !== canonicalPhone) continue;
       if (targeted) {
         targetFound = true;
+      }
+
+      if (!appointmentId) {
+        const eventDateKey = getEventDateKeyInTimeZone(event, apptTimezone);
+        const targetDateKey = getTargetDateKey(apptTimezone);
+        if (!eventDateKey || !targetDateKey || eventDateKey !== targetDateKey) {
+          continue;
+        }
       }
 
       // Dedup: check if reminder already sent for this specific appointment (by appointment_id or gcal event_id)

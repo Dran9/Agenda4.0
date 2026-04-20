@@ -71,7 +71,7 @@ export default function AdminLayout({ children, title, sidebarSubItems = [] }) {
       {/* Sidebar */}
       <aside
         className={`
-        fixed inset-y-0 left-0 z-30 w-64 transform transition-transform
+        fixed inset-y-0 left-0 z-30 w-[12.8rem] transform transition-transform
         lg:translate-x-0 lg:static lg:inset-0
         ${themeClasses.aside}
         ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}

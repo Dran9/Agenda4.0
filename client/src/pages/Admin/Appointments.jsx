@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { Fragment, useState, useEffect, useCallback } from 'react';
 import {
   Trash2,
   Search,
@@ -9,6 +9,8 @@ import {
   AlertTriangle,
   CheckCircle2,
   LoaderCircle,
+  ChevronDown,
+  ChevronUp,
 } from 'lucide-react';
 import AdminLayout from '../../components/AdminLayout';
 import InlineConfirmButton from '../../components/InlineConfirmButton';
@@ -265,6 +267,7 @@ export default function Appointments() {
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
   const [selected, setSelected] = useState(new Set());
+  const [expandedRows, setExpandedRows] = useState(new Set());
   const [savingRecurringClientId, setSavingRecurringClientId] = useState(null);
   const [recurringModal, setRecurringModal] = useState(null);
   const [loadingRecurringModal, setLoadingRecurringModal] = useState(false);
@@ -300,6 +303,7 @@ export default function Appointments() {
       setAppointments(data.appointments);
       setTotal(data.total);
       setSelected(new Set());
+      setExpandedRows(new Set());
     } catch (err) {
       console.error(err);
     } finally {
@@ -437,6 +441,14 @@ export default function Appointments() {
       const n = new Set(prev);
       if (n.has(id)) n.delete(id); else n.add(id);
       return n;
+    });
+  }
+
+  function toggleRowExpanded(id) {
+    setExpandedRows((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
     });
   }
 
@@ -596,7 +608,7 @@ export default function Appointments() {
           <div className="p-8 text-center text-gray-400">Cargando...</div>
         ) : (
           <>
-            <table className="w-full min-w-[2080px] text-sm">
+            <table className="w-full min-w-[1120px] text-sm">
               <thead>
                 <tr className="text-xs text-gray-500 border-b border-gray-100 bg-gray-50">
                   <th className="p-3 w-10">
@@ -611,195 +623,252 @@ export default function Appointments() {
                   <th className="text-left p-3 font-medium min-w-[90px]">Hora</th>
                   <th className="text-left p-3 font-medium min-w-[220px]">Cliente</th>
                   <th className="text-left p-3 font-medium min-w-[170px]">Teléfono</th>
-                  <th className="text-left p-3 font-medium min-w-[280px]">Zona horaria</th>
-                  <th className="text-left p-3 font-medium min-w-[210px]">Recurrencia</th>
-                  <th className="text-left p-3 font-medium min-w-[110px]">Registro</th>
-                  <th className="text-left p-3 font-medium min-w-[150px]">Status</th>
-                  <th className="text-left p-3 font-medium min-w-[340px]">Pago</th>
-                  <th className="text-left p-3 font-medium min-w-[220px]">Reminder</th>
-                  <th className="text-left p-3 font-medium min-w-[260px]">Calendar ID</th>
-                  <th className="text-left p-3 font-medium w-10"></th>
+                  <th className="text-left p-3 font-medium min-w-[170px]">Status</th>
+                  <th className="text-left p-3 font-medium min-w-[140px]">Pago</th>
+                  <th className="text-left p-3 font-medium min-w-[130px]">Detalle</th>
                 </tr>
               </thead>
               <tbody>
-                {appointments.map(appt => {
+                {appointments.map((appt, index) => {
                   const recurringSchedule = recurringByClient.get(appt.client_id) || null;
                   const recurringMeta = getRecurringFieldMeta(recurringSchedule);
                   const timezoneValue = appt.client_timezone || 'America/La_Paz';
+                  const isExpanded = expandedRows.has(appt.id);
+                  const rowTone = index % 2 === 0 ? 'bg-white' : 'bg-gray-50';
+                  const paymentStatus = appt.payment_status || 'Pendiente';
+                  const paymentLabel = appt.payment_id ? (PAYMENT_LABELS[paymentStatus] || paymentStatus) : 'Sin pago';
+
                   return (
-                  <tr key={appt.id} className="border-b border-gray-50 hover:bg-gray-50">
-                    <td className="p-3">
-                      <input
-                        type="checkbox"
-                        checked={selected.has(appt.id)}
-                        onChange={() => toggleSelect(appt.id)}
-                        className="w-4 h-4 accent-black rounded"
-                      />
-                    </td>
-                    <td className="p-3 capitalize whitespace-nowrap">
-                      <div className="flex items-center gap-2">
-                        {appt.source_schedule_id ? <Repeat size={14} className="text-blue-500" /> : null}
-                        <span>{formatDateBolivia(appt.date_time)}</span>
-                      </div>
-                    </td>
-                    <td className="p-3 font-medium whitespace-nowrap">{formatTimeBolivia(appt.date_time)}</td>
-                    <td className="p-3 whitespace-nowrap">{appt.first_name} {appt.last_name}</td>
-                    <td className="p-3 whitespace-nowrap">
-                      <a href={`https://wa.me/${appt.client_phone}`} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">
-                        {appt.client_phone}
-                      </a>
-                    </td>
-                    <td className="p-3 align-top">
-                      <select
-                        value={timezoneValue}
-                        onChange={e => handleClientTimezoneChange(appt.client_id, e.target.value)}
-                        className="w-full rounded-lg border border-gray-200 bg-white px-2 py-1 text-xs text-gray-600"
+                    <Fragment key={appt.id}>
+                      <tr
+                        className={`border-b border-gray-100 transition-colors cursor-pointer ${rowTone} ${isExpanded ? 'shadow-[inset_0_0_0_1px_rgba(148,163,184,0.3)]' : 'hover:bg-slate-50'}`}
+                        onClick={() => toggleRowExpanded(appt.id)}
                       >
-                        {getTimezoneOptions(timezoneValue).map((zone) => (
-                          <option key={zone.tz} value={zone.tz}>
-                            {zone.label}
-                          </option>
-                        ))}
-                      </select>
-                      <div className="mt-1 text-[11px] text-gray-400">{formatTimezoneLabel(timezoneValue)}</div>
-                    </td>
-                    <td className="p-3 align-top">
-                      <div className="space-y-1">
-                        <div className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-semibold ${recurringMeta.className}`}>
-                          {recurringMeta.label}
-                        </div>
-                        {recurringMeta.detail ? (
-                          <div className="inline-flex items-center gap-1 text-[11px] font-medium text-gray-500">
-                            <Repeat size={11} className="text-gray-400" />
-                            <span>{recurringMeta.detail}</span>
+                        <td className="p-3" onClick={(e) => e.stopPropagation()}>
+                          <input
+                            type="checkbox"
+                            checked={selected.has(appt.id)}
+                            onChange={() => toggleSelect(appt.id)}
+                            className="w-4 h-4 accent-black rounded"
+                          />
+                        </td>
+                        <td className="p-3 capitalize whitespace-nowrap">
+                          <div className="flex items-center gap-2">
+                            {appt.source_schedule_id ? <Repeat size={14} className="text-blue-500" /> : null}
+                            <span>{formatDateBolivia(appt.date_time)}</span>
                           </div>
-                        ) : null}
-                        <button
-                          type="button"
-                          onClick={() => openRecurringModal(appt, recurringSchedule)}
-                          disabled={loadingRecurringModal || savingRecurringClientId === appt.client_id}
-                          className="inline-flex rounded-lg border border-gray-200 px-2.5 py-1 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-60"
-                        >
-                          {recurringSchedule && !recurringSchedule.ended_at ? 'Editar recurrencia' : 'Poner en recurrencia'}
-                        </button>
-                        {recurringSchedule && !recurringSchedule.ended_at ? (
-                          <div className="flex flex-wrap gap-2">
-                            {!recurringSchedule.paused_at ? (
-                              <button
-                                type="button"
-                                onClick={() => handleRecurringQuickAction(appt, recurringSchedule, 'pause')}
-                                disabled={savingRecurringClientId === appt.client_id}
-                                className="rounded-lg border border-amber-200 px-2.5 py-1 text-xs font-medium text-amber-700 hover:bg-amber-50 disabled:opacity-60"
-                              >
-                                Pausar
-                              </button>
-                            ) : (
-                              <button
-                                type="button"
-                                onClick={() => handleRecurringQuickAction(appt, recurringSchedule, 'resume')}
-                                disabled={savingRecurringClientId === appt.client_id}
-                                className="rounded-lg border border-emerald-200 px-2.5 py-1 text-xs font-medium text-emerald-700 hover:bg-emerald-50 disabled:opacity-60"
-                              >
-                                Reactivar
-                              </button>
-                            )}
-                            <InlineConfirmButton
-                              onConfirm={() => handleRecurringQuickAction(appt, recurringSchedule, 'end')}
-                              confirmLabel="Confirmar"
-                              cancelLabel="Cancelar"
-                              compactCancel
-                              wrapperClassName="flex items-center gap-2"
-                              idleClassName="rounded-lg border border-rose-200 px-2.5 py-1 text-xs font-medium text-rose-700 hover:bg-rose-50 disabled:opacity-60"
-                              confirmClassName="inline-flex items-center gap-1 rounded-lg border border-rose-200 bg-rose-50 px-2.5 py-1 text-xs font-medium text-rose-700 hover:bg-rose-100"
-                              cancelClassName="inline-flex items-center justify-center rounded-lg border border-gray-200 p-1 text-gray-500 hover:bg-gray-50"
-                              disabled={savingRecurringClientId === appt.client_id}
-                            >
-                              Quitar
-                            </InlineConfirmButton>
-                          </div>
-                        ) : null}
-                      </div>
-                    </td>
-                    <td className="p-3 text-xs text-gray-400 whitespace-nowrap">{formatRegistro(appt.created_at)}</td>
-                    <td className="p-3 align-top">
-                      <select
-                        value={appt.status}
-                        onChange={e => handleStatusChange(appt.id, e.target.value)}
-                        className={`text-xs px-2 py-1 rounded-full font-medium border appearance-none cursor-pointer ${STATUS_STYLES[appt.status] || 'bg-gray-100 text-gray-600 border-gray-200'}`}
-                      >
-                        {STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
-                      </select>
-                    </td>
-                    <td className="p-3 align-top">
-                      {appt.payment_id ? (
-                        <div className="max-w-[320px]">
+                        </td>
+                        <td className="p-3 font-medium whitespace-nowrap">{formatTimeBolivia(appt.date_time)}</td>
+                        <td className="p-3">
+                          <div className="font-medium text-gray-800">{appt.first_name} {appt.last_name}</div>
+                          <div className="mt-1 text-[11px] text-gray-400">{formatTimezoneLabel(timezoneValue)}</div>
+                        </td>
+                        <td className="p-3 whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
+                          <a href={`https://wa.me/${appt.client_phone}`} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">
+                            {appt.client_phone}
+                          </a>
+                        </td>
+                        <td className="p-3" onClick={(e) => e.stopPropagation()}>
                           <select
-                            value={appt.payment_status || 'Pendiente'}
-                            onChange={e => handlePaymentChange(appt, e.target.value)}
-                            className={`text-xs px-2 py-1 rounded-full font-medium border appearance-none cursor-pointer ${PAYMENT_STYLES[appt.payment_status] || PAYMENT_STYLES.Pendiente}`}
+                            value={appt.status}
+                            onChange={e => handleStatusChange(appt.id, e.target.value)}
+                            className={`text-xs px-2 py-1 rounded-full font-medium border appearance-none cursor-pointer ${STATUS_STYLES[appt.status] || 'bg-gray-100 text-gray-600 border-gray-200'}`}
                           >
-                            {PAYMENT_STATUSES.map(s => <option key={s} value={s}>{PAYMENT_LABELS[s]}</option>)}
+                            {STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
                           </select>
-                          <ReceiptSummary appt={appt} />
-                        </div>
-                      ) : (
-                        <span className="text-xs text-gray-300">—</span>
-                      )}
-                    </td>
-                    <td className="p-3 align-top">
-                      {['Agendada', 'Confirmada', 'Reagendada'].includes(appt.status) ? (
-                        <div className="flex flex-wrap items-center gap-2">
-                          <ReminderActionButton
-                            icon={BellRing}
-                            label="Enviar"
-                            confirmLabel="¿Enviar?"
-                            successLabel="Enviado"
-                            title="Enviar solo a esta cita si aún no salió"
-                            disabled={sendingReminderAppointmentId === appt.id}
-                            onConfirm={() => handleReminderSend(appt, false)}
-                          />
-                          <ReminderActionButton
-                            icon={RotateCcw}
-                            label="Reenviar"
-                            confirmLabel="¿Reenviar?"
-                            successLabel="Reenviado"
-                            title="Reenviar solo a esta cita"
-                            disabled={sendingReminderAppointmentId === appt.id}
-                            onConfirm={() => handleReminderSend(appt, true)}
-                          />
-                        </div>
-                      ) : (
-                        <span className="text-xs text-gray-300">—</span>
-                      )}
-                    </td>
-                    <td className="p-3 align-top">
-                      {appt.gcal_event_id ? (
-                        <div className="max-w-[240px] break-all font-mono text-[11px] text-gray-500">
-                          {appt.gcal_event_id}
-                        </div>
-                      ) : (
-                        <span className="text-xs text-gray-300">—</span>
-                      )}
-                    </td>
-                    <td className="p-3 align-top">
-                      <InlineConfirmButton
-                        onConfirm={() => handleDelete(appt.id)}
-                        confirmLabel="¿Confirmas?"
-                        cancelLabel="Cancelar"
-                        compactCancel
-                        wrapperClassName="flex items-center justify-end gap-1"
-                        idleClassName="inline-flex items-center justify-center rounded-lg bg-[#B34E35] p-1.5 text-white transition hover:bg-[#9f452f]"
-                        confirmClassName="inline-flex items-center gap-1 rounded-lg bg-[#FF2C2C] px-2 py-1 text-xs font-medium text-white transition hover:bg-[#e32727]"
-                        cancelClassName="inline-flex items-center justify-center rounded-lg border border-gray-200 p-1 text-gray-500 hover:bg-gray-50"
-                        idleTitle="Eliminar"
-                      >
-                        <Trash2 size={15} />
-                      </InlineConfirmButton>
-                    </td>
-                  </tr>
-                )})}
+                        </td>
+                        <td className="p-3">
+                          {appt.payment_id ? (
+                            <span className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-semibold ${PAYMENT_STYLES[paymentStatus] || PAYMENT_STYLES.Pendiente}`}>
+                              {paymentLabel}
+                            </span>
+                          ) : (
+                            <span className="text-xs text-gray-300">Sin pago</span>
+                          )}
+                        </td>
+                        <td className="p-3" onClick={(e) => e.stopPropagation()}>
+                          <button
+                            type="button"
+                            onClick={() => toggleRowExpanded(appt.id)}
+                            className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-2.5 py-1 text-xs font-medium text-gray-600 hover:bg-gray-100"
+                          >
+                            {isExpanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+                            {isExpanded ? 'Ocultar' : 'Ver'}
+                          </button>
+                        </td>
+                      </tr>
+
+                      {isExpanded ? (
+                        <tr className={`border-b border-gray-100 ${index % 2 === 0 ? 'bg-gray-50' : 'bg-white'}`}>
+                          <td colSpan={8} className="p-0">
+                            <div className="grid gap-4 p-4 lg:grid-cols-3">
+                              <div className="rounded-xl border border-gray-200 bg-white p-3">
+                                <div className="text-[11px] font-semibold uppercase tracking-[0.08em] text-gray-400">Zona y recurrencia</div>
+                                <div className="mt-3 space-y-3">
+                                  <div>
+                                    <label className="text-xs font-medium text-gray-500">Zona horaria</label>
+                                    <select
+                                      value={timezoneValue}
+                                      onChange={e => handleClientTimezoneChange(appt.client_id, e.target.value)}
+                                      className="mt-1 w-full rounded-lg border border-gray-200 bg-white px-2 py-1 text-xs text-gray-600"
+                                    >
+                                      {getTimezoneOptions(timezoneValue).map((zone) => (
+                                        <option key={zone.tz} value={zone.tz}>
+                                          {zone.label}
+                                        </option>
+                                      ))}
+                                    </select>
+                                  </div>
+
+                                  <div className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-semibold ${recurringMeta.className}`}>
+                                    {recurringMeta.label}
+                                  </div>
+                                  {recurringMeta.detail ? (
+                                    <div className="inline-flex items-center gap-1 text-[11px] font-medium text-gray-500">
+                                      <Repeat size={11} className="text-gray-400" />
+                                      <span>{recurringMeta.detail}</span>
+                                    </div>
+                                  ) : null}
+
+                                  <button
+                                    type="button"
+                                    onClick={() => openRecurringModal(appt, recurringSchedule)}
+                                    disabled={loadingRecurringModal || savingRecurringClientId === appt.client_id}
+                                    className="inline-flex rounded-lg border border-gray-200 px-2.5 py-1 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-60"
+                                  >
+                                    {recurringSchedule && !recurringSchedule.ended_at ? 'Editar recurrencia' : 'Poner en recurrencia'}
+                                  </button>
+
+                                  {recurringSchedule && !recurringSchedule.ended_at ? (
+                                    <div className="flex flex-wrap gap-2">
+                                      {!recurringSchedule.paused_at ? (
+                                        <button
+                                          type="button"
+                                          onClick={() => handleRecurringQuickAction(appt, recurringSchedule, 'pause')}
+                                          disabled={savingRecurringClientId === appt.client_id}
+                                          className="rounded-lg border border-amber-200 px-2.5 py-1 text-xs font-medium text-amber-700 hover:bg-amber-50 disabled:opacity-60"
+                                        >
+                                          Pausar
+                                        </button>
+                                      ) : (
+                                        <button
+                                          type="button"
+                                          onClick={() => handleRecurringQuickAction(appt, recurringSchedule, 'resume')}
+                                          disabled={savingRecurringClientId === appt.client_id}
+                                          className="rounded-lg border border-emerald-200 px-2.5 py-1 text-xs font-medium text-emerald-700 hover:bg-emerald-50 disabled:opacity-60"
+                                        >
+                                          Reactivar
+                                        </button>
+                                      )}
+                                      <InlineConfirmButton
+                                        onConfirm={() => handleRecurringQuickAction(appt, recurringSchedule, 'end')}
+                                        confirmLabel="Confirmar"
+                                        cancelLabel="Cancelar"
+                                        compactCancel
+                                        wrapperClassName="flex items-center gap-2"
+                                        idleClassName="rounded-lg border border-rose-200 px-2.5 py-1 text-xs font-medium text-rose-700 hover:bg-rose-50 disabled:opacity-60"
+                                        confirmClassName="inline-flex items-center gap-1 rounded-lg border border-rose-200 bg-rose-50 px-2.5 py-1 text-xs font-medium text-rose-700 hover:bg-rose-100"
+                                        cancelClassName="inline-flex items-center justify-center rounded-lg border border-gray-200 p-1 text-gray-500 hover:bg-gray-50"
+                                        disabled={savingRecurringClientId === appt.client_id}
+                                      >
+                                        Quitar
+                                      </InlineConfirmButton>
+                                    </div>
+                                  ) : null}
+                                </div>
+                              </div>
+
+                              <div className="rounded-xl border border-gray-200 bg-white p-3">
+                                <div className="text-[11px] font-semibold uppercase tracking-[0.08em] text-gray-400">Pago y OCR</div>
+                                <div className="mt-3 space-y-3">
+                                  {appt.payment_id ? (
+                                    <>
+                                      <select
+                                        value={paymentStatus}
+                                        onChange={e => handlePaymentChange(appt, e.target.value)}
+                                        className={`text-xs px-2 py-1 rounded-full font-medium border appearance-none cursor-pointer ${PAYMENT_STYLES[paymentStatus] || PAYMENT_STYLES.Pendiente}`}
+                                      >
+                                        {PAYMENT_STATUSES.map(s => <option key={s} value={s}>{PAYMENT_LABELS[s]}</option>)}
+                                      </select>
+                                      <ReceiptSummary appt={appt} />
+                                    </>
+                                  ) : (
+                                    <div className="rounded-lg border border-dashed border-gray-200 bg-gray-50 px-3 py-2 text-xs text-gray-400">
+                                      Esta cita no tiene registro de pago.
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+
+                              <div className="rounded-xl border border-gray-200 bg-white p-3">
+                                <div className="text-[11px] font-semibold uppercase tracking-[0.08em] text-gray-400">Recordatorios y referencia</div>
+                                <div className="mt-3 space-y-3">
+                                  {['Agendada', 'Confirmada', 'Reagendada'].includes(appt.status) ? (
+                                    <div className="flex flex-wrap items-center gap-2">
+                                      <ReminderActionButton
+                                        icon={BellRing}
+                                        label="Enviar"
+                                        confirmLabel="¿Enviar?"
+                                        successLabel="Enviado"
+                                        title="Enviar solo a esta cita si aún no salió"
+                                        disabled={sendingReminderAppointmentId === appt.id}
+                                        onConfirm={() => handleReminderSend(appt, false)}
+                                      />
+                                      <ReminderActionButton
+                                        icon={RotateCcw}
+                                        label="Reenviar"
+                                        confirmLabel="¿Reenviar?"
+                                        successLabel="Reenviado"
+                                        title="Reenviar solo a esta cita"
+                                        disabled={sendingReminderAppointmentId === appt.id}
+                                        onConfirm={() => handleReminderSend(appt, true)}
+                                      />
+                                    </div>
+                                  ) : (
+                                    <div className="rounded-lg border border-dashed border-gray-200 bg-gray-50 px-3 py-2 text-xs text-gray-400">
+                                      No corresponde enviar recordatorio en estado {appt.status}.
+                                    </div>
+                                  )}
+
+                                  <div>
+                                    <div className="text-xs font-medium text-gray-500">Calendar ID</div>
+                                    {appt.gcal_event_id ? (
+                                      <div className="mt-1 max-w-[320px] break-all rounded bg-gray-50 px-2 py-1 font-mono text-[11px] text-gray-500">
+                                        {appt.gcal_event_id}
+                                      </div>
+                                    ) : (
+                                      <div className="mt-1 text-xs text-gray-300">Sin ID de calendario</div>
+                                    )}
+                                  </div>
+
+                                  <div className="text-xs text-gray-400">
+                                    Registro: {formatRegistro(appt.created_at)}
+                                  </div>
+
+                                  <InlineConfirmButton
+                                    onConfirm={() => handleDelete(appt.id)}
+                                    confirmLabel="¿Confirmas?"
+                                    cancelLabel="Cancelar"
+                                    compactCancel
+                                    wrapperClassName="flex items-center gap-2"
+                                    idleClassName="inline-flex items-center rounded-lg bg-[#B34E35] px-2.5 py-1.5 text-xs font-medium text-white transition hover:bg-[#9f452f]"
+                                    confirmClassName="inline-flex items-center gap-1 rounded-lg bg-[#FF2C2C] px-2.5 py-1 text-xs font-medium text-white transition hover:bg-[#e32727]"
+                                    cancelClassName="inline-flex items-center justify-center rounded-lg border border-gray-200 p-1 text-gray-500 hover:bg-gray-50"
+                                  >
+                                    <Trash2 size={14} />
+                                    Eliminar cita
+                                  </InlineConfirmButton>
+                                </div>
+                              </div>
+                            </div>
+                          </td>
+                        </tr>
+                      ) : null}
+                    </Fragment>
+                  );
+                })}
                 {appointments.length === 0 && (
-                  <tr><td colSpan={13} className="p-8 text-center text-gray-400">Sin citas</td></tr>
+                  <tr><td colSpan={8} className="p-8 text-center text-gray-400">Sin citas</td></tr>
                 )}
               </tbody>
             </table>

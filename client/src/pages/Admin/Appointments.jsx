@@ -608,7 +608,7 @@ export default function Appointments() {
           <div className="p-8 text-center text-gray-400">Cargando...</div>
         ) : (
           <>
-            <table className="w-full min-w-[1120px] text-sm">
+            <table className="w-full min-w-[1380px] text-sm">
               <thead>
                 <tr className="text-xs text-gray-500 border-b border-gray-100 bg-gray-50">
                   <th className="p-3 w-10">
@@ -623,8 +623,11 @@ export default function Appointments() {
                   <th className="text-left p-3 font-medium min-w-[90px]">Hora</th>
                   <th className="text-left p-3 font-medium min-w-[220px]">Cliente</th>
                   <th className="text-left p-3 font-medium min-w-[170px]">Teléfono</th>
+                  <th className="text-left p-3 font-medium min-w-[210px]">Zona horaria</th>
+                  <th className="text-left p-3 font-medium min-w-[160px]">Recurrencia</th>
                   <th className="text-left p-3 font-medium min-w-[170px]">Status</th>
                   <th className="text-left p-3 font-medium min-w-[140px]">Pago</th>
+                  <th className="text-left p-3 font-medium min-w-[110px]">Eliminar</th>
                   <th className="text-left p-3 font-medium min-w-[130px]">Detalle</th>
                 </tr>
               </thead>
@@ -634,14 +637,18 @@ export default function Appointments() {
                   const recurringMeta = getRecurringFieldMeta(recurringSchedule);
                   const timezoneValue = appt.client_timezone || 'America/La_Paz';
                   const isExpanded = expandedRows.has(appt.id);
-                  const rowTone = index % 2 === 0 ? 'bg-white' : 'bg-gray-50';
+                  const rowTone = index % 2 === 0 ? 'appointments-zebra-even' : 'appointments-zebra-odd';
                   const paymentStatus = appt.payment_status || 'Pendiente';
                   const paymentLabel = appt.payment_id ? (PAYMENT_LABELS[paymentStatus] || paymentStatus) : 'Sin pago';
+                  const recurringButtonLabel = recurringMeta.label === '—' ? 'No recurrente' : recurringMeta.label;
+                  const recurringButtonClassName = recurringMeta.label === '—'
+                    ? 'border-gray-200 bg-white text-gray-500 hover:bg-gray-50'
+                    : `${recurringMeta.className} hover:brightness-[0.98]`;
 
                   return (
                     <Fragment key={appt.id}>
                       <tr
-                        className={`border-b border-gray-100 transition-colors cursor-pointer ${rowTone} ${isExpanded ? 'shadow-[inset_0_0_0_1px_rgba(148,163,184,0.3)]' : 'hover:bg-slate-50'}`}
+                        className={`border-b border-gray-100 transition-colors cursor-pointer appointments-zebra-hover ${rowTone} ${isExpanded ? 'shadow-[inset_0_0_0_1px_rgba(148,163,184,0.3)]' : ''}`}
                         onClick={() => toggleRowExpanded(appt.id)}
                       >
                         <td className="p-3" onClick={(e) => e.stopPropagation()}>
@@ -661,12 +668,24 @@ export default function Appointments() {
                         <td className="p-3 font-medium whitespace-nowrap">{formatTimeBolivia(appt.date_time)}</td>
                         <td className="p-3">
                           <div className="font-medium text-gray-800">{appt.first_name} {appt.last_name}</div>
-                          <div className="mt-1 text-[11px] text-gray-400">{formatTimezoneLabel(timezoneValue)}</div>
                         </td>
                         <td className="p-3 whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
                           <a href={`https://wa.me/${appt.client_phone}`} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">
                             {appt.client_phone}
                           </a>
+                        </td>
+                        <td className="p-3 text-xs text-gray-500 whitespace-nowrap">
+                          {formatTimezoneLabel(timezoneValue)}
+                        </td>
+                        <td className="p-3" onClick={(e) => e.stopPropagation()}>
+                          <button
+                            type="button"
+                            onClick={() => openRecurringModal(appt, recurringSchedule)}
+                            disabled={loadingRecurringModal || savingRecurringClientId === appt.client_id}
+                            className={`inline-flex items-center rounded-full border px-3 py-1 text-xs font-semibold transition disabled:opacity-60 ${recurringButtonClassName}`}
+                          >
+                            {recurringButtonLabel}
+                          </button>
                         </td>
                         <td className="p-3" onClick={(e) => e.stopPropagation()}>
                           <select
@@ -687,20 +706,33 @@ export default function Appointments() {
                           )}
                         </td>
                         <td className="p-3" onClick={(e) => e.stopPropagation()}>
+                          <InlineConfirmButton
+                            onConfirm={() => handleDelete(appt.id)}
+                            confirmLabel="¿Confirmas?"
+                            cancelLabel="Cancelar"
+                            compactCancel
+                            wrapperClassName="flex items-center gap-2"
+                            idleClassName="inline-flex items-center rounded-lg bg-[#B34E35] px-2.5 py-1.5 text-xs font-medium text-white transition hover:bg-[#9f452f]"
+                            confirmClassName="inline-flex items-center gap-1 rounded-lg bg-[#FF2C2C] px-2.5 py-1 text-xs font-medium text-white transition hover:bg-[#e32727]"
+                            cancelClassName="inline-flex items-center justify-center rounded-lg border border-gray-200 p-1 text-gray-500 hover:bg-gray-50"
+                          >
+                            <Trash2 size={14} />
+                          </InlineConfirmButton>
+                        </td>
+                        <td className="p-3" onClick={(e) => e.stopPropagation()}>
                           <button
                             type="button"
                             onClick={() => toggleRowExpanded(appt.id)}
-                            className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-2.5 py-1 text-xs font-medium text-gray-600 hover:bg-gray-100"
+                            className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-gray-200 bg-white text-gray-600 hover:bg-gray-100"
                           >
                             {isExpanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
-                            {isExpanded ? 'Ocultar' : 'Ver'}
                           </button>
                         </td>
                       </tr>
 
                       {isExpanded ? (
-                        <tr className={`border-b border-gray-100 ${index % 2 === 0 ? 'bg-gray-50' : 'bg-white'}`}>
-                          <td colSpan={8} className="p-0">
+                        <tr className={`border-b border-gray-100 ${index % 2 === 0 ? 'appointments-zebra-odd' : 'appointments-zebra-even'}`}>
+                          <td colSpan={11} className="p-0">
                             <div className="grid gap-4 p-4 lg:grid-cols-3">
                               <div className="rounded-xl border border-gray-200 bg-white p-3">
                                 <div className="text-[11px] font-semibold uppercase tracking-[0.08em] text-gray-400">Zona y recurrencia</div>
@@ -868,7 +900,7 @@ export default function Appointments() {
                   );
                 })}
                 {appointments.length === 0 && (
-                  <tr><td colSpan={8} className="p-8 text-center text-gray-400">Sin citas</td></tr>
+                  <tr><td colSpan={11} className="p-8 text-center text-gray-400">Sin citas</td></tr>
                 )}
               </tbody>
             </table>

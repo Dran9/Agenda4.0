@@ -264,6 +264,30 @@ body[data-ui-theme='dark'] {
   color: #ffffff;
 }
 
+.appointments-zebra-even {
+  background-color: #ffffff;
+}
+
+.appointments-zebra-odd {
+  background-color: #f1f5f9;
+}
+
+.appointments-zebra-hover:hover {
+  background-color: #e9eef5;
+}
+
+.admin-shell.theme-dark .appointments-zebra-even {
+  background-color: rgba(10, 16, 22, 0.8);
+}
+
+.admin-shell.theme-dark .appointments-zebra-odd {
+  background-color: rgba(255, 255, 255, 0.09);
+}
+
+.admin-shell.theme-dark .appointments-zebra-hover:hover {
+  background-color: rgba(255, 255, 255, 0.13);
+}
+
 .admin-shell.theme-dark.admin-contrast .text-slate-400,
 .admin-shell.theme-dark.admin-contrast .text-gray-400 {
   color: #8d9aaa !important;

@@ -1,5 +1,5 @@
-import { Fragment, useState, useEffect, useCallback } from 'react';
-import { Plus, Trash2, X, Search, Repeat, ChevronDown, ChevronUp } from 'lucide-react';
+import { useState, useEffect, useCallback } from 'react';
+import { Plus, Trash2, X, Search, Repeat } from 'lucide-react';
 import AdminLayout from '../../components/AdminLayout';
 import InlineConfirmButton from '../../components/InlineConfirmButton';
 import RecurringQuickModal from '../../components/RecurringQuickModal';
@@ -8,7 +8,7 @@ import { getRecurringSyncIssue, pickDefaultRecurringSource } from '../../utils/r
 import { useToast, Toast } from '../../hooks/useToast';
 import useAdminEvents from '../../hooks/useAdminEvents';
 import { formatTimeBolivia, formatWeekdayShort, getBoliviaDateKey } from '../../utils/dates';
-import { TIMEZONE_OPTIONS, formatTimezoneLabel } from '../../utils/timezones';
+import { TIMEZONE_OPTIONS } from '../../utils/timezones';
 
 const DEFAULT_STATUSES = [
   { name: 'Nuevo', color: '#3B82F6' },
@@ -163,7 +163,6 @@ export default function Clients() {
   const [recurringModal, setRecurringModal] = useState(null);
   const [loadingRecurringModal, setLoadingRecurringModal] = useState(false);
   const [archiveView, setArchiveView] = useState('active');
-  const [expandedRows, setExpandedRows] = useState(new Set());
 
   const loadClients = useCallback(async () => {
     setLoading(true);
@@ -220,7 +219,6 @@ export default function Clients() {
 
   useEffect(() => {
     setSelected(new Set());
-    setExpandedRows(new Set());
   }, [archiveView]);
 
   // Real-time updates via SSE
@@ -376,15 +374,6 @@ export default function Clients() {
       const n = new Set(prev);
       if (n.has(id)) n.delete(id); else n.add(id);
       return n;
-    });
-  }
-
-  function toggleRowExpanded(id) {
-    setExpandedRows((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
     });
   }
 
@@ -563,7 +552,7 @@ export default function Clients() {
         {loading ? (
           <div className="p-8 text-center text-gray-400">Cargando...</div>
         ) : (
-          <table className="w-full min-w-[1280px] text-sm">
+          <table className="w-full min-w-[1760px] text-sm">
             <thead>
               <tr className="text-xs text-gray-500 border-b border-gray-100 bg-gray-50">
                 <th className="p-3 w-10">
@@ -575,14 +564,12 @@ export default function Clients() {
                   />
                 </th>
                 <th className="text-left p-3 font-medium min-w-[220px]">Cliente</th>
-                <th className="text-left p-3 font-medium min-w-[170px]">Teléfono</th>
-                <th className="text-left p-3 font-medium min-w-[140px]">Ciudad</th>
-                <th className="text-left p-3 font-medium min-w-[220px]">Zona horaria</th>
-                <th className="text-left p-3 font-medium min-w-[160px]">Recurrencia</th>
-                <th className="text-left p-3 font-medium min-w-[160px]">Status</th>
-                <th className="text-left p-3 font-medium min-w-[130px]">Arancel</th>
-                <th className="text-left p-3 font-medium min-w-[210px]">Perfil Stripe</th>
-                <th className="text-left p-3 font-medium min-w-[110px]">Detalle</th>
+                <th className="text-left p-3 font-medium min-w-[220px]">Ubicación y zona</th>
+                <th className="text-left p-3 font-medium min-w-[300px]">Recurrencia</th>
+                <th className="text-left p-3 font-medium min-w-[240px]">Status y retención</th>
+                <th className="text-left p-3 font-medium min-w-[280px]">Arancel y perfil Stripe</th>
+                <th className="text-left p-3 font-medium min-w-[230px]">Fuente y sesiones</th>
+                <th className="text-left p-3 font-medium min-w-[250px]">Acciones</th>
               </tr>
             </thead>
             <tbody>
@@ -590,7 +577,6 @@ export default function Clients() {
                 const recurringSchedule = recurringByClient.get(client.id) || null;
                 const recurringMeta = getRecurringFieldMeta(recurringSchedule);
                 const isArchived = Boolean(client.deleted_at);
-                const isExpanded = expandedRows.has(client.id);
                 const rowTone = index % 2 === 0 ? 'appointments-zebra-even' : 'appointments-zebra-odd';
                 const recurringButtonLabel = isArchived
                   ? 'Archivado'
@@ -604,314 +590,244 @@ export default function Clients() {
                     : `${recurringMeta.className} hover:brightness-[0.98]`;
 
                 return (
-                  <Fragment key={client.id}>
-                    <tr
-                      className={`border-b border-gray-100 transition-colors cursor-pointer appointments-zebra-hover ${rowTone} ${isExpanded ? 'shadow-[inset_0_0_0_1px_rgba(148,163,184,0.3)]' : ''}`}
-                      onClick={() => toggleRowExpanded(client.id)}
-                    >
-                      <td className="p-3" onClick={(e) => e.stopPropagation()}>
-                        <input
-                          type="checkbox"
-                          checked={selected.has(client.id)}
-                          onChange={() => toggleSelect(client.id)}
-                          className="w-4 h-4 accent-black rounded"
-                        />
-                      </td>
-                      <td className="p-3">
+                  <tr key={client.id} className={`border-b border-gray-100 align-top transition-colors appointments-zebra-hover ${rowTone}`}>
+                    <td className="p-3">
+                      <input
+                        type="checkbox"
+                        checked={selected.has(client.id)}
+                        onChange={() => toggleSelect(client.id)}
+                        className="w-4 h-4 accent-black rounded"
+                      />
+                    </td>
+
+                    <td className="p-3">
+                      <button
+                        type="button"
+                        onClick={() => setEditClient(client)}
+                        className="text-left hover:text-blue-600"
+                      >
                         <div className="font-medium text-gray-800">{client.first_name} {client.last_name}</div>
-                        <div className="text-xs text-gray-500">{client.country || '-'}</div>
-                      </td>
-                      <td className="p-3 whitespace-nowrap">
-                        <a
-                          href={`https://wa.me/${client.phone}`}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          onClick={(e) => e.stopPropagation()}
-                          className="text-blue-600 hover:underline"
-                        >
-                          {client.phone}
-                        </a>
-                      </td>
-                      <td className="p-3 text-gray-600 whitespace-nowrap">{client.city || '-'}</td>
-                      <td className="p-3 text-xs text-gray-500 whitespace-nowrap">
-                        {formatTimezoneLabel(client.timezone || 'America/La_Paz')}
-                      </td>
-                      <td className="p-3">
-                        {isArchived ? (
-                          <span className={`inline-flex items-center rounded-full border px-3 py-1 text-xs font-semibold ${recurringButtonClassName}`}>
-                            {recurringButtonLabel}
-                          </span>
-                        ) : (
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              openRecurringModal(client, recurringSchedule);
-                            }}
-                            disabled={loadingRecurringModal || savingRecurringClientId === client.id}
-                            className={`inline-flex items-center rounded-full border px-3 py-1 text-xs font-semibold transition disabled:opacity-60 ${recurringButtonClassName}`}
-                          >
-                            {recurringButtonLabel}
-                          </button>
-                        )}
-                      </td>
-                      <td className="p-3">
-                        {isArchived ? (
-                          <span className="inline-flex rounded-full bg-gray-100 px-2.5 py-1 text-xs font-semibold text-gray-500">
-                            Archivado
-                          </span>
-                        ) : (
-                          <select
-                            value={client.status_override || client.calculated_status || ''}
-                            onChange={e => handleUpdate(client.id, 'status_override', e.target.value || null)}
-                            onClick={(e) => e.stopPropagation()}
-                            className="text-xs px-2 py-1 rounded-full font-medium border-0 cursor-pointer"
-                            style={statusStyle((statuses.find(s => s.name === (client.status_override || client.calculated_status))?.color) || '#9CA3AF')}
-                          >
-                            <option value="">Auto ({client.calculated_status})</option>
-                            {statuses.map(s => (
-                              <option key={s.name} value={s.name}>{s.name}</option>
-                            ))}
-                          </select>
-                        )}
-                      </td>
-                      <td className="p-3">
-                        <div className="flex items-center gap-1.5">
-                          <span className="text-[11px] text-gray-400">{(client.fee_currency || 'BOB').toUpperCase() === 'USD' ? 'USD' : 'Bs'}</span>
-                          <input
-                            type="number"
-                            value={client.fee || ''}
-                            onChange={e => handleUpdate(client.id, 'fee', parseFloat(e.target.value))}
-                            onClick={(e) => e.stopPropagation()}
-                            disabled={isArchived}
-                            className="w-24 text-sm px-2 py-1 border border-gray-200 rounded text-right disabled:opacity-50"
-                          />
-                        </div>
-                      </td>
-                      <td className="p-3">
-                        <select
-                          value={client.foreign_pricing_key || ''}
-                          onChange={e => handleForeignPricingProfileChange(client, e.target.value)}
-                          onClick={(e) => e.stopPropagation()}
-                          disabled={isArchived}
-                          className="w-full text-xs px-2 py-1 border border-gray-200 rounded bg-white disabled:opacity-50"
-                        >
-                          <option value="">Sin perfil</option>
-                          {foreignPricingProfiles.map(profile => (
-                            <option key={profile.key} value={profile.key}>
-                              {profile.key} · {profile.currency} {profile.amount}
-                            </option>
-                          ))}
-                        </select>
-                      </td>
-                      <td className="p-3" onClick={(e) => e.stopPropagation()}>
+                      </button>
+                      <a
+                        href={`https://wa.me/${client.phone}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="mt-1 inline-flex text-xs text-blue-600 hover:underline"
+                      >
+                        {client.phone}
+                      </a>
+                    </td>
+
+                    <td className="p-3">
+                      <div className="text-xs font-medium text-gray-700">
+                        {[client.city, client.country].filter(Boolean).join(', ') || 'Sin ubicación'}
+                      </div>
+                      <select
+                        value={client.timezone || 'America/La_Paz'}
+                        onChange={e => handleUpdate(client.id, 'timezone', e.target.value)}
+                        disabled={isArchived}
+                        className="mt-1 w-full rounded-lg border border-gray-200 bg-white px-2 py-1 text-xs text-gray-600 disabled:opacity-50"
+                      >
+                        {getTimezoneOptions(client.timezone || 'America/La_Paz').map((zone) => (
+                          <option key={zone.tz} value={zone.tz}>{zone.label}</option>
+                        ))}
+                      </select>
+                    </td>
+
+                    <td className="p-3">
+                      <div className="flex flex-wrap items-center gap-1.5">
                         <button
                           type="button"
-                          onClick={() => toggleRowExpanded(client.id)}
-                          className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-gray-200 bg-white text-gray-600 hover:bg-gray-100"
+                          onClick={() => openRecurringModal(client, recurringSchedule)}
+                          disabled={isArchived || loadingRecurringModal || savingRecurringClientId === client.id}
+                          className={`inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-semibold transition disabled:opacity-60 ${recurringButtonClassName}`}
                         >
-                          {isExpanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+                          {recurringButtonLabel}
                         </button>
-                      </td>
-                    </tr>
+                        {recurringMeta.detail ? (
+                          <span className="inline-flex items-center gap-1 text-[11px] font-medium text-gray-500">
+                            <Repeat size={11} className="text-gray-400" />
+                            {recurringMeta.detail}
+                          </span>
+                        ) : null}
+                      </div>
 
-                    {isExpanded ? (
-                      <tr className={`border-b border-gray-100 ${index % 2 === 0 ? 'appointments-zebra-odd' : 'appointments-zebra-even'}`}>
-                        <td colSpan={10} className="p-0">
-                          <div className="grid gap-4 p-4 lg:grid-cols-3">
-                            <div className="rounded-xl border border-gray-200 bg-white p-3">
-                              <div className="text-[11px] font-semibold uppercase tracking-[0.08em] text-gray-400">Zona y recurrencia</div>
-                              <div className="mt-3 space-y-3">
-                                <div>
-                                  <label className="text-xs font-medium text-gray-500">Zona horaria</label>
-                                  <select
-                                    value={client.timezone || 'America/La_Paz'}
-                                    onChange={e => handleUpdate(client.id, 'timezone', e.target.value)}
-                                    disabled={isArchived}
-                                    className="mt-1 w-full rounded-lg border border-gray-200 bg-white px-2 py-1 text-xs text-gray-600 disabled:opacity-50"
-                                  >
-                                    {getTimezoneOptions(client.timezone || 'America/La_Paz').map((zone) => (
-                                      <option key={zone.tz} value={zone.tz}>
-                                        {zone.label}
-                                      </option>
-                                    ))}
-                                  </select>
-                                </div>
+                      {!isArchived && recurringSchedule && !recurringSchedule.ended_at ? (
+                        <div className="mt-2 flex flex-wrap gap-2">
+                          {!recurringSchedule.paused_at ? (
+                            <button
+                              type="button"
+                              onClick={() => handleRecurringQuickAction(client, recurringSchedule, 'pause')}
+                              disabled={savingRecurringClientId === client.id}
+                              className="rounded-lg border border-amber-200 px-2.5 py-1 text-xs font-medium text-amber-700 hover:bg-amber-50 disabled:opacity-60"
+                            >
+                              Pausar
+                            </button>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => handleRecurringQuickAction(client, recurringSchedule, 'resume')}
+                              disabled={savingRecurringClientId === client.id}
+                              className="rounded-lg border border-emerald-200 px-2.5 py-1 text-xs font-medium text-emerald-700 hover:bg-emerald-50 disabled:opacity-60"
+                            >
+                              Reactivar
+                            </button>
+                          )}
+                          <InlineConfirmButton
+                            onConfirm={() => handleRecurringQuickAction(client, recurringSchedule, 'end')}
+                            confirmLabel="Confirmar"
+                            cancelLabel="Cancelar"
+                            compactCancel
+                            wrapperClassName="flex items-center gap-2"
+                            idleClassName="rounded-lg border border-rose-200 px-2.5 py-1 text-xs font-medium text-rose-700 hover:bg-rose-50 disabled:opacity-60"
+                            confirmClassName="inline-flex items-center gap-1 rounded-lg border border-rose-200 bg-rose-50 px-2.5 py-1 text-xs font-medium text-rose-700 hover:bg-rose-100"
+                            cancelClassName="inline-flex items-center justify-center rounded-lg border border-gray-200 p-1 text-gray-500 hover:bg-gray-50"
+                            disabled={savingRecurringClientId === client.id}
+                          >
+                            Quitar
+                          </InlineConfirmButton>
+                        </div>
+                      ) : null}
 
-                                <div className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-semibold ${isArchived ? 'border-gray-200 bg-gray-100 text-gray-500' : recurringMeta.className}`}>
-                                  {isArchived ? 'Archivado' : recurringMeta.label}
-                                </div>
+                      {isArchived ? (
+                        <div className="mt-2 text-[11px] font-medium text-gray-400">
+                          Archivado{client.deleted_at ? ` el ${new Date(client.deleted_at).toLocaleDateString('es-BO')}` : ''}
+                        </div>
+                      ) : null}
+                    </td>
 
-                                {recurringMeta.detail ? (
-                                  <div className="inline-flex items-center gap-1 text-[11px] font-medium text-gray-500">
-                                    <Repeat size={11} className="text-gray-400" />
-                                    <span>{recurringMeta.detail}</span>
-                                  </div>
-                                ) : null}
+                    <td className="p-3">
+                      {isArchived ? (
+                        <span className="inline-flex rounded-full bg-gray-100 px-2.5 py-1 text-xs font-semibold text-gray-500">
+                          Archivado
+                        </span>
+                      ) : (
+                        <select
+                          value={client.status_override || client.calculated_status || ''}
+                          onChange={e => handleUpdate(client.id, 'status_override', e.target.value || null)}
+                          className="w-full text-xs px-2 py-1 rounded-full font-medium border-0 cursor-pointer"
+                          style={statusStyle((statuses.find(s => s.name === (client.status_override || client.calculated_status))?.color) || '#9CA3AF')}
+                        >
+                          <option value="">Auto ({client.calculated_status})</option>
+                          {statuses.map(s => (
+                            <option key={s.name} value={s.name}>{s.name}</option>
+                          ))}
+                        </select>
+                      )}
+                      <div className="mt-2 flex flex-col gap-1">
+                        <span
+                          className="inline-flex w-fit rounded-full px-2.5 py-1 text-xs font-semibold"
+                          style={retentionStyle(client.retention_status)}
+                        >
+                          {client.retention_status || 'Sin dato'}
+                        </span>
+                        <span className="text-[11px] text-gray-400">
+                          {client.days_since_last_session != null
+                            ? `${client.days_since_last_session} día${client.days_since_last_session === 1 ? '' : 's'} desde última sesión`
+                            : 'Sin sesiones completadas'}
+                        </span>
+                      </div>
+                    </td>
 
-                                {!isArchived ? (
-                                  <button
-                                    type="button"
-                                    onClick={() => openRecurringModal(client, recurringSchedule)}
-                                    disabled={loadingRecurringModal || savingRecurringClientId === client.id}
-                                    className="inline-flex rounded-lg border border-gray-200 px-2.5 py-1 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-60"
-                                  >
-                                    {recurringSchedule && !recurringSchedule.ended_at ? 'Editar recurrencia' : 'Poner en recurrencia'}
-                                  </button>
-                                ) : (
-                                  <div className="text-[11px] font-medium text-gray-400">
-                                    Archivado{client.deleted_at ? ` el ${new Date(client.deleted_at).toLocaleDateString('es-BO')}` : ''}
-                                  </div>
-                                )}
+                    <td className="p-3">
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-[11px] text-gray-400">{(client.fee_currency || 'BOB').toUpperCase() === 'USD' ? 'USD' : 'Bs'}</span>
+                        <input
+                          type="number"
+                          value={client.fee || ''}
+                          onChange={e => handleUpdate(client.id, 'fee', e.target.value === '' ? null : parseFloat(e.target.value))}
+                          disabled={isArchived}
+                          className="w-24 text-sm px-2 py-1 border border-gray-200 rounded text-right disabled:opacity-50"
+                        />
+                      </div>
+                      <select
+                        value={client.foreign_pricing_key || ''}
+                        onChange={e => handleForeignPricingProfileChange(client, e.target.value)}
+                        disabled={isArchived}
+                        className="mt-2 w-full text-xs px-2 py-1 border border-gray-200 rounded bg-white disabled:opacity-50"
+                      >
+                        <option value="">Sin perfil Stripe</option>
+                        {foreignPricingProfiles.map(profile => (
+                          <option key={profile.key} value={profile.key}>
+                            {profile.key} · {profile.currency} {profile.amount}
+                          </option>
+                        ))}
+                      </select>
+                    </td>
 
-                                {!isArchived && recurringSchedule && !recurringSchedule.ended_at ? (
-                                  <div className="flex flex-wrap gap-2">
-                                    {!recurringSchedule.paused_at ? (
-                                      <button
-                                        type="button"
-                                        onClick={() => handleRecurringQuickAction(client, recurringSchedule, 'pause')}
-                                        disabled={savingRecurringClientId === client.id}
-                                        className="rounded-lg border border-amber-200 px-2.5 py-1 text-xs font-medium text-amber-700 hover:bg-amber-50 disabled:opacity-60"
-                                      >
-                                        Pausar
-                                      </button>
-                                    ) : (
-                                      <button
-                                        type="button"
-                                        onClick={() => handleRecurringQuickAction(client, recurringSchedule, 'resume')}
-                                        disabled={savingRecurringClientId === client.id}
-                                        className="rounded-lg border border-emerald-200 px-2.5 py-1 text-xs font-medium text-emerald-700 hover:bg-emerald-50 disabled:opacity-60"
-                                      >
-                                        Reactivar
-                                      </button>
-                                    )}
-                                    <InlineConfirmButton
-                                      onConfirm={() => handleRecurringQuickAction(client, recurringSchedule, 'end')}
-                                      confirmLabel="Confirmar"
-                                      cancelLabel="Cancelar"
-                                      compactCancel
-                                      wrapperClassName="flex items-center gap-2"
-                                      idleClassName="rounded-lg border border-rose-200 px-2.5 py-1 text-xs font-medium text-rose-700 hover:bg-rose-50 disabled:opacity-60"
-                                      confirmClassName="inline-flex items-center gap-1 rounded-lg border border-rose-200 bg-rose-50 px-2.5 py-1 text-xs font-medium text-rose-700 hover:bg-rose-100"
-                                      cancelClassName="inline-flex items-center justify-center rounded-lg border border-gray-200 p-1 text-gray-500 hover:bg-gray-50"
-                                      disabled={savingRecurringClientId === client.id}
-                                    >
-                                      Quitar
-                                    </InlineConfirmButton>
-                                  </div>
-                                ) : null}
-                              </div>
-                            </div>
+                    <td className="p-3">
+                      <select
+                        value={client.source || 'Otro'}
+                        onChange={e => handleUpdate(client.id, 'source', e.target.value)}
+                        disabled={isArchived}
+                        className="w-full rounded-lg border border-gray-200 bg-white px-2 py-1 text-xs text-gray-600 disabled:opacity-50"
+                      >
+                        {sources.map((source) => (
+                          <option key={source} value={source}>{source}</option>
+                        ))}
+                      </select>
+                      <div className="mt-2 text-xs text-gray-600">
+                        Sesiones completadas: <span className="font-semibold">{client.completed_sessions || 0}</span>
+                      </div>
+                      <div className="mt-1 text-[11px] text-gray-400">
+                        Registro: {client.created_at ? new Date(client.created_at).toLocaleDateString('es-BO') : '—'}
+                      </div>
+                    </td>
 
-                            <div className="rounded-xl border border-gray-200 bg-white p-3">
-                              <div className="text-[11px] font-semibold uppercase tracking-[0.08em] text-gray-400">Seguimiento</div>
-                              <div className="mt-3 space-y-3">
-                                <div className="flex flex-col gap-1">
-                                  <span
-                                    className="inline-flex w-fit rounded-full px-2.5 py-1 text-xs font-semibold"
-                                    style={retentionStyle(client.retention_status)}
-                                  >
-                                    {client.retention_status || 'Sin dato'}
-                                  </span>
-                                  <span className="text-[11px] text-gray-400">
-                                    {client.days_since_last_session != null
-                                      ? `${client.days_since_last_session} día${client.days_since_last_session === 1 ? '' : 's'} desde última sesión`
-                                      : 'Sin sesiones completadas'}
-                                  </span>
-                                </div>
-
-                                <div className="text-xs text-gray-600">
-                                  Sesiones completadas: <span className="font-semibold">{client.completed_sessions || 0}</span>
-                                </div>
-
-                                <div>
-                                  <label className="text-xs font-medium text-gray-500">Fuente</label>
-                                  <select
-                                    value={client.source || 'Otro'}
-                                    onChange={e => handleUpdate(client.id, 'source', e.target.value)}
-                                    disabled={isArchived}
-                                    className="mt-1 w-full rounded-lg border border-gray-200 bg-white px-2 py-1 text-xs text-gray-600 disabled:opacity-50"
-                                  >
-                                    {sources.map((source) => (
-                                      <option key={source} value={source}>{source}</option>
-                                    ))}
-                                  </select>
-                                </div>
-                              </div>
-                            </div>
-
-                            <div className="rounded-xl border border-gray-200 bg-white p-3">
-                              <div className="text-[11px] font-semibold uppercase tracking-[0.08em] text-gray-400">Acciones</div>
-                              <div className="mt-3 space-y-3">
-                                <div className="text-xs text-gray-500">
-                                  Registro: {client.created_at ? new Date(client.created_at).toLocaleDateString('es-BO') : '—'}
-                                </div>
-                                {client.foreign_pricing_key ? (
-                                  <div className="text-xs text-gray-500">
-                                    Perfil Stripe: <span className="font-medium text-gray-700">{client.foreign_pricing_key}</span>
-                                  </div>
-                                ) : (
-                                  <div className="text-xs text-gray-400">Sin perfil Stripe asignado.</div>
-                                )}
-
-                                {isArchived ? (
-                                  <div className="flex flex-wrap gap-2">
-                                    <button
-                                      type="button"
-                                      onClick={() => handleRestore(client.id)}
-                                      className="rounded-lg border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-xs font-medium text-emerald-700 hover:bg-emerald-100"
-                                    >
-                                      Restaurar
-                                    </button>
-                                    <InlineConfirmButton
-                                      onConfirm={() => handlePurge(client.id)}
-                                      confirmLabel="¿Confirmas?"
-                                      cancelLabel="Cancelar"
-                                      compactCancel
-                                      wrapperClassName="flex items-center gap-2"
-                                      idleClassName="inline-flex items-center rounded-lg bg-[#B34E35] px-2.5 py-1 text-xs font-medium text-white transition hover:bg-[#9f452f]"
-                                      confirmClassName="inline-flex items-center gap-1 rounded-lg bg-[#FF2C2C] px-2.5 py-1 text-xs font-medium text-white transition hover:bg-[#e32727]"
-                                      cancelClassName="inline-flex items-center justify-center rounded-lg border border-gray-200 p-1 text-gray-500 hover:bg-gray-50"
-                                      idleTitle="Borrar definitivamente"
-                                    >
-                                      Borrar
-                                    </InlineConfirmButton>
-                                  </div>
-                                ) : (
-                                  <div className="flex flex-wrap gap-2">
-                                    <button
-                                      type="button"
-                                      onClick={() => setEditClient(client)}
-                                      className="rounded-lg border border-gray-200 px-2.5 py-1 text-xs font-medium text-gray-700 hover:bg-gray-50"
-                                    >
-                                      Editar cliente
-                                    </button>
-                                    <InlineConfirmButton
-                                      onConfirm={() => handleDelete(client.id)}
-                                      confirmLabel="¿Confirmas?"
-                                      cancelLabel="Cancelar"
-                                      compactCancel
-                                      wrapperClassName="flex items-center gap-2"
-                                      idleClassName="inline-flex items-center rounded-lg bg-[#B34E35] px-2.5 py-1 text-xs font-medium text-white transition hover:bg-[#9f452f]"
-                                      confirmClassName="inline-flex items-center gap-1 rounded-lg bg-[#FF2C2C] px-2.5 py-1 text-xs font-medium text-white transition hover:bg-[#e32727]"
-                                      cancelClassName="inline-flex items-center justify-center rounded-lg border border-gray-200 p-1 text-gray-500 hover:bg-gray-50"
-                                      idleTitle="Archivar"
-                                    >
-                                      Archivar
-                                    </InlineConfirmButton>
-                                  </div>
-                                )}
-                              </div>
-                            </div>
-                          </div>
-                        </td>
-                      </tr>
-                    ) : null}
-                  </Fragment>
+                    <td className="p-3">
+                      {isArchived ? (
+                        <div className="flex flex-wrap gap-2">
+                          <button
+                            type="button"
+                            onClick={() => handleRestore(client.id)}
+                            className="rounded-lg border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-xs font-medium text-emerald-700 hover:bg-emerald-100"
+                          >
+                            Restaurar
+                          </button>
+                          <InlineConfirmButton
+                            onConfirm={() => handlePurge(client.id)}
+                            confirmLabel="¿Confirmas?"
+                            cancelLabel="Cancelar"
+                            compactCancel
+                            wrapperClassName="flex items-center gap-2"
+                            idleClassName="inline-flex items-center rounded-lg bg-[#B34E35] px-2.5 py-1 text-xs font-medium text-white transition hover:bg-[#9f452f]"
+                            confirmClassName="inline-flex items-center gap-1 rounded-lg bg-[#FF2C2C] px-2.5 py-1 text-xs font-medium text-white transition hover:bg-[#e32727]"
+                            cancelClassName="inline-flex items-center justify-center rounded-lg border border-gray-200 p-1 text-gray-500 hover:bg-gray-50"
+                            idleTitle="Borrar definitivamente"
+                          >
+                            Borrar
+                          </InlineConfirmButton>
+                        </div>
+                      ) : (
+                        <div className="flex flex-wrap gap-2">
+                          <button
+                            type="button"
+                            onClick={() => setEditClient(client)}
+                            className="rounded-lg border border-gray-200 px-2.5 py-1 text-xs font-medium text-gray-700 hover:bg-gray-50"
+                          >
+                            Editar
+                          </button>
+                          <InlineConfirmButton
+                            onConfirm={() => handleDelete(client.id)}
+                            confirmLabel="¿Confirmas?"
+                            cancelLabel="Cancelar"
+                            compactCancel
+                            wrapperClassName="flex items-center gap-2"
+                            idleClassName="inline-flex items-center rounded-lg bg-[#B34E35] px-2.5 py-1 text-xs font-medium text-white transition hover:bg-[#9f452f]"
+                            confirmClassName="inline-flex items-center gap-1 rounded-lg bg-[#FF2C2C] px-2.5 py-1 text-xs font-medium text-white transition hover:bg-[#e32727]"
+                            cancelClassName="inline-flex items-center justify-center rounded-lg border border-gray-200 p-1 text-gray-500 hover:bg-gray-50"
+                            idleTitle="Archivar"
+                          >
+                            Archivar
+                          </InlineConfirmButton>
+                        </div>
+                      )}
+                    </td>
+                  </tr>
                 );
               })}
               {filtered.length === 0 && (
-                <tr><td colSpan={10} className="p-8 text-center text-gray-400">Sin resultados</td></tr>
+                <tr><td colSpan={8} className="p-8 text-center text-gray-400">Sin resultados</td></tr>
               )}
             </tbody>
           </table>

@@ -56,11 +56,18 @@ function sanitizeForeignPricingProfiles(rawProfiles) {
     if (!Number.isFinite(amount) || amount <= 0 || !url) continue;
 
     usedKeys.add(key);
+    const stripeFeePercent = Math.max(0, Number(row?.stripe_fee_percent ?? row?.stripeFeePercent ?? 0) || 0);
+    const meruFeePercent = Math.max(0, Number(row?.meru_fee_percent ?? row?.meruFeePercent ?? 0) || 0);
+    const stripeFeeFixed = Math.max(0, Number(row?.stripe_fee_fixed ?? row?.stripeFeeFixed ?? 0) || 0);
+
     rows.push({
       key,
       name: String(row?.name || key).trim().slice(0, 80) || key,
       amount: Math.round(amount * 100) / 100,
       currency: String(row?.currency || 'USD').trim().toUpperCase() === 'BOB' ? 'BOB' : 'USD',
+      stripe_fee_percent: Math.round(stripeFeePercent * 100) / 100,
+      meru_fee_percent: Math.round(meruFeePercent * 100) / 100,
+      stripe_fee_fixed: Math.round(stripeFeeFixed * 100) / 100,
       url,
     });
     if (rows.length >= 6) break;
@@ -433,6 +440,9 @@ export default function Config() {
             name: `Monto ${nextIndex}`,
             amount: '',
             currency: 'USD',
+            stripe_fee_percent: 0,
+            meru_fee_percent: 0,
+            stripe_fee_fixed: 0,
             url: '',
           },
         ],
@@ -455,6 +465,9 @@ export default function Config() {
       } else if (field === 'amount') {
         const parsed = Number(value);
         next.amount = Number.isFinite(parsed) ? parsed : '';
+      } else if (field === 'stripe_fee_percent' || field === 'meru_fee_percent' || field === 'stripe_fee_fixed') {
+        const parsed = Number(value);
+        next[field] = Number.isFinite(parsed) ? Math.max(0, parsed) : 0;
       } else if (field === 'currency') {
         next.currency = String(value || 'USD').toUpperCase() === 'BOB' ? 'BOB' : 'USD';
       } else if (field === 'name' || field === 'url') {
@@ -998,7 +1011,7 @@ export default function Config() {
                   <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
                     <div>
                       <div className="font-medium text-sm">Montos a cobrar Extranjeros</div>
-                      <div className="text-xs text-gray-400">Hasta 6 perfiles con monto + URL Stripe para asignar a clientes concretos.</div>
+                      <div className="text-xs text-gray-400">Hasta 6 perfiles con monto + URL Stripe. El monto contable se calcula restando % Stripe, % Meru y cargo fijo Stripe.</div>
                     </div>
                     <button
                       type="button"
@@ -1018,7 +1031,7 @@ export default function Config() {
                     <div className="mt-3 space-y-3">
                       {(config?._foreignPricingProfiles || []).map((profile, idx) => (
                         <div key={`${profile.key || 'profile'}-${idx}`} className="rounded-xl border border-gray-200 bg-slate-50/50 p-3">
-                          <div className="grid gap-3 lg:grid-cols-[1fr_1fr_130px_auto]">
+                          <div className="grid gap-3 lg:grid-cols-[1fr_1fr_390px_140px_140px_170px_auto]">
                             <div>
                               <label className="block text-xs text-gray-500 mb-1">Tipo / clave</label>
                               <input
@@ -1058,6 +1071,39 @@ export default function Config() {
                                 </select>
                               </div>
                             </div>
+                            <div>
+                              <label className="block text-xs text-gray-500 mb-1">% Stripe</label>
+                              <input
+                                type="number"
+                                min="0"
+                                step="0.01"
+                                value={profile.stripe_fee_percent ?? 0}
+                                onChange={e => updateForeignPricingProfile(idx, 'stripe_fee_percent', e.target.value)}
+                                className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm text-right"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-xs text-gray-500 mb-1">% Meru</label>
+                              <input
+                                type="number"
+                                min="0"
+                                step="0.01"
+                                value={profile.meru_fee_percent ?? 0}
+                                onChange={e => updateForeignPricingProfile(idx, 'meru_fee_percent', e.target.value)}
+                                className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm text-right"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-xs text-gray-500 mb-1">Cargo fijo Stripe</label>
+                              <input
+                                type="number"
+                                min="0"
+                                step="0.01"
+                                value={profile.stripe_fee_fixed ?? 0}
+                                onChange={e => updateForeignPricingProfile(idx, 'stripe_fee_fixed', e.target.value)}
+                                className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm text-right"
+                              />
+                            </div>
                             <div className="flex items-end gap-2">
                               <button
                                 type="button"
@@ -1089,6 +1135,17 @@ export default function Config() {
                               placeholder="https://buy.stripe.com/..."
                               className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm"
                             />
+                          </div>
+                          <div className="mt-2 text-[11px] text-gray-500">
+                            Neto contable estimado: {profile.currency || 'USD'}{' '}
+                            {(() => {
+                              const amount = Number(profile.amount || 0);
+                              const stripePct = Number(profile.stripe_fee_percent || 0);
+                              const meruPct = Number(profile.meru_fee_percent || 0);
+                              const stripeFixed = Number(profile.stripe_fee_fixed || 0);
+                              const net = Math.max(0, amount - (amount * stripePct / 100) - (amount * meruPct / 100) - stripeFixed);
+                              return net.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+                            })()}
                           </div>
                         </div>
                       ))}

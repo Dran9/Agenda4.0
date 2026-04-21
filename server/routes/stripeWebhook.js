@@ -24,6 +24,12 @@ function amountFromMinorUnits(amountMinor, currency) {
   return Math.round((numeric / 100) * 100) / 100;
 }
 
+function roundToTwoDecimals(value) {
+  const numeric = Number(value || 0);
+  if (!Number.isFinite(numeric)) return 0;
+  return Math.round(numeric * 100) / 100;
+}
+
 function safeEqualHex(a, b) {
   try {
     const left = Buffer.from(String(a || ''), 'hex');
@@ -100,11 +106,17 @@ function parseForeignProfiles(raw) {
       const amount = Number(item?.amount);
       const currency = normalizeCurrency(item?.currency || 'USD');
       const url = toNullableString(item?.url, 500);
+      const stripeFeePercent = Math.max(0, Number(item?.stripe_fee_percent ?? item?.stripeFeePercent ?? 0) || 0);
+      const meruFeePercent = Math.max(0, Number(item?.meru_fee_percent ?? item?.meruFeePercent ?? 0) || 0);
+      const stripeFeeFixed = Math.max(0, Number(item?.stripe_fee_fixed ?? item?.stripeFeeFixed ?? 0) || 0);
       if (!key || !Number.isFinite(amount) || amount <= 0 || !url) return null;
       return {
         key,
         amount: Math.round(amount * 100) / 100,
         currency,
+        stripe_fee_percent: roundToTwoDecimals(stripeFeePercent),
+        meru_fee_percent: roundToTwoDecimals(meruFeePercent),
+        stripe_fee_fixed: roundToTwoDecimals(stripeFeeFixed),
         url,
       };
     })
@@ -252,6 +264,42 @@ async function markStripePaymentConfirmed({ tenantId, paymentRow, event, amount,
   }, tenantId);
 }
 
+function calculateAccountingAmountFromProfile(grossAmount, profile = null) {
+  const gross = roundToTwoDecimals(grossAmount);
+  if (!profile) {
+    return {
+      grossAmount: gross,
+      netAmount: gross,
+      totalDiscount: 0,
+      stripePercentAmount: 0,
+      meruPercentAmount: 0,
+      stripeFixedAmount: 0,
+      stripeFeePercent: 0,
+      meruFeePercent: 0,
+    };
+  }
+
+  const stripeFeePercent = Math.max(0, Number(profile.stripe_fee_percent || 0));
+  const meruFeePercent = Math.max(0, Number(profile.meru_fee_percent || 0));
+  const stripeFixedAmount = Math.max(0, Number(profile.stripe_fee_fixed || 0));
+
+  const stripePercentAmount = roundToTwoDecimals((gross * stripeFeePercent) / 100);
+  const meruPercentAmount = roundToTwoDecimals((gross * meruFeePercent) / 100);
+  const totalDiscount = roundToTwoDecimals(stripePercentAmount + meruPercentAmount + stripeFixedAmount);
+  const netAmount = roundToTwoDecimals(Math.max(0, gross - totalDiscount));
+
+  return {
+    grossAmount: gross,
+    netAmount,
+    totalDiscount,
+    stripePercentAmount,
+    meruPercentAmount,
+    stripeFixedAmount: roundToTwoDecimals(stripeFixedAmount),
+    stripeFeePercent: roundToTwoDecimals(stripeFeePercent),
+    meruFeePercent: roundToTwoDecimals(meruFeePercent),
+  };
+}
+
 async function processCheckoutSessionEvent({ tenantId, event, profiles }) {
   const session = event?.data?.object || {};
   const currency = normalizeCurrency(session.currency || 'USD');
@@ -276,6 +324,8 @@ async function processCheckoutSessionEvent({ tenantId, event, profiles }) {
     sessionPaymentLinkId: toNullableString(session.payment_link),
     metadata: session.metadata,
   });
+  const matchedProfile = profileKey ? (profiles.find((profile) => profile.key === profileKey) || null) : null;
+  const accounting = calculateAccountingAmountFromProfile(amount, matchedProfile);
 
   const candidates = await findPendingStripeCandidates({
     tenantId,
@@ -289,18 +339,18 @@ async function processCheckoutSessionEvent({ tenantId, event, profiles }) {
       tenantId,
       paymentRow: candidates[0],
       event,
-      amount,
+      amount: accounting.netAmount,
       amountMinor,
       currency,
     });
     return {
       processedStatus: 'processed',
-      notes: 'Pago Stripe conciliado y confirmado',
+      notes: `Pago Stripe conciliado. Bruto ${accounting.grossAmount}, descuentos ${accounting.totalDiscount}, neto ${accounting.netAmount}`,
       profileKey,
       matchedPaymentId: candidates[0].id,
       currency,
       amountMinor,
-      amount,
+      amount: accounting.netAmount,
     };
   }
 

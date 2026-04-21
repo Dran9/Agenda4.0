@@ -44,6 +44,9 @@ function normalizeForeignPricingProfiles(input) {
     const amount = Number(row.amount);
     const url = String(row.url || '').trim();
     if (!Number.isFinite(amount) || amount <= 0 || !url) continue;
+    const stripeFeePercent = Math.max(0, Number(row.stripe_fee_percent ?? row.stripeFeePercent ?? 0) || 0);
+    const meruFeePercent = Math.max(0, Number(row.meru_fee_percent ?? row.meruFeePercent ?? 0) || 0);
+    const stripeFeeFixed = Math.max(0, Number(row.stripe_fee_fixed ?? row.stripeFeeFixed ?? 0) || 0);
 
     let parsedUrl = null;
     try {
@@ -59,6 +62,9 @@ function normalizeForeignPricingProfiles(input) {
       name: String(row.name || row.label || key).trim().slice(0, 80),
       amount: Math.round(amount * 100) / 100,
       currency: String(row.currency || 'USD').trim().toUpperCase() === 'BOB' ? 'BOB' : 'USD',
+      stripe_fee_percent: Math.round(stripeFeePercent * 100) / 100,
+      meru_fee_percent: Math.round(meruFeePercent * 100) / 100,
+      stripe_fee_fixed: Math.round(stripeFeeFixed * 100) / 100,
       url: parsedUrl.toString(),
     });
     if (normalized.length >= 6) break;

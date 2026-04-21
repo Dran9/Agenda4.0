@@ -37,7 +37,7 @@ router.get('/', authMiddleware, async (req, res) => {
           (SELECT COUNT(*) FROM appointments WHERE tenant_id = ? AND status = 'Reagendada') as total_rescheduled,
           (SELECT COUNT(*) FROM clients WHERE tenant_id = ? AND created_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)) as new_clients_30d,
           (SELECT COUNT(*) FROM appointments WHERE tenant_id = ? AND date_time >= DATE_SUB(NOW(), INTERVAL 7 DAY) AND status IN ('Completada','Confirmada','Agendada','Reagendada')) as sessions_this_week,
-          (SELECT COALESCE(SUM(p.amount), 0) FROM payments p JOIN appointments a ON p.appointment_id = a.id WHERE p.tenant_id = ? AND p.status = 'Confirmado' AND MONTH(a.date_time) = MONTH(NOW()) AND YEAR(a.date_time) = YEAR(NOW())) as income_this_month
+          (SELECT COALESCE(SUM(COALESCE(p.settled_amount, p.amount)), 0) FROM payments p JOIN appointments a ON p.appointment_id = a.id WHERE p.tenant_id = ? AND p.status = 'Confirmado' AND MONTH(a.date_time) = MONTH(NOW()) AND YEAR(a.date_time) = YEAR(NOW())) as income_this_month
       `, [t, t, t, t, t, t, t, t, t]),
 
       // Sessions by week (last 12 weeks)

@@ -573,7 +573,7 @@ async function buildSendRemindersReply(tenantId, reminderDate) {
 
 async function buildSessionsToGoalReply(tenantId, goalAmount) {
   const [[incomeRow]] = await pool.query(
-    `SELECT COALESCE(SUM(p.amount), 0) AS income_this_month
+    `SELECT COALESCE(SUM(COALESCE(p.settled_amount, p.amount)), 0) AS income_this_month
      FROM payments p
      JOIN appointments a ON a.id = p.appointment_id
      WHERE p.tenant_id = ?

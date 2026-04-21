@@ -1031,9 +1031,9 @@ export default function Config() {
                     <div className="mt-3 space-y-3">
                       {(config?._foreignPricingProfiles || []).map((profile, idx) => (
                         <div key={`${profile.key || 'profile'}-${idx}`} className="rounded-xl border border-gray-200 bg-slate-50/50 p-3">
-                          <div className="grid gap-3 lg:grid-cols-[1fr_1fr_390px_140px_140px_170px_auto]">
+                          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-[minmax(140px,0.9fr)_minmax(190px,1fr)_minmax(360px,2fr)_minmax(120px,0.7fr)_minmax(120px,0.7fr)_minmax(170px,0.9fr)_auto]">
                             <div>
-                              <label className="block text-xs text-gray-500 mb-1">Tipo / clave</label>
+                              <label className="mb-1 block whitespace-nowrap text-xs text-gray-500">Tipo / clave</label>
                               <input
                                 type="text"
                                 value={profile.key || ''}
@@ -1043,7 +1043,7 @@ export default function Config() {
                               />
                             </div>
                             <div>
-                              <label className="block text-xs text-gray-500 mb-1">Nombre</label>
+                              <label className="mb-1 block whitespace-nowrap text-xs text-gray-500">Nombre</label>
                               <input
                                 type="text"
                                 value={profile.name || ''}
@@ -1053,7 +1053,7 @@ export default function Config() {
                               />
                             </div>
                             <div>
-                              <label className="block text-xs text-gray-500 mb-1">Monto</label>
+                              <label className="mb-1 block whitespace-nowrap text-xs text-gray-500">Monto</label>
                               <div className="flex items-center gap-2">
                                 <input
                                   type="number"
@@ -1064,7 +1064,7 @@ export default function Config() {
                                 <select
                                   value={profile.currency || 'USD'}
                                   onChange={e => updateForeignPricingProfile(idx, 'currency', e.target.value)}
-                                  className="px-2 py-2 border border-gray-200 rounded-lg text-xs bg-white"
+                                  className="min-w-[88px] px-2 py-2 border border-gray-200 rounded-lg text-xs bg-white"
                                 >
                                   <option value="USD">USD</option>
                                   <option value="BOB">BOB</option>
@@ -1072,7 +1072,7 @@ export default function Config() {
                               </div>
                             </div>
                             <div>
-                              <label className="block text-xs text-gray-500 mb-1">% Stripe</label>
+                              <label className="mb-1 block whitespace-nowrap text-xs text-gray-500">% Stripe</label>
                               <input
                                 type="number"
                                 min="0"
@@ -1083,7 +1083,7 @@ export default function Config() {
                               />
                             </div>
                             <div>
-                              <label className="block text-xs text-gray-500 mb-1">% Meru</label>
+                              <label className="mb-1 block whitespace-nowrap text-xs text-gray-500">% Meru</label>
                               <input
                                 type="number"
                                 min="0"
@@ -1094,7 +1094,7 @@ export default function Config() {
                               />
                             </div>
                             <div>
-                              <label className="block text-xs text-gray-500 mb-1">Cargo fijo Stripe</label>
+                              <label className="mb-1 block whitespace-nowrap text-xs text-gray-500">Cargo fijo Stripe</label>
                               <input
                                 type="number"
                                 min="0"
@@ -1104,7 +1104,7 @@ export default function Config() {
                                 className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm text-right"
                               />
                             </div>
-                            <div className="flex items-end gap-2">
+                            <div className="flex items-end gap-2 sm:col-span-2 xl:col-span-1">
                               <button
                                 type="button"
                                 onClick={() => removeForeignPricingProfile(idx)}

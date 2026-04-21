@@ -188,6 +188,7 @@ export default function Clients() {
   const [newStatus, setNewStatus] = useState('');
   const [newSource, setNewSource] = useState('');
   const [foreignPricingProfiles, setForeignPricingProfiles] = useState([]);
+  const [pricingConfig, setPricingConfig] = useState({ default_fee: 250, capital_fee: 300, special_fee: 150 });
   const [saving, setSaving] = useState(false);
   const [savingRecurringClientId, setSavingRecurringClientId] = useState(null);
   const [recurringModal, setRecurringModal] = useState(null);
@@ -229,6 +230,11 @@ export default function Clients() {
         if (s.length > 0) setSources(s);
       }
       setForeignPricingProfiles(parseForeignPricingProfiles(cfg.foreign_pricing_profiles));
+      setPricingConfig({
+        default_fee: Number(cfg.default_fee || 250),
+        capital_fee: Number(cfg.capital_fee || 300),
+        special_fee: Number(cfg.special_fee || 150),
+      });
     } catch (err) {
       console.error(err);
     }
@@ -261,9 +267,17 @@ export default function Clients() {
   async function handleUpdate(id, field, value) {
     try {
       await api.put(`/clients/${id}`, { [field]: value });
+      const currentClient = clients.find((row) => row.id === id);
+      if (field === 'special_fee_enabled' || currentClient?.special_fee_enabled) {
+        await loadClients();
+        if (field === 'special_fee_enabled') {
+          showToast(value ? 'Cliente marcado con QR especial' : 'Cliente volvió al arancel automático');
+        }
+        return;
+      }
       setClients(prev => prev.map(c => c.id === id ? { ...c, [field]: value, calculated_status: field === 'status_override' ? value : c.calculated_status } : c));
     } catch (err) {
-      console.error(err);
+      showToast('Error: ' + err.message, 'error');
     }
   }
 
@@ -780,19 +794,28 @@ export default function Clients() {
                           type="number"
                           value={client.fee || ''}
                           onChange={e => handleUpdate(client.id, 'fee', e.target.value === '' ? null : parseFloat(e.target.value))}
-                          disabled={isArchived}
+                          disabled={isArchived || !!client.special_fee_enabled}
                           className="h-9 w-24 rounded-xl border border-gray-200 bg-white px-3 text-right text-sm font-semibold text-gray-700 outline-none transition focus:border-gray-400 focus:ring-0 disabled:opacity-50"
                         />
                         <select
                           value={client.fee_currency || 'BOB'}
                           onChange={e => handleUpdate(client.id, 'fee_currency', e.target.value)}
-                          disabled={isArchived}
+                          disabled={isArchived || !!client.special_fee_enabled}
                           className={`w-[72px] ${INLINE_SELECT_CLASS}`}
                         >
                           <option value="BOB">BOB</option>
                           <option value="USD">USD</option>
                         </select>
                       </div>
+                      <select
+                        value={client.special_fee_enabled ? 'special' : 'auto'}
+                        onChange={e => handleUpdate(client.id, 'special_fee_enabled', e.target.value === 'special')}
+                        disabled={isArchived}
+                        className={`mt-2 w-full ${INLINE_SELECT_CLASS}`}
+                      >
+                        <option value="auto">Auto por ciudad</option>
+                        <option value="special">QR especial</option>
+                      </select>
                     </td>
 
                     <td className="p-3 align-middle">
@@ -804,7 +827,7 @@ export default function Clients() {
                         <select
                           value={client.foreign_pricing_key || ''}
                           onChange={e => handleForeignPricingProfileChange(client, e.target.value)}
-                          disabled={isArchived}
+                          disabled={isArchived || !!client.special_fee_enabled}
                           className={`w-full min-w-[190px] ${INLINE_SELECT_CLASS}`}
                         >
                           <option value="">Sin perfil Stripe</option>
@@ -933,6 +956,7 @@ export default function Clients() {
           sources={sources}
           statuses={statuses}
           foreignPricingProfiles={foreignPricingProfiles}
+          pricingConfig={pricingConfig}
         />
       )}
 
@@ -949,6 +973,7 @@ export default function Clients() {
           sources={sources}
           statuses={statuses}
           foreignPricingProfiles={foreignPricingProfiles}
+          pricingConfig={pricingConfig}
           showToast={showToast}
         />
       )}
@@ -966,12 +991,13 @@ export default function Clients() {
   );
 }
 
-function CreateClientModal({ onClose, onCreate, saving, sources, foreignPricingProfiles }) {
+function CreateClientModal({ onClose, onCreate, saving, sources, foreignPricingProfiles, pricingConfig }) {
   const [form, setForm] = useState({
     phone: '', first_name: '', last_name: '', age: '',
     city: 'Cochabamba', country: 'Bolivia', timezone: 'America/La_Paz',
-    source: 'Otro', fee: '250', fee_currency: 'BOB', foreign_pricing_key: '', modality: 'Online',
+    source: 'Otro', fee: '250', fee_currency: 'BOB', foreign_pricing_key: '', special_fee_enabled: false, modality: 'Online',
   });
+  const isSpecialFeeEnabled = !!form.special_fee_enabled;
 
   function set(k, v) { setForm(f => ({ ...f, [k]: v })); }
 
@@ -982,6 +1008,7 @@ function CreateClientModal({ onClose, onCreate, saving, sources, foreignPricingP
       age: form.age ? parseInt(form.age) : undefined,
       fee: form.fee ? parseFloat(form.fee) : undefined,
       foreign_pricing_key: form.foreign_pricing_key || null,
+      special_fee_enabled: !!form.special_fee_enabled,
     });
   }
 
@@ -1030,11 +1057,29 @@ function CreateClientModal({ onClose, onCreate, saving, sources, foreignPricingP
                 {sources.map(s => <option key={s} value={s}>{s}</option>)}
               </select>
             </Field>
+            <Field label="QR Bolivia">
+              <select
+                value={isSpecialFeeEnabled ? 'special' : 'auto'}
+                onChange={e => {
+                  const nextIsSpecial = e.target.value === 'special';
+                  set('special_fee_enabled', nextIsSpecial);
+                  if (nextIsSpecial) {
+                    set('fee', String(pricingConfig?.special_fee || 150));
+                    set('fee_currency', 'BOB');
+                    set('foreign_pricing_key', '');
+                  }
+                }}
+                className="input"
+              >
+                <option value="auto">Auto por ciudad</option>
+                <option value="special">Especial</option>
+              </select>
+            </Field>
             <Field label={`Arancel (${form.fee_currency === 'USD' ? 'USD' : 'Bs'})`}>
-              <input type="number" value={form.fee} onChange={e => set('fee', e.target.value)} className="input" />
+              <input type="number" value={form.fee} onChange={e => set('fee', e.target.value)} disabled={isSpecialFeeEnabled} className="input disabled:bg-gray-100" />
             </Field>
             <Field label="Moneda arancel">
-              <select value={form.fee_currency} onChange={e => set('fee_currency', e.target.value)} className="input">
+              <select value={form.fee_currency} onChange={e => set('fee_currency', e.target.value)} disabled={isSpecialFeeEnabled} className="input disabled:bg-gray-100">
                 <option value="BOB">BOB</option>
                 <option value="USD">USD</option>
               </select>
@@ -1051,7 +1096,8 @@ function CreateClientModal({ onClose, onCreate, saving, sources, foreignPricingP
                     set('fee_currency', selectedProfile.currency || 'USD');
                   }
                 }}
-                className="input"
+                disabled={isSpecialFeeEnabled}
+                className="input disabled:bg-gray-100"
               >
                 <option value="">Sin perfil</option>
                 {(foreignPricingProfiles || []).map((profile) => (
@@ -1086,7 +1132,7 @@ function getRecurringStatusMeta(schedule) {
   return { label: 'Activa', className: 'bg-blue-100 text-blue-700' };
 }
 
-function EditClientModal({ client, recurringSchedule, onClose, onSave, onRecurringChange, sources, statuses, foreignPricingProfiles, showToast }) {
+function EditClientModal({ client, recurringSchedule, onClose, onSave, onRecurringChange, sources, statuses, foreignPricingProfiles, pricingConfig, showToast }) {
   const [form, setForm] = useState({ ...client });
   const [saving, setSaving] = useState(false);
   const [currentSchedule, setCurrentSchedule] = useState(recurringSchedule);
@@ -1104,6 +1150,7 @@ function EditClientModal({ client, recurringSchedule, onClose, onSave, onRecurri
     setCurrentSchedule(recurringSchedule);
     setRecurringForm(buildRecurringForm(recurringSchedule, client));
   }, [recurringSchedule, client]);
+  const isSpecialFeeEnabled = !!form.special_fee_enabled;
 
   const recurringMeta = getRecurringStatusMeta(currentSchedule);
   const recurringIsActive = currentSchedule && !currentSchedule.ended_at && !currentSchedule.paused_at;
@@ -1189,7 +1236,7 @@ function EditClientModal({ client, recurringSchedule, onClose, onSave, onRecurri
     try {
       const fields = [
         'first_name', 'last_name', 'phone', 'age', 'city', 'country', 'timezone', 'modality', 'frequency',
-        'source', 'referred_by', 'fee', 'fee_currency', 'foreign_pricing_key', 'payment_method',
+        'source', 'referred_by', 'special_fee_enabled', 'fee', 'fee_currency', 'foreign_pricing_key', 'payment_method',
         'notes', 'diagnosis', 'status_override',
       ];
       for (const f of fields) {
@@ -1258,11 +1305,29 @@ function EditClientModal({ client, recurringSchedule, onClose, onSave, onRecurri
             <Field label="Referido por">
               <input value={form.referred_by || ''} onChange={e => set('referred_by', e.target.value)} className="input" />
             </Field>
+            <Field label="QR Bolivia">
+              <select
+                value={isSpecialFeeEnabled ? 'special' : 'auto'}
+                onChange={e => {
+                  const nextIsSpecial = e.target.value === 'special';
+                  set('special_fee_enabled', nextIsSpecial);
+                  if (nextIsSpecial) {
+                    set('fee', Number(pricingConfig?.special_fee || 150));
+                    set('fee_currency', 'BOB');
+                    set('foreign_pricing_key', null);
+                  }
+                }}
+                className="input"
+              >
+                <option value="auto">Auto por ciudad</option>
+                <option value="special">Especial</option>
+              </select>
+            </Field>
             <Field label={`Arancel (${(form.fee_currency || 'BOB') === 'USD' ? 'USD' : 'Bs'})`}>
-              <input type="number" value={form.fee || ''} onChange={e => set('fee', parseFloat(e.target.value))} className="input" />
+              <input type="number" value={form.fee || ''} onChange={e => set('fee', parseFloat(e.target.value))} disabled={isSpecialFeeEnabled} className="input disabled:bg-gray-100" />
             </Field>
             <Field label="Moneda arancel">
-              <select value={form.fee_currency || 'BOB'} onChange={e => set('fee_currency', e.target.value)} className="input">
+              <select value={form.fee_currency || 'BOB'} onChange={e => set('fee_currency', e.target.value)} disabled={isSpecialFeeEnabled} className="input disabled:bg-gray-100">
                 <option value="BOB">BOB</option>
                 <option value="USD">USD</option>
               </select>
@@ -1279,7 +1344,8 @@ function EditClientModal({ client, recurringSchedule, onClose, onSave, onRecurri
                     set('fee_currency', selectedProfile.currency || 'USD');
                   }
                 }}
-                className="input"
+                disabled={isSpecialFeeEnabled}
+                className="input disabled:bg-gray-100"
               >
                 <option value="">Sin perfil</option>
                 {(foreignPricingProfiles || []).map((profile) => (

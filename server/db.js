@@ -96,6 +96,7 @@ async function initializeDatabase() {
         fee INT DEFAULT 250,
         fee_currency VARCHAR(8) DEFAULT 'BOB',
         foreign_pricing_key VARCHAR(60),
+        special_fee_enabled BOOLEAN DEFAULT FALSE,
         payment_method ENUM('QR','Efectivo','Transferencia') DEFAULT 'QR',
         rating TINYINT DEFAULT 0,
         diagnosis TEXT,
@@ -682,6 +683,7 @@ async function initializeDatabase() {
     await conn.query(`ALTER TABLE clients MODIFY COLUMN fee INT DEFAULT 250`).catch(() => {});
     await conn.query(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS fee_currency VARCHAR(8) DEFAULT 'BOB'`).catch(() => {});
     await conn.query(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS foreign_pricing_key VARCHAR(60)`).catch(() => {});
+    await conn.query(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS special_fee_enabled BOOLEAN DEFAULT FALSE`).catch(() => {});
     await conn.query(`ALTER TABLE clients ADD KEY IF NOT EXISTS idx_foreign_pricing_key (foreign_pricing_key)`).catch(() => {});
     await conn.query(`UPDATE clients SET fee_currency = 'BOB' WHERE fee_currency IS NULL OR fee_currency = ''`).catch(() => {});
     await conn.query(`ALTER TABLE config MODIFY COLUMN default_fee INT DEFAULT 250`).catch(() => {});

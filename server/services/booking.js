@@ -7,6 +7,7 @@ const {
   isSlotClaimConflictError,
 } = require('./appointmentSlotClaims');
 const { normalizePhone, normalizedPhoneSql } = require('../utils/phone');
+const { getAutomaticLocalFee, getSpecialFee, isBoliviaCountry } = require('./clientPricing');
 
 const CALENDAR_ID = () => process.env.CALENDAR_ID || 'danielmacleann@gmail.com';
 
@@ -98,27 +99,25 @@ async function createClient(phone, onboarding, tenantId, conn, feeOverride) {
   const db = conn || pool;
   const canonicalPhone = normalizePhone(phone);
   const { first_name, last_name, age, city, country, source, timezone } = onboarding;
+  const specialFeeEnabled = Number(feeOverride) > 0;
 
   const [cfgRows] = await db.query(
-    'SELECT default_fee, capital_fee, capital_cities FROM config WHERE tenant_id = ?',
+    'SELECT default_fee, capital_fee, special_fee, capital_cities FROM config WHERE tenant_id = ?',
     [tenantId]
   );
   const cfg = cfgRows[0];
-  const capitalCities = (cfg?.capital_cities || '').split(',').map(c => c.trim());
-  const isBolivia = !country || country.trim().toLowerCase() === 'bolivia';
-  const autoFee = isBolivia
-    ? (capitalCities.includes(city) ? (cfg?.capital_fee || 300) : (cfg?.default_fee || 250))
-    : 0;
+  const isBolivia = isBoliviaCountry(country);
+  const autoFee = getAutomaticLocalFee({ city, country, config: cfg }) ?? 0;
   const autoFeeCurrency = isBolivia ? 'BOB' : 'USD';
-  const fee = (feeOverride && parseInt(feeOverride) > 0) ? parseInt(feeOverride) : autoFee;
-  const feeCurrency = (feeOverride && parseInt(feeOverride) > 0) ? 'BOB' : autoFeeCurrency;
+  const fee = specialFeeEnabled ? getSpecialFee(cfg) : autoFee;
+  const feeCurrency = specialFeeEnabled ? 'BOB' : autoFeeCurrency;
 
   let newClient;
   try {
     const [result] = await db.query(
-      `INSERT INTO clients (tenant_id, phone, first_name, last_name, age, city, country, timezone, source, fee, fee_currency, foreign_pricing_key)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)`,
-      [tenantId, canonicalPhone, first_name, last_name, age || null, city || 'Otro', country || 'Bolivia', timezone || 'America/La_Paz', source || 'Otro', fee, feeCurrency]
+      `INSERT INTO clients (tenant_id, phone, first_name, last_name, age, city, country, timezone, source, fee, fee_currency, foreign_pricing_key, special_fee_enabled)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?)`,
+      [tenantId, canonicalPhone, first_name, last_name, age || null, city || 'Otro', country || 'Bolivia', timezone || 'America/La_Paz', source || 'Otro', fee, feeCurrency, specialFeeEnabled ? 1 : 0]
     );
     const [clients] = await db.query('SELECT * FROM clients WHERE id = ?', [result.insertId]);
     newClient = clients[0];
@@ -127,9 +126,9 @@ async function createClient(phone, onboarding, tenantId, conn, feeOverride) {
       // Reactivate soft-deleted client and update their info
       await db.query(
         `UPDATE clients SET deleted_at = NULL, first_name = ?, last_name = ?, age = ?,
-         city = ?, country = ?, timezone = ?, source = ?, fee = ?, fee_currency = ?, foreign_pricing_key = NULL
+         city = ?, country = ?, timezone = ?, source = ?, fee = ?, fee_currency = ?, foreign_pricing_key = NULL, special_fee_enabled = ?
          WHERE ${normalizedPhoneSql('phone')} = ? AND tenant_id = ?`,
-        [first_name, last_name, age || null, city || 'Otro', country || 'Bolivia', timezone || 'America/La_Paz', source || 'Otro', fee, feeCurrency, canonicalPhone, tenantId]
+        [first_name, last_name, age || null, city || 'Otro', country || 'Bolivia', timezone || 'America/La_Paz', source || 'Otro', fee, feeCurrency, specialFeeEnabled ? 1 : 0, canonicalPhone, tenantId]
       );
       const [clients] = await db.query(
         `SELECT * FROM clients WHERE ${normalizedPhoneSql('phone')} = ? AND tenant_id = ? LIMIT 1`,

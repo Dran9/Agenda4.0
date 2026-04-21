@@ -261,6 +261,13 @@ export default function Config() {
   const [specialFeePhone, setSpecialFeePhone] = useState('');
   const [specialFeeLinkData, setSpecialFeeLinkData] = useState(null);
   const [generatingSpecialFeeLink, setGeneratingSpecialFeeLink] = useState(false);
+  const [qrPreviewVersion, setQrPreviewVersion] = useState(() => ({
+    qr_300: Date.now(),
+    qr_250: Date.now(),
+    qr_150: Date.now(),
+    qr_generico: Date.now(),
+  }));
+  const [qrAssetStatus, setQrAssetStatus] = useState({});
 
   useEffect(() => {
     api.get('/config')
@@ -578,7 +585,20 @@ export default function Config() {
     formData.append('file', file);
     try {
       await api.upload(`/config/qr/${key}`, formData);
+      setQrPreviewVersion(prev => ({ ...prev, [key]: Date.now() }));
+      setQrAssetStatus(prev => ({ ...prev, [key]: 'loading' }));
       showToast('QR subido');
+    } catch (err) {
+      showToast('Error: ' + err.message, 'error');
+    }
+  }
+
+  async function handleQRDelete(key) {
+    try {
+      await api.delete(`/config/qr/${key}`);
+      setQrPreviewVersion(prev => ({ ...prev, [key]: Date.now() }));
+      setQrAssetStatus(prev => ({ ...prev, [key]: 'loading' }));
+      showToast('QR borrado');
     } catch (err) {
       showToast('Error: ' + err.message, 'error');
     }
@@ -1173,12 +1193,28 @@ export default function Config() {
                       onChange={e => { if (e.target.files[0]) handleQRUpload(qr.key, e.target.files[0]); }}
                       className="text-xs"
                     />
-                    <img
-                      src={`/api/config/qr/${qr.key}`}
-                      alt=""
-                      className="mt-3 w-24 h-24 object-contain border rounded bg-white"
-                      onError={e => { e.target.style.display = 'none'; }}
-                    />
+                    <div className="mt-3 flex items-start gap-3">
+                      <div className="flex h-24 w-24 items-center justify-center rounded border bg-white">
+                        {qrAssetStatus[qr.key] === 'missing' ? (
+                          <span className="px-2 text-center text-[11px] text-gray-400">Sin QR</span>
+                        ) : null}
+                        <img
+                          key={`${qr.key}-${qrPreviewVersion[qr.key] || 0}`}
+                          src={`/api/config/qr/${qr.key}?v=${qrPreviewVersion[qr.key] || 0}`}
+                          alt={`QR ${qr.label}`}
+                          className={`h-24 w-24 object-contain ${qrAssetStatus[qr.key] === 'missing' ? 'hidden' : ''}`}
+                          onLoad={() => setQrAssetStatus(prev => ({ ...prev, [qr.key]: 'ready' }))}
+                          onError={() => setQrAssetStatus(prev => ({ ...prev, [qr.key]: 'missing' }))}
+                        />
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => handleQRDelete(qr.key)}
+                        className="rounded-lg border border-red-200 bg-white px-3 py-2 text-xs font-medium text-red-600 hover:bg-red-50"
+                      >
+                        Borrar
+                      </button>
+                    </div>
                   </div>
                 ))}
               </div>

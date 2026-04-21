@@ -2,14 +2,17 @@ const { Router } = require('express');
 const { pool } = require('../db');
 const { authMiddleware } = require('../middleware/auth');
 const multer = require('multer');
-const { saveFile, getFile, listFiles } = require('../services/storage');
+const { saveFile, getFile, deleteFile } = require('../services/storage');
 const { getSchedulerRuntime, refreshConfigSchedulers } = require('../cron/scheduler');
 const { createPublicFeeToken } = require('../services/publicBookingToken');
 const { sendServerError } = require('../utils/httpErrors');
 const { normalizePhone } = require('../utils/phone');
+const { broadcast } = require('../services/adminEvents');
+const { getSpecialFee } = require('../services/clientPricing');
 
 const router = Router();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024 } });
+const VALID_QR_KEYS = ['qr_300', 'qr_250', 'qr_150', 'qr_generico'];
 
 function buildTenantBaseUrl(req, domain) {
   const trimmed = String(domain || '').trim().replace(/\/+$/, '');
@@ -127,6 +130,16 @@ router.put('/', authMiddleware, async (req, res) => {
     const setClauses = Object.keys(updates).map(k => `${k} = ?`).join(', ');
     const values = [...Object.values(updates), req.tenantId];
     await pool.query(`UPDATE config SET ${setClauses} WHERE tenant_id = ?`, values);
+    if (updates.special_fee !== undefined) {
+      const specialFee = getSpecialFee({ special_fee: updates.special_fee });
+      await pool.query(
+        `UPDATE clients
+         SET fee = ?, fee_currency = 'BOB', foreign_pricing_key = NULL
+         WHERE tenant_id = ? AND special_fee_enabled = 1 AND deleted_at IS NULL`,
+        [specialFee, req.tenantId]
+      );
+      broadcast('client:change', { action: 'special_fee_sync' }, req.tenantId);
+    }
     if (
       updates.reminder_time !== undefined ||
       updates.reminder_enabled !== undefined ||
@@ -187,9 +200,8 @@ router.post('/special-fee-link', authMiddleware, async (req, res) => {
 // POST /api/config/qr/:key — upload QR image (admin)
 router.post('/qr/:key', authMiddleware, upload.single('file'), async (req, res) => {
   try {
-    const validKeys = ['qr_300', 'qr_250', 'qr_150', 'qr_generico'];
-    if (!validKeys.includes(req.params.key)) {
-      return res.status(400).json({ error: 'Key inválido. Opciones: ' + validKeys.join(', ') });
+    if (!VALID_QR_KEYS.includes(req.params.key)) {
+      return res.status(400).json({ error: 'Key inválido. Opciones: ' + VALID_QR_KEYS.join(', ') });
     }
     if (!req.file) return res.status(400).json({ error: 'Archivo requerido' });
 
@@ -203,6 +215,22 @@ router.post('/qr/:key', authMiddleware, upload.single('file'), async (req, res) 
   }
 });
 
+router.delete('/qr/:key', authMiddleware, async (req, res) => {
+  try {
+    if (!VALID_QR_KEYS.includes(req.params.key)) {
+      return res.status(400).json({ error: 'Key inválido. Opciones: ' + VALID_QR_KEYS.join(', ') });
+    }
+
+    await deleteFile(req.tenantId, req.params.key);
+    res.json({ success: true, deleted: true });
+  } catch (err) {
+    sendServerError(res, req, err, {
+      message: 'No se pudo borrar el QR',
+      logLabel: 'config qr delete',
+    });
+  }
+});
+
 // GET /api/config/qr/:key — get QR image (public)
 router.get('/qr/:key', async (req, res) => {
   try {
@@ -210,6 +238,7 @@ router.get('/qr/:key', async (req, res) => {
     const file = await getFile(tenantId, req.params.key);
     if (!file) return res.status(404).json({ error: 'QR no encontrado' });
     res.set('Content-Type', file.mime_type);
+    res.set('Cache-Control', 'no-store, max-age=0');
     res.send(file.data);
   } catch (err) {
     sendServerError(res, req, err, {

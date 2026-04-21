@@ -73,6 +73,7 @@ const clientSchema = z.object({
   fee: z.number().positive().optional(),
   fee_currency: z.enum(['BOB', 'USD']).optional(),
   foreign_pricing_key: z.string().max(60).nullable().optional(),
+  special_fee_enabled: z.boolean().optional(),
   payment_method: z.enum(['QR', 'Efectivo', 'Transferencia']).optional(),
   rating: z.number().int().min(0).max(5).optional(),
   diagnosis: z.string().optional(),

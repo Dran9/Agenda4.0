@@ -8,6 +8,7 @@ const { sendServerError } = require('../utils/httpErrors');
 const { normalizePhone, hasPhoneDigits, normalizedPhoneSql } = require('../utils/phone');
 const { broadcast } = require('../services/adminEvents');
 const { deleteFile } = require('../services/storage');
+const { getAutomaticLocalFee, getSpecialFee } = require('../services/clientPricing');
 const {
   autoFitColumns,
   createWorkbook,
@@ -19,6 +20,14 @@ const {
 } = require('../services/excelExport');
 
 const router = Router();
+
+async function getPricingConfig(tenantId) {
+  const [rows] = await pool.query(
+    'SELECT default_fee, capital_fee, special_fee, capital_cities FROM config WHERE tenant_id = ? LIMIT 1',
+    [tenantId]
+  );
+  return rows[0] || {};
+}
 
 // Helper: calculate client status based on rules from SPECS
 function calculateStatus(client, lastAppt, futureAppt, completedCount) {
@@ -233,6 +242,7 @@ router.get('/export', authMiddleware, async (req, res) => {
       { header: 'Fuente', key: 'source' },
       { header: 'Arancel', key: 'fee' },
       { header: 'Moneda', key: 'fee_currency' },
+      { header: 'Tarifa especial', key: 'special_fee_enabled' },
       { header: 'Perfil Stripe', key: 'foreign_pricing_key' },
       { header: 'Sesiones completadas', key: 'completed_sessions' },
       { header: 'Total citas', key: 'total_appointments' },
@@ -266,6 +276,7 @@ router.get('/export', authMiddleware, async (req, res) => {
         source: client.source || '',
         fee: Number(client.fee || 0),
         fee_currency: client.fee_currency || 'BOB',
+        special_fee_enabled: client.special_fee_enabled ? 'Sí' : 'No',
         foreign_pricing_key: client.foreign_pricing_key || '',
         completed_sessions: Number(client.completed_sessions || 0),
         total_appointments: Number(client.total_appointments || 0),
@@ -437,6 +448,7 @@ router.post('/', authMiddleware, validate(clientSchema), async (req, res) => {
   try {
     const data = req.validated;
     const phone = normalizePhone(data.phone);
+    const specialFeeEnabled = !!data.special_fee_enabled;
     const [existing] = await pool.query(
       `SELECT id FROM clients
        WHERE ${normalizedPhoneSql('phone')} = ? AND tenant_id = ? AND deleted_at IS NULL
@@ -445,14 +457,24 @@ router.post('/', authMiddleware, validate(clientSchema), async (req, res) => {
     );
     if (existing.length > 0) return res.json({ client_id: existing[0].id, existing: true });
 
+    let fee = data.fee || 250;
+    let feeCurrency = data.fee_currency || 'BOB';
+    let foreignPricingKey = data.foreign_pricing_key || null;
+    if (specialFeeEnabled) {
+      const pricingConfig = await getPricingConfig(req.tenantId);
+      fee = getSpecialFee(pricingConfig);
+      feeCurrency = 'BOB';
+      foreignPricingKey = null;
+    }
+
     const [result] = await pool.query(
-      `INSERT INTO clients (tenant_id, phone, first_name, last_name, age, city, country, timezone, modality, frequency, source, referred_by, fee, fee_currency, foreign_pricing_key, payment_method, rating, diagnosis, notes)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO clients (tenant_id, phone, first_name, last_name, age, city, country, timezone, modality, frequency, source, referred_by, fee, fee_currency, foreign_pricing_key, special_fee_enabled, payment_method, rating, diagnosis, notes)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [req.tenantId, phone, data.first_name, data.last_name, data.age || null,
        data.city || 'Cochabamba', data.country || 'Bolivia', data.timezone || 'America/La_Paz',
        data.modality || 'Presencial', data.frequency || 'Semanal', data.source || 'Otro',
-       data.referred_by || null, data.fee || 250, data.fee_currency || 'BOB',
-       data.foreign_pricing_key || null, data.payment_method || 'QR', data.rating || 0,
+       data.referred_by || null, fee, feeCurrency,
+       foreignPricingKey, specialFeeEnabled ? 1 : 0, data.payment_method || 'QR', data.rating || 0,
        data.diagnosis || null, data.notes || null]
     );
     res.json({ client_id: result.insertId, existing: false });
@@ -470,13 +492,22 @@ router.put('/:id', authMiddleware, async (req, res) => {
     const allowed = [
       'first_name', 'last_name', 'age', 'city', 'country', 'timezone', 'modality', 'frequency',
       'source', 'referred_by', 'fee', 'payment_method', 'rating', 'diagnosis', 'notes',
-      'status_override', 'phone', 'fee_currency', 'foreign_pricing_key'
+      'status_override', 'phone', 'fee_currency', 'foreign_pricing_key', 'special_fee_enabled'
     ];
     const updates = {};
     for (const key of allowed) {
       if (req.body[key] !== undefined) updates[key] = req.body[key];
     }
     if (Object.keys(updates).length === 0) return res.status(400).json({ error: 'No hay campos para actualizar' });
+
+    const [currentRows] = await pool.query(
+      'SELECT * FROM clients WHERE id = ? AND tenant_id = ? LIMIT 1',
+      [req.params.id, req.tenantId]
+    );
+    if (currentRows.length === 0) {
+      return res.status(404).json({ error: 'Cliente no encontrado' });
+    }
+    const currentClient = currentRows[0];
 
     if (updates.phone !== undefined) {
       const normalized = normalizePhone(updates.phone);
@@ -506,6 +537,35 @@ router.put('/:id', authMiddleware, async (req, res) => {
     if (updates.foreign_pricing_key !== undefined) {
       const key = String(updates.foreign_pricing_key || '').trim();
       updates.foreign_pricing_key = key || null;
+    }
+
+    if (updates.special_fee_enabled !== undefined) {
+      updates.special_fee_enabled = updates.special_fee_enabled ? 1 : 0;
+    }
+
+    const effectiveSpecialFeeEnabled = updates.special_fee_enabled !== undefined
+      ? !!updates.special_fee_enabled
+      : !!currentClient.special_fee_enabled;
+
+    if (effectiveSpecialFeeEnabled) {
+      const pricingConfig = await getPricingConfig(req.tenantId);
+      updates.special_fee_enabled = 1;
+      updates.fee = getSpecialFee(pricingConfig);
+      updates.fee_currency = 'BOB';
+      updates.foreign_pricing_key = null;
+    } else if (currentClient.special_fee_enabled && updates.special_fee_enabled !== undefined) {
+      const pricingConfig = await getPricingConfig(req.tenantId);
+      const nextClient = { ...currentClient, ...updates, special_fee_enabled: 0 };
+      const automaticFee = getAutomaticLocalFee({
+        city: nextClient.city,
+        country: nextClient.country,
+        config: pricingConfig,
+      });
+      if (automaticFee != null) {
+        updates.fee = automaticFee;
+        updates.fee_currency = 'BOB';
+        updates.foreign_pricing_key = null;
+      }
     }
 
     const setClauses = Object.keys(updates).map(k => `${k} = ?`).join(', ');

@@ -14,6 +14,7 @@ const { verifyPublicRescheduleToken, verifyPublicFeeToken } = require('../servic
 const { sendServerError } = require('../utils/httpErrors');
 const { normalizePhone } = require('../utils/phone');
 const { broadcast } = require('../services/adminEvents');
+const { getSpecialFee } = require('../services/clientPricing');
 
 const router = Router();
 
@@ -77,6 +78,32 @@ async function resolvePublicFeeOverride({ tenantId, phone, feeMode, code }) {
   return parseInt(rows[0]?.special_fee, 10) || 150;
 }
 
+async function syncSpecialFeeClientIfNeeded(client, tenantId) {
+  if (!client || !client.special_fee_enabled) return client;
+
+  const [rows] = await pool.query(
+    'SELECT special_fee FROM config WHERE tenant_id = ? LIMIT 1',
+    [tenantId]
+  );
+  const specialFee = getSpecialFee(rows[0]);
+
+  if (
+    parseInt(client.fee, 10) !== specialFee
+    || String(client.fee_currency || '').toUpperCase() !== 'BOB'
+    || client.foreign_pricing_key
+  ) {
+    await pool.query(
+      'UPDATE clients SET fee = ?, fee_currency = ?, foreign_pricing_key = NULL WHERE id = ? AND tenant_id = ?',
+      [specialFee, 'BOB', client.id, tenantId]
+    );
+  }
+
+  client.fee = specialFee;
+  client.fee_currency = 'BOB';
+  client.foreign_pricing_key = null;
+  return client;
+}
+
 // POST /api/admin/book
 router.post('/admin/book', authMiddleware, validate(adminBookingSchema), async (req, res) => {
   try {
@@ -87,6 +114,7 @@ router.post('/admin/book', authMiddleware, validate(adminBookingSchema), async (
     if (clients.length === 0) return res.status(404).json({ error: 'Cliente no encontrado' });
 
     const client = clients[0];
+    await syncSpecialFeeClientIfNeeded(client, tenantId);
     if (fee_override && parseInt(fee_override, 10) > 0) {
       const newFee = parseInt(fee_override, 10);
       await pool.query(
@@ -168,14 +196,17 @@ router.post('/book', publicRateLimit, validate(publicBookingSchema), async (req,
     // Returning client — book directly
     const [clients] = await pool.query('SELECT * FROM clients WHERE id = ? AND tenant_id = ?', [check.client_id, tenantId]);
     const client = clients[0];
+    await syncSpecialFeeClientIfNeeded(client, tenantId);
     if (feeOverride && parseInt(feeOverride, 10) > 0) {
       const newFee = parseInt(feeOverride, 10);
       await pool.query(
-        'UPDATE clients SET fee = ?, fee_currency = ? WHERE id = ? AND tenant_id = ?',
+        'UPDATE clients SET fee = ?, fee_currency = ?, foreign_pricing_key = NULL, special_fee_enabled = 1 WHERE id = ? AND tenant_id = ?',
         [newFee, 'BOB', client.id, tenantId]
       );
       client.fee = newFee;
       client.fee_currency = 'BOB';
+      client.foreign_pricing_key = null;
+      client.special_fee_enabled = 1;
       console.log(`[booking] Public fee mode applied: client ${client.id} → Bs ${newFee}`);
     }
     const result = await createBooking(client, date_time, tenantId, bookingContext);

@@ -8,6 +8,7 @@ const { verifyWebhookSignatureFromReq } = require('../utils/webhookSignature');
 const { broadcast } = require('../services/adminEvents');
 const { extractIdentity, extractStatusIdentity, resolveIdentity } = require('../services/whatsappIdentity');
 const { ingestMetaWebhookPayload } = require('../services/metaHealth');
+const { resolveQrKey } = require('../services/clientPricing');
 
 const router = Router();
 const CALENDAR_ID = () => process.env.CALENDAR_ID || process.env.GOOGLE_CALENDAR_ID || 'danielmacleann@gmail.com';
@@ -475,7 +476,7 @@ router.post('/', async (req, res) => {
                         }
 
                         const [appointmentRows] = await pool.query(
-                          `SELECT a.phone, a.booking_context, c.phone AS client_phone, c.country AS client_country, c.fee
+                          `SELECT a.phone, a.booking_context, c.phone AS client_phone, c.country AS client_country, c.fee, c.special_fee_enabled
                            FROM appointments a
                            JOIN clients c ON c.id = a.client_id
                            WHERE a.id = ? AND a.tenant_id = ?
@@ -532,12 +533,8 @@ router.post('/', async (req, res) => {
                           return;
                         }
 
-                        let qrKey;
                         const fee = parseInt(appointment.fee, 10);
-                        if (fee === parseInt(cfg.capital_fee, 10)) qrKey = 'qr_300';
-                        else if (fee === parseInt(cfg.special_fee, 10)) qrKey = 'qr_150';
-                        else if (fee === parseInt(cfg.default_fee, 10)) qrKey = 'qr_250';
-                        else qrKey = 'qr_generico';
+                        const qrKey = resolveQrKey({ client: appointment, fee, config: cfg });
 
                         const { getFile } = require('../services/storage');
                         const qrFile = await getFile(tenantId, qrKey);

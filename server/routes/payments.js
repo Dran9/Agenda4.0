@@ -10,6 +10,15 @@ const { google } = require('googleapis');
 const { sendServerError } = require('../utils/httpErrors');
 const { normalizePhone, normalizedPhoneSql } = require('../utils/phone');
 const { broadcast } = require('../services/adminEvents');
+const {
+  autoFitColumns,
+  createWorkbook,
+  formatDateBolivia,
+  freezeHeader,
+  setAutoFilter,
+  styleDataGrid,
+  styleHeaderRow,
+} = require('../services/excelExport');
 
 const router = Router();
 
@@ -19,6 +28,189 @@ function sanitizeReceiptDate(value) {
 
 function sanitizeReceiptDestName(value) {
   return value ? String(value).trim().slice(0, 255) : null;
+}
+
+function buildGoalSessionMix(goalRemaining, pricing = {}) {
+  const remaining = Number(goalRemaining || 0);
+  if (remaining <= 0) return [];
+  const config = [
+    { key: 'province', label: 'Tarifa base', share: 0.7, feeKey: 'default_fee' },
+    { key: 'capital', label: 'Tarifa capital', share: 0.25, feeKey: 'capital_fee' },
+    { key: 'special', label: 'Tarifa especial', share: 0.05, feeKey: 'special_fee' },
+  ];
+
+  return config
+    .map((item) => {
+      const fee = Number(pricing?.[item.feeKey] || 0);
+      if (!fee) return null;
+      const targetAmount = remaining * item.share;
+      const exactSessions = targetAmount / fee;
+      return {
+        ...item,
+        fee,
+        targetAmount,
+        sessions: exactSessions > 0 ? Math.max(1, Math.ceil(exactSessions)) : 0,
+      };
+    })
+    .filter(Boolean);
+}
+
+async function getMonthlySummaryData(tenantId, year, month) {
+  const y = parseInt(year, 10) || new Date().getFullYear();
+  const m = parseInt(month, 10) || new Date().getMonth() + 1;
+
+  const [[current]] = await pool.query(`
+    SELECT
+      COUNT(*) as total_sessions,
+      COALESCE(SUM(CASE WHEN p.has_confirmed = 1 THEN 1 ELSE 0 END), 0) as paid_sessions,
+      COALESCE(SUM(CASE WHEN p.has_confirmed = 0 AND p.has_pending = 1 THEN 1 ELSE 0 END), 0) as pending_sessions,
+      COALESCE(SUM(CASE WHEN p.has_confirmed = 1 THEN p.income_confirmed_bob ELSE 0 END), 0) as income_confirmed_bob,
+      COALESCE(SUM(CASE WHEN p.has_confirmed = 1 THEN p.income_confirmed_usd ELSE 0 END), 0) as income_confirmed_usd,
+      COALESCE(SUM(CASE WHEN p.has_confirmed = 0 AND p.has_pending = 1 THEN p.income_pending_bob ELSE 0 END), 0) as income_pending_bob,
+      COALESCE(SUM(CASE WHEN p.has_confirmed = 0 AND p.has_pending = 1 THEN p.income_pending_usd ELSE 0 END), 0) as income_pending_usd
+    FROM appointments a
+    LEFT JOIN (
+      SELECT
+        tenant_id,
+        appointment_id,
+        MAX(CASE WHEN status = 'Confirmado' THEN 1 ELSE 0 END) as has_confirmed,
+        MAX(CASE WHEN status = 'Pendiente' THEN 1 ELSE 0 END) as has_pending,
+        SUM(
+          CASE
+            WHEN status = 'Confirmado' AND UPPER(COALESCE(NULLIF(settled_currency, ''), NULLIF(currency, ''), 'BOB')) = 'BOB'
+              THEN COALESCE(settled_amount, amount, 0)
+            ELSE 0
+          END
+        ) as income_confirmed_bob,
+        SUM(
+          CASE
+            WHEN status = 'Confirmado' AND UPPER(COALESCE(NULLIF(settled_currency, ''), NULLIF(currency, ''), 'BOB')) = 'USD'
+              THEN COALESCE(settled_amount, amount, 0)
+            ELSE 0
+          END
+        ) as income_confirmed_usd,
+        SUM(
+          CASE
+            WHEN status = 'Pendiente' AND UPPER(COALESCE(NULLIF(currency, ''), 'BOB')) = 'BOB'
+              THEN COALESCE(amount, 0)
+            ELSE 0
+          END
+        ) as income_pending_bob,
+        SUM(
+          CASE
+            WHEN status = 'Pendiente' AND UPPER(COALESCE(NULLIF(currency, ''), 'BOB')) = 'USD'
+              THEN COALESCE(amount, 0)
+            ELSE 0
+          END
+        ) as income_pending_usd
+      FROM payments
+      WHERE tenant_id = ?
+      GROUP BY tenant_id, appointment_id
+    ) p ON p.appointment_id = a.id AND p.tenant_id = a.tenant_id
+    WHERE a.tenant_id = ? AND YEAR(a.date_time) = ? AND MONTH(a.date_time) = ?
+      AND a.status IN ('Completada', 'Confirmada', 'Agendada', 'Reagendada')
+  `, [tenantId, tenantId, y, m]);
+
+  const [history] = await pool.query(`
+    SELECT
+      YEAR(a.date_time) as year,
+      MONTH(a.date_time) as month,
+      COUNT(*) as sessions,
+      COALESCE(SUM(CASE WHEN p.has_confirmed = 1 THEN p.income_confirmed_bob ELSE 0 END), 0) as income,
+      COALESCE(SUM(CASE WHEN p.has_confirmed = 1 THEN p.income_confirmed_usd ELSE 0 END), 0) as income_usd
+    FROM appointments a
+    LEFT JOIN (
+      SELECT
+        tenant_id,
+        appointment_id,
+        MAX(CASE WHEN status = 'Confirmado' THEN 1 ELSE 0 END) as has_confirmed,
+        SUM(
+          CASE
+            WHEN status = 'Confirmado' AND UPPER(COALESCE(NULLIF(settled_currency, ''), NULLIF(currency, ''), 'BOB')) = 'BOB'
+              THEN COALESCE(settled_amount, amount, 0)
+            ELSE 0
+          END
+        ) as income_confirmed_bob,
+        SUM(
+          CASE
+            WHEN status = 'Confirmado' AND UPPER(COALESCE(NULLIF(settled_currency, ''), NULLIF(currency, ''), 'BOB')) = 'USD'
+              THEN COALESCE(settled_amount, amount, 0)
+            ELSE 0
+          END
+        ) as income_confirmed_usd
+      FROM payments
+      WHERE tenant_id = ?
+      GROUP BY tenant_id, appointment_id
+    ) p ON p.appointment_id = a.id AND p.tenant_id = a.tenant_id
+    WHERE a.tenant_id = ? AND a.date_time >= DATE_SUB(NOW(), INTERVAL 6 MONTH)
+      AND a.status IN ('Completada', 'Confirmada', 'Agendada', 'Reagendada')
+    GROUP BY YEAR(a.date_time), MONTH(a.date_time)
+    ORDER BY year DESC, month DESC
+  `, [tenantId, tenantId]);
+
+  const [payments] = await pool.query(`
+    SELECT p.*, c.first_name, c.last_name, c.phone as client_phone, c.fee as client_fee, c.fee_currency as client_fee_currency,
+           COALESCE(
+             CASE WHEN p.status = 'Confirmado' THEN p.settled_amount END,
+             p.amount,
+             c.fee,
+             0
+           ) as effective_amount,
+           UPPER(
+             COALESCE(
+               CASE WHEN p.status = 'Confirmado' THEN NULLIF(p.settled_currency, '') END,
+               NULLIF(p.currency, ''),
+               NULLIF(c.fee_currency, ''),
+               'BOB'
+             )
+           ) as effective_currency,
+           a.date_time, a.status as appt_status, a.session_number,
+           p.ocr_extracted_amount, p.ocr_extracted_ref
+    FROM payments p
+    JOIN clients c ON p.client_id = c.id
+    LEFT JOIN appointments a ON p.appointment_id = a.id
+    WHERE p.tenant_id = ? AND YEAR(a.date_time) = ? AND MONTH(a.date_time) = ?
+    ORDER BY a.date_time DESC
+  `, [tenantId, y, m]);
+
+  const [[cfg]] = await pool.query(
+    'SELECT monthly_goal, default_fee, capital_fee, special_fee FROM config WHERE tenant_id = ?',
+    [tenantId]
+  );
+
+  return {
+    current: {
+      ...current,
+      year: y,
+      month: m,
+      total_sessions: Number(current?.total_sessions || 0),
+      paid_sessions: Number(current?.paid_sessions || 0),
+      pending_sessions: Number(current?.pending_sessions || 0),
+      income_confirmed_bob: Number(current?.income_confirmed_bob || 0),
+      income_confirmed_usd: Number(current?.income_confirmed_usd || 0),
+      income_pending_bob: Number(current?.income_pending_bob || 0),
+      income_pending_usd: Number(current?.income_pending_usd || 0),
+    },
+    history: history.map((row) => ({
+      ...row,
+      year: Number(row.year),
+      month: Number(row.month),
+      sessions: Number(row.sessions || 0),
+      income: Number(row.income || 0),
+      income_usd: Number(row.income_usd || 0),
+    })),
+    payments: payments.map((payment) => ({
+      ...payment,
+      effective_amount: Number(payment.effective_amount || 0),
+      effective_currency: String(payment.effective_currency || 'BOB').toUpperCase(),
+    })),
+    monthly_goal: cfg?.monthly_goal || null,
+    pricing: {
+      default_fee: Number(cfg?.default_fee || 250),
+      capital_fee: Number(cfg?.capital_fee || 300),
+      special_fee: Number(cfg?.special_fee || 150),
+    },
+  };
 }
 
 // GET /api/payments — list payments with filters
@@ -308,179 +500,151 @@ router.post('/match-receipt', authMiddleware, async (req, res) => {
 // GET /api/payments/summary — monthly income summary for finance dashboard
 router.get('/summary', authMiddleware, async (req, res) => {
   try {
-    const t = req.tenantId;
-    const { year, month } = req.query;
-    const y = parseInt(year) || new Date().getFullYear();
-    const m = parseInt(month) || new Date().getMonth() + 1;
-
-    // Current month stats
-    const [[current]] = await pool.query(`
-      SELECT
-        COUNT(*) as total_sessions,
-        COALESCE(SUM(CASE WHEN p.has_confirmed = 1 THEN 1 ELSE 0 END), 0) as paid_sessions,
-        COALESCE(SUM(CASE WHEN p.has_confirmed = 0 AND p.has_pending = 1 THEN 1 ELSE 0 END), 0) as pending_sessions,
-        COALESCE(SUM(CASE WHEN p.has_confirmed = 1 THEN p.income_confirmed_bob ELSE 0 END), 0) as income_confirmed_bob,
-        COALESCE(SUM(CASE WHEN p.has_confirmed = 1 THEN p.income_confirmed_usd ELSE 0 END), 0) as income_confirmed_usd,
-        COALESCE(SUM(CASE WHEN p.has_confirmed = 0 AND p.has_pending = 1 THEN p.income_pending_bob ELSE 0 END), 0) as income_pending_bob,
-        COALESCE(SUM(CASE WHEN p.has_confirmed = 0 AND p.has_pending = 1 THEN p.income_pending_usd ELSE 0 END), 0) as income_pending_usd
-      FROM appointments a
-      LEFT JOIN (
-        SELECT
-          tenant_id,
-          appointment_id,
-          MAX(CASE WHEN status = 'Confirmado' THEN 1 ELSE 0 END) as has_confirmed,
-          MAX(CASE WHEN status = 'Pendiente' THEN 1 ELSE 0 END) as has_pending,
-          SUM(
-            CASE
-              WHEN status = 'Confirmado' AND UPPER(COALESCE(NULLIF(settled_currency, ''), NULLIF(currency, ''), 'BOB')) = 'BOB'
-                THEN COALESCE(settled_amount, amount, 0)
-              ELSE 0
-            END
-          ) as income_confirmed_bob,
-          SUM(
-            CASE
-              WHEN status = 'Confirmado' AND UPPER(COALESCE(NULLIF(settled_currency, ''), NULLIF(currency, ''), 'BOB')) = 'USD'
-                THEN COALESCE(settled_amount, amount, 0)
-              ELSE 0
-            END
-          ) as income_confirmed_usd,
-          SUM(
-            CASE
-              WHEN status = 'Pendiente' AND UPPER(COALESCE(NULLIF(currency, ''), 'BOB')) = 'BOB'
-                THEN COALESCE(amount, 0)
-              ELSE 0
-            END
-          ) as income_pending_bob,
-          SUM(
-            CASE
-              WHEN status = 'Pendiente' AND UPPER(COALESCE(NULLIF(currency, ''), 'BOB')) = 'USD'
-                THEN COALESCE(amount, 0)
-              ELSE 0
-            END
-          ) as income_pending_usd
-        FROM payments
-        WHERE tenant_id = ?
-        GROUP BY tenant_id, appointment_id
-      ) p ON p.appointment_id = a.id AND p.tenant_id = a.tenant_id
-      WHERE a.tenant_id = ? AND YEAR(a.date_time) = ? AND MONTH(a.date_time) = ?
-        AND a.status IN ('Completada', 'Confirmada', 'Agendada', 'Reagendada')
-    `, [t, t, y, m]);
-
-    // Monthly history (last 6 months)
-    const [history] = await pool.query(`
-      SELECT
-        YEAR(a.date_time) as year,
-        MONTH(a.date_time) as month,
-        COUNT(*) as sessions,
-        COALESCE(SUM(CASE WHEN p.has_confirmed = 1 THEN p.income_confirmed_bob ELSE 0 END), 0) as income,
-        COALESCE(SUM(CASE WHEN p.has_confirmed = 1 THEN p.income_confirmed_usd ELSE 0 END), 0) as income_usd
-      FROM appointments a
-      LEFT JOIN (
-        SELECT
-          tenant_id,
-          appointment_id,
-          MAX(CASE WHEN status = 'Confirmado' THEN 1 ELSE 0 END) as has_confirmed,
-          SUM(
-            CASE
-              WHEN status = 'Confirmado' AND UPPER(COALESCE(NULLIF(settled_currency, ''), NULLIF(currency, ''), 'BOB')) = 'BOB'
-                THEN COALESCE(settled_amount, amount, 0)
-              ELSE 0
-            END
-          ) as income_confirmed_bob,
-          SUM(
-            CASE
-              WHEN status = 'Confirmado' AND UPPER(COALESCE(NULLIF(settled_currency, ''), NULLIF(currency, ''), 'BOB')) = 'USD'
-                THEN COALESCE(settled_amount, amount, 0)
-              ELSE 0
-            END
-          ) as income_confirmed_usd
-        FROM payments
-        WHERE tenant_id = ?
-        GROUP BY tenant_id, appointment_id
-      ) p ON p.appointment_id = a.id AND p.tenant_id = a.tenant_id
-      WHERE a.tenant_id = ? AND a.date_time >= DATE_SUB(NOW(), INTERVAL 6 MONTH)
-        AND a.status IN ('Completada', 'Confirmada', 'Agendada', 'Reagendada')
-      GROUP BY YEAR(a.date_time), MONTH(a.date_time)
-      ORDER BY year DESC, month DESC
-    `, [t, t]);
-
-    // Payment detail for current month
-    const [payments] = await pool.query(`
-      SELECT p.*, c.first_name, c.last_name, c.phone as client_phone, c.fee as client_fee, c.fee_currency as client_fee_currency,
-             COALESCE(
-               CASE WHEN p.status = 'Confirmado' THEN p.settled_amount END,
-               p.amount,
-               c.fee,
-               0
-             ) as effective_amount,
-             UPPER(
-               COALESCE(
-                 CASE WHEN p.status = 'Confirmado' THEN NULLIF(p.settled_currency, '') END,
-                 NULLIF(p.currency, ''),
-                 NULLIF(c.fee_currency, ''),
-                 'BOB'
-               )
-             ) as effective_currency,
-             a.date_time, a.status as appt_status, a.session_number,
-             p.ocr_extracted_amount, p.ocr_extracted_ref
-      FROM payments p
-      JOIN clients c ON p.client_id = c.id
-      LEFT JOIN appointments a ON p.appointment_id = a.id
-      WHERE p.tenant_id = ? AND YEAR(a.date_time) = ? AND MONTH(a.date_time) = ?
-      ORDER BY a.date_time DESC
-    `, [t, y, m]);
-
-    // Get goal from config
-    const [[cfg]] = await pool.query(
-      'SELECT monthly_goal, default_fee, capital_fee, special_fee FROM config WHERE tenant_id = ?',
-      [t]
-    );
-
-    const normalizedCurrent = {
-      ...current,
-      year: y,
-      month: m,
-      total_sessions: Number(current?.total_sessions || 0),
-      paid_sessions: Number(current?.paid_sessions || 0),
-      pending_sessions: Number(current?.pending_sessions || 0),
-      income_confirmed_bob: Number(current?.income_confirmed_bob || 0),
-      income_confirmed_usd: Number(current?.income_confirmed_usd || 0),
-      income_pending_bob: Number(current?.income_pending_bob || 0),
-      income_pending_usd: Number(current?.income_pending_usd || 0),
-    };
-    normalizedCurrent.income_confirmed = normalizedCurrent.income_confirmed_bob; // backward compatibility
-    normalizedCurrent.income_pending = normalizedCurrent.income_pending_bob; // backward compatibility
-
-    const normalizedHistory = history.map((row) => ({
-      ...row,
-      year: Number(row.year),
-      month: Number(row.month),
-      sessions: Number(row.sessions || 0),
-      income: Number(row.income || 0),
-      income_usd: Number(row.income_usd || 0),
-    }));
-
-    const normalizedPayments = payments.map((payment) => ({
-      ...payment,
-      effective_amount: Number(payment.effective_amount || 0),
-      effective_currency: String(payment.effective_currency || 'BOB').toUpperCase(),
-    }));
-
-    res.json({
-      current: normalizedCurrent,
-      history: normalizedHistory,
-      payments: normalizedPayments,
-      monthly_goal: cfg?.monthly_goal || null,
-      pricing: {
-        default_fee: Number(cfg?.default_fee || 250),
-        capital_fee: Number(cfg?.capital_fee || 300),
-        special_fee: Number(cfg?.special_fee || 150),
-      },
-    });
+    const data = await getMonthlySummaryData(req.tenantId, req.query.year, req.query.month);
+    data.current.income_confirmed = data.current.income_confirmed_bob;
+    data.current.income_pending = data.current.income_pending_bob;
+    res.json(data);
   } catch (err) {
     sendServerError(res, req, err, {
       message: 'No se pudo cargar el resumen de pagos',
       logLabel: 'payments summary',
+    });
+  }
+});
+
+router.get('/export', authMiddleware, async (req, res) => {
+  try {
+    const data = await getMonthlySummaryData(req.tenantId, req.query.year, req.query.month);
+    const current = data.current || {};
+    const goalAmount = data.monthly_goal ? Number(data.monthly_goal) : 0;
+    const confirmedBob = Number(current.income_confirmed_bob || 0);
+    const confirmedUsd = Number(current.income_confirmed_usd || 0);
+    const pendingBob = Number(current.income_pending_bob || 0);
+    const pendingUsd = Number(current.income_pending_usd || 0);
+    const paidSessions = Number(current.paid_sessions || 0);
+    const totalSessions = Number(current.total_sessions || 0);
+    const pendingSessions = Number(current.pending_sessions || 0);
+    const avgFee = paidSessions > 0 ? confirmedBob / paidSessions : 250;
+    const goalRemaining = goalAmount ? Math.max(goalAmount - confirmedBob, 0) : 0;
+    const sessionsNeeded = goalRemaining > 0 ? Math.ceil(goalRemaining / avgFee) : 0;
+    const sessionMix = buildGoalSessionMix(goalRemaining, data.pricing);
+
+    const workbook = createWorkbook();
+
+    const summarySheet = workbook.addWorksheet('Resumen');
+    summarySheet.columns = [
+      { header: 'Indicador', key: 'label' },
+      { header: 'Valor', key: 'value' },
+    ];
+    [
+      { label: 'Periodo', value: `${current.month}/${current.year}` },
+      { label: 'Meta mensual BOB', value: goalAmount || 0 },
+      { label: 'Confirmado BOB', value: confirmedBob },
+      { label: 'Confirmado USD', value: confirmedUsd },
+      { label: 'Pendiente BOB', value: pendingBob },
+      { label: 'Pendiente USD', value: pendingUsd },
+      { label: 'Sesiones totales', value: totalSessions },
+      { label: 'Sesiones pagadas', value: paidSessions },
+      { label: 'Sesiones pendientes', value: pendingSessions },
+      { label: 'Promedio sesion BOB', value: avgFee },
+      { label: 'Faltante meta BOB', value: goalRemaining },
+      { label: 'Sesiones estimadas para meta', value: sessionsNeeded },
+    ].forEach((row) => summarySheet.addRow(row));
+    styleHeaderRow(summarySheet);
+    styleDataGrid(summarySheet);
+    freezeHeader(summarySheet);
+    setAutoFilter(summarySheet);
+    autoFitColumns(summarySheet);
+
+    const historySheet = workbook.addWorksheet('Historial');
+    historySheet.columns = [
+      { header: 'Ano', key: 'year' },
+      { header: 'Mes', key: 'month' },
+      { header: 'Sesiones', key: 'sessions' },
+      { header: 'Ingreso BOB', key: 'income' },
+      { header: 'Ingreso USD', key: 'income_usd' },
+    ];
+    data.history.forEach((row) => historySheet.addRow(row));
+    styleHeaderRow(historySheet);
+    styleDataGrid(historySheet);
+    freezeHeader(historySheet);
+    setAutoFilter(historySheet);
+    autoFitColumns(historySheet);
+
+    const paymentsSheet = workbook.addWorksheet('Pagos');
+    paymentsSheet.columns = [
+      { header: 'ID pago', key: 'id' },
+      { header: 'Fecha cita', key: 'date_time' },
+      { header: 'Cliente', key: 'client_name' },
+      { header: 'Celular', key: 'client_phone' },
+      { header: 'Monto', key: 'effective_amount' },
+      { header: 'Moneda', key: 'effective_currency' },
+      { header: 'Status pago', key: 'status' },
+      { header: 'Status cita', key: 'appt_status' },
+      { header: 'Sesion nro', key: 'session_number' },
+      { header: 'Monto OCR', key: 'ocr_extracted_amount' },
+      { header: 'Ref OCR', key: 'ocr_extracted_ref' },
+      { header: 'Fecha registro', key: 'created_at' },
+    ];
+    data.payments.forEach((payment) => {
+      paymentsSheet.addRow({
+        id: payment.id,
+        date_time: formatDateBolivia(payment.date_time, true),
+        client_name: `${payment.first_name || ''} ${payment.last_name || ''}`.trim(),
+        client_phone: payment.client_phone || '',
+        effective_amount: Number(payment.effective_amount || 0),
+        effective_currency: payment.effective_currency || 'BOB',
+        status: payment.status || '',
+        appt_status: payment.appt_status || '',
+        session_number: payment.session_number ?? '',
+        ocr_extracted_amount: payment.ocr_extracted_amount ?? '',
+        ocr_extracted_ref: payment.ocr_extracted_ref || '',
+        created_at: formatDateBolivia(payment.created_at, true),
+      });
+    });
+    styleHeaderRow(paymentsSheet);
+    styleDataGrid(paymentsSheet);
+    freezeHeader(paymentsSheet);
+    setAutoFilter(paymentsSheet);
+    autoFitColumns(paymentsSheet);
+
+    const mixSheet = workbook.addWorksheet('Meta');
+    mixSheet.columns = [
+      { header: 'Escenario', key: 'label' },
+      { header: 'Tarifa', key: 'fee' },
+      { header: 'Objetivo BOB', key: 'targetAmount' },
+      { header: 'Sesiones sugeridas', key: 'sessions' },
+    ];
+    sessionMix.forEach((item) => mixSheet.addRow(item));
+    styleHeaderRow(mixSheet);
+    styleDataGrid(mixSheet);
+    freezeHeader(mixSheet);
+    setAutoFilter(mixSheet);
+    autoFitColumns(mixSheet);
+
+    ['Resumen', 'Historial', 'Pagos', 'Meta'].forEach((name) => {
+      const sheet = workbook.getWorksheet(name);
+      if (!sheet) return;
+      sheet.eachRow((row, rowNumber) => {
+        if (rowNumber === 1) return;
+        row.eachCell((cell, colNumber) => {
+          const header = String(sheet.getRow(1).getCell(colNumber).value || '').toLowerCase();
+          if (header.includes('monto') || header.includes('ingreso') || header.includes('meta') || header.includes('tarifa') || header.includes('promedio') || header.includes('faltante') || header === 'valor') {
+            if (typeof cell.value === 'number') cell.numFmt = '#,##0.00';
+          }
+        });
+      });
+    });
+
+    const filename = `finanzas_${current.year}_${String(current.month).padStart(2, '0')}.xlsx`;
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    await workbook.xlsx.write(res);
+    res.end();
+  } catch (err) {
+    sendServerError(res, req, err, {
+      message: 'No se pudo exportar el Excel de finanzas',
+      logLabel: 'payments export',
     });
   }
 });

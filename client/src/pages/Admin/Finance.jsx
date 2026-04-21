@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Target, TrendingUp, ChevronLeft, ChevronRight, Eye } from 'lucide-react';
+import { Target, TrendingUp, ChevronLeft, ChevronRight, Eye, Download } from 'lucide-react';
 import AdminLayout from '../../components/AdminLayout';
 import { api } from '../../utils/api';
 import { buildGoalSessionMix } from '../../utils/goalMix';
@@ -58,6 +58,7 @@ export default function Finance() {
   const [loading, setLoading] = useState(true);
   const [goal, setGoal] = useState('');
   const [editingGoal, setEditingGoal] = useState(false);
+  const [exporting, setExporting] = useState(false);
   const { toast, show: showToast } = useToast();
 
   const now = new Date();
@@ -91,6 +92,18 @@ export default function Finance() {
       loadData();
     } catch (err) {
       showToast('Error: ' + err.message, 'error');
+    }
+  }
+
+  async function handleExport() {
+    setExporting(true);
+    try {
+      await api.download(`/payments/export?year=${year}&month=${month}`, `finanzas_${year}_${String(month).padStart(2, '0')}.xlsx`);
+      showToast('Excel de finanzas descargado');
+    } catch (err) {
+      showToast('Error: ' + err.message, 'error');
+    } finally {
+      setExporting(false);
     }
   }
 
@@ -141,9 +154,20 @@ export default function Finance() {
       <Toast toast={toast} />
 
       {/* Month selector */}
-      <div className="flex items-center justify-between mb-5">
+      <div className="flex items-center justify-between gap-3 mb-5">
         <button type="button" onClick={prevMonth} className="p-2 hover:bg-gray-100 rounded-lg"><ChevronLeft size={18} /></button>
-        <h2 className="text-lg font-semibold">{MONTHS[month - 1]} {year}</h2>
+        <div className="flex items-center gap-3">
+          <h2 className="text-lg font-semibold">{MONTHS[month - 1]} {year}</h2>
+          <button
+            type="button"
+            onClick={handleExport}
+            disabled={loading || exporting}
+            className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+          >
+            <Download size={15} />
+            {exporting ? 'Exportando...' : 'Exportar Excel'}
+          </button>
+        </div>
         <button type="button" onClick={nextMonth} className="p-2 hover:bg-gray-100 rounded-lg"><ChevronRight size={18} /></button>
       </div>
 

@@ -8,6 +8,15 @@ const { sendServerError } = require('../utils/httpErrors');
 const { normalizePhone, hasPhoneDigits, normalizedPhoneSql } = require('../utils/phone');
 const { broadcast } = require('../services/adminEvents');
 const { deleteFile } = require('../services/storage');
+const {
+  autoFitColumns,
+  createWorkbook,
+  formatDateBolivia,
+  freezeHeader,
+  setAutoFilter,
+  styleDataGrid,
+  styleHeaderRow,
+} = require('../services/excelExport');
 
 const router = Router();
 
@@ -40,6 +49,33 @@ function sanitizePublicClientStatus(result) {
     };
   }
   return { status: result.status };
+}
+
+function recurringPriority(schedule) {
+  if (!schedule) return 99;
+  if (!schedule.ended_at && !schedule.paused_at) return 0;
+  if (schedule.paused_at && !schedule.ended_at) return 1;
+  return 2;
+}
+
+function pickRecurringSchedule(current, candidate) {
+  if (!current) return candidate;
+  const currentPriority = recurringPriority(current);
+  const candidatePriority = recurringPriority(candidate);
+  if (candidatePriority !== currentPriority) {
+    return candidatePriority < currentPriority ? candidate : current;
+  }
+  return new Date(candidate.updated_at || 0) > new Date(current.updated_at || 0) ? candidate : current;
+}
+
+function describeRecurringSchedule(schedule) {
+  if (!schedule || schedule.ended_at) {
+    return { status: 'No recurrente', day: '', time: '', startedAt: '' };
+  }
+  if (schedule.paused_at) {
+    return { status: 'Pausada', day: schedule.day_of_week, time: schedule.time || '', startedAt: schedule.started_at || '' };
+  }
+  return { status: 'Recurrente', day: schedule.day_of_week, time: schedule.time || '', startedAt: schedule.started_at || '' };
 }
 
 // GET /api/clients — list all (admin)
@@ -99,6 +135,166 @@ router.get('/', authMiddleware, async (req, res) => {
     sendServerError(res, req, err, {
       message: 'No se pudieron cargar los clientes',
       logLabel: 'clients list',
+    });
+  }
+});
+
+router.get('/export', authMiddleware, async (req, res) => {
+  try {
+    const view = String(req.query.view || 'active');
+    const search = String(req.query.search || '').trim();
+    const deletedFilter = view === 'archived'
+      ? 'c.deleted_at IS NOT NULL'
+      : view === 'all'
+        ? '1=1'
+        : 'c.deleted_at IS NULL';
+    const searchFilter = search
+      ? ' AND (c.first_name LIKE ? OR c.last_name LIKE ? OR c.phone LIKE ? OR c.city LIKE ?)'
+      : '';
+    const searchParam = `%${search}%`;
+    const params = [req.tenantId, req.tenantId, req.tenantId, req.tenantId, req.tenantId, req.tenantId, req.tenantId, req.tenantId, req.tenantId];
+    if (search) params.push(searchParam, searchParam, searchParam, searchParam);
+
+    const [clients] = await pool.query(
+      `SELECT c.*,
+        (SELECT COUNT(*) FROM appointments WHERE client_id = c.id AND tenant_id = ? AND status = 'Completada') as completed_sessions,
+        (SELECT MAX(date_time) FROM appointments WHERE client_id = c.id AND tenant_id = ? AND status = 'Completada') as last_session,
+        (SELECT MIN(date_time) FROM appointments WHERE client_id = c.id AND tenant_id = ? AND status = 'Completada') as first_session,
+        (SELECT MIN(date_time) FROM appointments WHERE client_id = c.id AND tenant_id = ? AND status IN ('Agendada','Confirmada','Reagendada') AND date_time > NOW()) as next_session,
+        (SELECT COUNT(*) FROM appointments WHERE client_id = c.id AND tenant_id = ?) as total_appointments,
+        (SELECT COUNT(*) FROM appointments WHERE client_id = c.id AND tenant_id = ? AND status = 'Reagendada') as reschedule_count,
+        (SELECT COUNT(*) FROM recurring_schedules WHERE client_id = c.id AND tenant_id = ? AND ended_at IS NULL AND paused_at IS NULL) as has_active_recurring,
+        (SELECT COUNT(*) FROM recurring_schedules WHERE client_id = c.id AND tenant_id = ? AND ended_at IS NULL AND paused_at IS NOT NULL) as has_paused_recurring
+       FROM clients c
+       WHERE c.tenant_id = ? AND ${deletedFilter}${searchFilter}
+       ORDER BY
+         CASE WHEN c.deleted_at IS NULL THEN 0 ELSE 1 END,
+         COALESCE(c.deleted_at, c.created_at) DESC`,
+      params
+    );
+
+    const [cfgRows] = await pool.query('SELECT retention_rules FROM config WHERE tenant_id = ? LIMIT 1', [req.tenantId]);
+    const retentionRules = cfgRows[0]?.retention_rules || null;
+
+    const clientIds = clients.map((client) => client.id);
+    const recurringByClient = new Map();
+    if (clientIds.length > 0) {
+      const [recurringRows] = await pool.query(
+        `SELECT *
+         FROM recurring_schedules
+         WHERE tenant_id = ? AND client_id IN (?)
+         ORDER BY updated_at DESC, id DESC`,
+        [req.tenantId, clientIds]
+      );
+      for (const schedule of recurringRows) {
+        recurringByClient.set(
+          schedule.client_id,
+          pickRecurringSchedule(recurringByClient.get(schedule.client_id), schedule)
+        );
+      }
+    }
+
+    for (const client of clients) {
+      const futureAppt = client.next_session ? { date_time: client.next_session } : null;
+      const lastAppt = client.last_session ? { date_time: client.last_session } : null;
+      client.calculated_status = calculateStatus(client, lastAppt, futureAppt, client.completed_sessions);
+      const retention = calculateRetentionStatus({
+        frequency: client.frequency,
+        completedSessions: client.completed_sessions,
+        lastSession: client.last_session,
+        nextAppointment: client.next_session,
+        rules: retentionRules,
+        hasActiveRecurring: client.has_active_recurring > 0,
+        hasPausedRecurring: client.has_paused_recurring > 0,
+      });
+      client.retention_status = retention.status;
+      client.days_since_last_session = retention.days_since_last_session;
+    }
+
+    const workbook = createWorkbook();
+    const sheet = workbook.addWorksheet('Contactos');
+    sheet.columns = [
+      { header: 'ID', key: 'id' },
+      { header: 'Nombre', key: 'first_name' },
+      { header: 'Apellido', key: 'last_name' },
+      { header: 'Celular', key: 'phone' },
+      { header: 'Ciudad', key: 'city' },
+      { header: 'Pais', key: 'country' },
+      { header: 'Zona horaria', key: 'timezone' },
+      { header: 'Status', key: 'status' },
+      { header: 'Retencion', key: 'retention_status' },
+      { header: 'Dias desde ultima sesion', key: 'days_since_last_session' },
+      { header: 'Recurrencia', key: 'recurring_status' },
+      { header: 'Dia recurrencia', key: 'recurring_day' },
+      { header: 'Hora recurrencia', key: 'recurring_time' },
+      { header: 'Inicio recurrencia', key: 'recurring_started_at' },
+      { header: 'Modalidad', key: 'modality' },
+      { header: 'Frecuencia', key: 'frequency' },
+      { header: 'Fuente', key: 'source' },
+      { header: 'Arancel', key: 'fee' },
+      { header: 'Moneda', key: 'fee_currency' },
+      { header: 'Perfil Stripe', key: 'foreign_pricing_key' },
+      { header: 'Sesiones completadas', key: 'completed_sessions' },
+      { header: 'Total citas', key: 'total_appointments' },
+      { header: 'Reagendadas', key: 'reschedule_count' },
+      { header: 'Ultima sesion', key: 'last_session' },
+      { header: 'Proxima sesion', key: 'next_session' },
+      { header: 'Fecha registro', key: 'created_at' },
+      { header: 'Archivado', key: 'is_archived' },
+      { header: 'Fecha archivado', key: 'deleted_at' },
+    ];
+
+    for (const client of clients) {
+      const recurring = describeRecurringSchedule(recurringByClient.get(client.id));
+      sheet.addRow({
+        id: client.id,
+        first_name: client.first_name || '',
+        last_name: client.last_name || '',
+        phone: client.phone || '',
+        city: client.city || '',
+        country: client.country || '',
+        timezone: client.timezone || 'America/La_Paz',
+        status: client.status_override || client.calculated_status || '',
+        retention_status: client.retention_status || '',
+        days_since_last_session: client.days_since_last_session ?? '',
+        recurring_status: recurring.status,
+        recurring_day: recurring.day,
+        recurring_time: recurring.time,
+        recurring_started_at: recurring.startedAt,
+        modality: client.modality || '',
+        frequency: client.frequency || '',
+        source: client.source || '',
+        fee: Number(client.fee || 0),
+        fee_currency: client.fee_currency || 'BOB',
+        foreign_pricing_key: client.foreign_pricing_key || '',
+        completed_sessions: Number(client.completed_sessions || 0),
+        total_appointments: Number(client.total_appointments || 0),
+        reschedule_count: Number(client.reschedule_count || 0),
+        last_session: formatDateBolivia(client.last_session, true),
+        next_session: formatDateBolivia(client.next_session, true),
+        created_at: formatDateBolivia(client.created_at, true),
+        is_archived: client.deleted_at ? 'Si' : 'No',
+        deleted_at: formatDateBolivia(client.deleted_at, true),
+      });
+    }
+
+    styleHeaderRow(sheet);
+    styleDataGrid(sheet);
+    freezeHeader(sheet);
+    setAutoFilter(sheet);
+    autoFitColumns(sheet);
+    sheet.getColumn('fee').numFmt = '#,##0.00';
+
+    const safeView = view === 'archived' ? 'archivados' : view === 'all' ? 'todos' : 'activos';
+    const filename = `contactos_${safeView}.xlsx`;
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    await workbook.xlsx.write(res);
+    res.end();
+  } catch (err) {
+    sendServerError(res, req, err, {
+      message: 'No se pudo exportar el Excel de contactos',
+      logLabel: 'clients export',
     });
   }
 });

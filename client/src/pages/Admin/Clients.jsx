@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Plus, Trash2, X, Search, Repeat } from 'lucide-react';
+import { Plus, Trash2, X, Search, Repeat, Download } from 'lucide-react';
 import AdminLayout from '../../components/AdminLayout';
 import InlineConfirmButton from '../../components/InlineConfirmButton';
 import RecurringQuickModal from '../../components/RecurringQuickModal';
@@ -193,6 +193,7 @@ export default function Clients() {
   const [recurringModal, setRecurringModal] = useState(null);
   const [loadingRecurringModal, setLoadingRecurringModal] = useState(false);
   const [archiveView, setArchiveView] = useState('active');
+  const [exporting, setExporting] = useState(false);
 
   const loadClients = useCallback(async () => {
     setLoading(true);
@@ -484,6 +485,21 @@ export default function Clients() {
     }
   }
 
+  async function handleExport() {
+    setExporting(true);
+    try {
+      const params = new URLSearchParams();
+      if (archiveView) params.set('view', archiveView);
+      if (search.trim()) params.set('search', search.trim());
+      await api.download(`/clients/export?${params.toString()}`, 'contactos.xlsx');
+      showToast('Excel de contactos descargado');
+    } catch (err) {
+      showToast('Error: ' + err.message, 'error');
+    } finally {
+      setExporting(false);
+    }
+  }
+
   const filtered = clients.filter(c => {
     if (!search) return true;
     const s = search.toLowerCase();
@@ -547,6 +563,16 @@ export default function Clients() {
         >
           <Plus size={16} />
           Crear cliente
+        </button>
+
+        <button
+          type="button"
+          onClick={handleExport}
+          disabled={loading || exporting}
+          className="flex items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+        >
+          <Download size={16} />
+          {exporting ? 'Exportando...' : 'Exportar Excel'}
         </button>
 
         {selected.size > 0 && archiveView === 'active' ? (

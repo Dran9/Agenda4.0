@@ -250,12 +250,13 @@ router.post('/', authMiddleware, validate(clientSchema), async (req, res) => {
     if (existing.length > 0) return res.json({ client_id: existing[0].id, existing: true });
 
     const [result] = await pool.query(
-      `INSERT INTO clients (tenant_id, phone, first_name, last_name, age, city, country, timezone, modality, frequency, source, referred_by, fee, payment_method, rating, diagnosis, notes)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO clients (tenant_id, phone, first_name, last_name, age, city, country, timezone, modality, frequency, source, referred_by, fee, fee_currency, foreign_pricing_key, payment_method, rating, diagnosis, notes)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [req.tenantId, phone, data.first_name, data.last_name, data.age || null,
        data.city || 'Cochabamba', data.country || 'Bolivia', data.timezone || 'America/La_Paz',
        data.modality || 'Presencial', data.frequency || 'Semanal', data.source || 'Otro',
-       data.referred_by || null, data.fee || 250, data.payment_method || 'QR', data.rating || 0,
+       data.referred_by || null, data.fee || 250, data.fee_currency || 'BOB',
+       data.foreign_pricing_key || null, data.payment_method || 'QR', data.rating || 0,
        data.diagnosis || null, data.notes || null]
     );
     res.json({ client_id: result.insertId, existing: false });
@@ -273,7 +274,7 @@ router.put('/:id', authMiddleware, async (req, res) => {
     const allowed = [
       'first_name', 'last_name', 'age', 'city', 'country', 'timezone', 'modality', 'frequency',
       'source', 'referred_by', 'fee', 'payment_method', 'rating', 'diagnosis', 'notes',
-      'status_override', 'phone'
+      'status_override', 'phone', 'fee_currency', 'foreign_pricing_key'
     ];
     const updates = {};
     for (const key of allowed) {
@@ -296,6 +297,19 @@ router.put('/:id', authMiddleware, async (req, res) => {
         return res.status(409).json({ error: 'Ya existe un cliente con ese telefono' });
       }
       updates.phone = normalized;
+    }
+
+    if (updates.fee_currency !== undefined) {
+      const normalizedCurrency = String(updates.fee_currency || '').trim().toUpperCase();
+      if (!['BOB', 'USD'].includes(normalizedCurrency)) {
+        return res.status(400).json({ error: 'Moneda de arancel inválida' });
+      }
+      updates.fee_currency = normalizedCurrency;
+    }
+
+    if (updates.foreign_pricing_key !== undefined) {
+      const key = String(updates.foreign_pricing_key || '').trim();
+      updates.foreign_pricing_key = key || null;
     }
 
     const setClauses = Object.keys(updates).map(k => `${k} = ?`).join(', ');

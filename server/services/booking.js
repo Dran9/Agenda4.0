@@ -109,14 +109,16 @@ async function createClient(phone, onboarding, tenantId, conn, feeOverride) {
   const autoFee = isBolivia
     ? (capitalCities.includes(city) ? (cfg?.capital_fee || 300) : (cfg?.default_fee || 250))
     : 0;
+  const autoFeeCurrency = isBolivia ? 'BOB' : 'USD';
   const fee = (feeOverride && parseInt(feeOverride) > 0) ? parseInt(feeOverride) : autoFee;
+  const feeCurrency = (feeOverride && parseInt(feeOverride) > 0) ? 'BOB' : autoFeeCurrency;
 
   let newClient;
   try {
     const [result] = await db.query(
-      `INSERT INTO clients (tenant_id, phone, first_name, last_name, age, city, country, timezone, source, fee)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [tenantId, canonicalPhone, first_name, last_name, age || null, city || 'Otro', country || 'Bolivia', timezone || 'America/La_Paz', source || 'Otro', fee]
+      `INSERT INTO clients (tenant_id, phone, first_name, last_name, age, city, country, timezone, source, fee, fee_currency, foreign_pricing_key)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)`,
+      [tenantId, canonicalPhone, first_name, last_name, age || null, city || 'Otro', country || 'Bolivia', timezone || 'America/La_Paz', source || 'Otro', fee, feeCurrency]
     );
     const [clients] = await db.query('SELECT * FROM clients WHERE id = ?', [result.insertId]);
     newClient = clients[0];
@@ -125,8 +127,9 @@ async function createClient(phone, onboarding, tenantId, conn, feeOverride) {
       // Reactivate soft-deleted client and update their info
       await db.query(
         `UPDATE clients SET deleted_at = NULL, first_name = ?, last_name = ?, age = ?,
-         city = ?, country = ?, timezone = ?, source = ?, fee = ? WHERE ${normalizedPhoneSql('phone')} = ? AND tenant_id = ?`,
-        [first_name, last_name, age || null, city || 'Otro', country || 'Bolivia', timezone || 'America/La_Paz', source || 'Otro', fee, canonicalPhone, tenantId]
+         city = ?, country = ?, timezone = ?, source = ?, fee = ?, fee_currency = ?, foreign_pricing_key = NULL
+         WHERE ${normalizedPhoneSql('phone')} = ? AND tenant_id = ?`,
+        [first_name, last_name, age || null, city || 'Otro', country || 'Bolivia', timezone || 'America/La_Paz', source || 'Otro', fee, feeCurrency, canonicalPhone, tenantId]
       );
       const [clients] = await db.query(
         `SELECT * FROM clients WHERE ${normalizedPhoneSql('phone')} = ? AND tenant_id = ? LIMIT 1`,
@@ -240,11 +243,12 @@ async function createBooking(client, dateTime, tenantId, bookingInput = {}) {
             duration,
           });
 
-          const fee = client.fee || 250;
+          const fee = Number(client.fee || 250);
+          const feeCurrency = String(client.fee_currency || 'BOB').toUpperCase();
           await conn.query(
-            `INSERT INTO payments (tenant_id, client_id, appointment_id, amount, status)
-             VALUES (?, ?, ?, ?, 'Pendiente')`,
-            [tenantId, client.id, result.insertId, fee]
+            `INSERT INTO payments (tenant_id, client_id, appointment_id, amount, currency, status)
+             VALUES (?, ?, ?, ?, ?, 'Pendiente')`,
+            [tenantId, client.id, result.insertId, fee, feeCurrency]
           );
 
           await conn.query(

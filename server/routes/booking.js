@@ -89,8 +89,12 @@ router.post('/admin/book', authMiddleware, validate(adminBookingSchema), async (
     const client = clients[0];
     if (fee_override && parseInt(fee_override, 10) > 0) {
       const newFee = parseInt(fee_override, 10);
-      await pool.query('UPDATE clients SET fee = ? WHERE id = ? AND tenant_id = ?', [newFee, client.id, tenantId]);
+      await pool.query(
+        'UPDATE clients SET fee = ?, fee_currency = ? WHERE id = ? AND tenant_id = ?',
+        [newFee, 'BOB', client.id, tenantId]
+      );
       client.fee = newFee;
+      client.fee_currency = 'BOB';
     }
 
     const result = await createBooking(client, date_time, tenantId);
@@ -166,8 +170,12 @@ router.post('/book', publicRateLimit, validate(publicBookingSchema), async (req,
     const client = clients[0];
     if (feeOverride && parseInt(feeOverride, 10) > 0) {
       const newFee = parseInt(feeOverride, 10);
-      await pool.query('UPDATE clients SET fee = ? WHERE id = ? AND tenant_id = ?', [newFee, client.id, tenantId]);
+      await pool.query(
+        'UPDATE clients SET fee = ?, fee_currency = ? WHERE id = ? AND tenant_id = ?',
+        [newFee, 'BOB', client.id, tenantId]
+      );
       client.fee = newFee;
+      client.fee_currency = 'BOB';
       console.log(`[booking] Public fee mode applied: client ${client.id} → Bs ${newFee}`);
     }
     const result = await createBooking(client, date_time, tenantId, bookingContext);

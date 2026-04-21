@@ -84,7 +84,7 @@ async function autoCompleteAppointments() {
   try {
     // Find appointments that ended >1h ago and are still pending completion
     const [appts] = await pool.query(
-      `SELECT a.id, a.client_id, a.tenant_id, a.date_time, a.duration, a.status, c.fee
+      `SELECT a.id, a.client_id, a.tenant_id, a.date_time, a.duration, a.status, c.fee, c.fee_currency
        FROM appointments a
        JOIN clients c ON a.client_id = c.id
        WHERE a.status IN ('Agendada','Confirmada','Reagendada')
@@ -102,9 +102,15 @@ async function autoCompleteAppointments() {
         const [existing] = await conn.query('SELECT id FROM payments WHERE appointment_id = ?', [appt.id]);
         if (existing.length === 0) {
           await conn.query(
-            `INSERT INTO payments (tenant_id, client_id, appointment_id, amount, status)
-             VALUES (?, ?, ?, ?, 'Pendiente')`,
-            [appt.tenant_id, appt.client_id, appt.id, appt.fee || 250]
+            `INSERT INTO payments (tenant_id, client_id, appointment_id, amount, currency, status)
+             VALUES (?, ?, ?, ?, ?, 'Pendiente')`,
+            [
+              appt.tenant_id,
+              appt.client_id,
+              appt.id,
+              Number(appt.fee || 250),
+              String(appt.fee_currency || 'BOB').toUpperCase(),
+            ]
           );
         }
       });

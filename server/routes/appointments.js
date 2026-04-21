@@ -108,7 +108,7 @@ router.put('/:id/status', authMiddleware, validate(appointmentStatusSchema), asy
 
     const result = await withTransaction(async (conn) => {
       const [appointments] = await conn.query(
-        `SELECT a.*, c.fee
+        `SELECT a.*, c.fee, c.fee_currency
          FROM appointments a
          JOIN clients c ON c.id = a.client_id
          WHERE a.id = ? AND a.tenant_id = ?
@@ -141,9 +141,15 @@ router.put('/:id/status', authMiddleware, validate(appointmentStatusSchema), asy
         );
         if (existing.length === 0) {
           await conn.query(
-            `INSERT INTO payments (tenant_id, client_id, appointment_id, amount, status)
-             VALUES (?, ?, ?, ?, 'Pendiente')`,
-            [req.tenantId, appointment.client_id, req.params.id, appointment.fee || 250]
+            `INSERT INTO payments (tenant_id, client_id, appointment_id, amount, currency, status)
+             VALUES (?, ?, ?, ?, ?, 'Pendiente')`,
+            [
+              req.tenantId,
+              appointment.client_id,
+              req.params.id,
+              Number(appointment.fee || 250),
+              String(appointment.fee_currency || 'BOB').toUpperCase(),
+            ]
           );
         }
       }

@@ -75,12 +75,30 @@ router.put('/:id/status', authMiddleware, validate(paymentStatusSchema), async (
   try {
     const { status } = req.validated;
 
-    // Update payment
-    const confirmedAt = status === 'Confirmado' ? new Date() : null;
-    const [updateResult] = await pool.query(
-      'UPDATE payments SET status = ?, confirmed_at = ? WHERE id = ? AND tenant_id = ?',
-      [status, confirmedAt, req.params.id, req.tenantId]
-    );
+    let updateResult;
+    if (status === 'Confirmado') {
+      [updateResult] = await pool.query(
+        `UPDATE payments
+         SET status = ?,
+             confirmed_at = COALESCE(confirmed_at, NOW()),
+             settled_amount = COALESCE(settled_amount, amount),
+             settled_currency = COALESCE(NULLIF(settled_currency, ''), NULLIF(currency, ''), 'BOB'),
+             settled_source = COALESCE(NULLIF(settled_source, ''), 'MANUAL')
+         WHERE id = ? AND tenant_id = ?`,
+        [status, req.params.id, req.tenantId]
+      );
+    } else {
+      [updateResult] = await pool.query(
+        `UPDATE payments
+         SET status = ?,
+             confirmed_at = NULL,
+             settled_amount = NULL,
+             settled_currency = NULL,
+             settled_source = NULL
+         WHERE id = ? AND tenant_id = ?`,
+        [status, req.params.id, req.tenantId]
+      );
+    }
     if (updateResult.affectedRows === 0) {
       return res.status(404).json({ error: 'Pago no encontrado' });
     }
@@ -274,8 +292,8 @@ router.post('/match-receipt', authMiddleware, async (req, res) => {
         payment_id: m.id,
         client_name: `${m.first_name} ${m.last_name || ''}`.trim(),
         client_phone: m.phone,
-        amount: parseInt(m.amount),
-        fee: parseInt(m.fee || 0),
+        amount: Number(m.amount || 0),
+        fee: Number(m.fee || 0),
         date_time: m.date_time,
       })),
     });
@@ -301,16 +319,45 @@ router.get('/summary', authMiddleware, async (req, res) => {
         COUNT(*) as total_sessions,
         COALESCE(SUM(CASE WHEN p.has_confirmed = 1 THEN 1 ELSE 0 END), 0) as paid_sessions,
         COALESCE(SUM(CASE WHEN p.has_confirmed = 0 AND p.has_pending = 1 THEN 1 ELSE 0 END), 0) as pending_sessions,
-        COALESCE(SUM(CASE WHEN p.has_confirmed = 1 THEN COALESCE(c.fee, 0) ELSE 0 END), 0) as income_confirmed,
-        COALESCE(SUM(CASE WHEN p.has_confirmed = 0 AND p.has_pending = 1 THEN COALESCE(c.fee, 0) ELSE 0 END), 0) as income_pending
+        COALESCE(SUM(CASE WHEN p.has_confirmed = 1 THEN p.income_confirmed_bob ELSE 0 END), 0) as income_confirmed_bob,
+        COALESCE(SUM(CASE WHEN p.has_confirmed = 1 THEN p.income_confirmed_usd ELSE 0 END), 0) as income_confirmed_usd,
+        COALESCE(SUM(CASE WHEN p.has_confirmed = 0 AND p.has_pending = 1 THEN p.income_pending_bob ELSE 0 END), 0) as income_pending_bob,
+        COALESCE(SUM(CASE WHEN p.has_confirmed = 0 AND p.has_pending = 1 THEN p.income_pending_usd ELSE 0 END), 0) as income_pending_usd
       FROM appointments a
-      JOIN clients c ON c.id = a.client_id AND c.tenant_id = a.tenant_id
       LEFT JOIN (
         SELECT
           tenant_id,
           appointment_id,
           MAX(CASE WHEN status = 'Confirmado' THEN 1 ELSE 0 END) as has_confirmed,
-          MAX(CASE WHEN status = 'Pendiente' THEN 1 ELSE 0 END) as has_pending
+          MAX(CASE WHEN status = 'Pendiente' THEN 1 ELSE 0 END) as has_pending,
+          SUM(
+            CASE
+              WHEN status = 'Confirmado' AND UPPER(COALESCE(NULLIF(settled_currency, ''), NULLIF(currency, ''), 'BOB')) = 'BOB'
+                THEN COALESCE(settled_amount, amount, 0)
+              ELSE 0
+            END
+          ) as income_confirmed_bob,
+          SUM(
+            CASE
+              WHEN status = 'Confirmado' AND UPPER(COALESCE(NULLIF(settled_currency, ''), NULLIF(currency, ''), 'BOB')) = 'USD'
+                THEN COALESCE(settled_amount, amount, 0)
+              ELSE 0
+            END
+          ) as income_confirmed_usd,
+          SUM(
+            CASE
+              WHEN status = 'Pendiente' AND UPPER(COALESCE(NULLIF(currency, ''), 'BOB')) = 'BOB'
+                THEN COALESCE(amount, 0)
+              ELSE 0
+            END
+          ) as income_pending_bob,
+          SUM(
+            CASE
+              WHEN status = 'Pendiente' AND UPPER(COALESCE(NULLIF(currency, ''), 'BOB')) = 'USD'
+                THEN COALESCE(amount, 0)
+              ELSE 0
+            END
+          ) as income_pending_usd
         FROM payments
         WHERE tenant_id = ?
         GROUP BY tenant_id, appointment_id
@@ -325,14 +372,28 @@ router.get('/summary', authMiddleware, async (req, res) => {
         YEAR(a.date_time) as year,
         MONTH(a.date_time) as month,
         COUNT(*) as sessions,
-        COALESCE(SUM(CASE WHEN p.has_confirmed = 1 THEN COALESCE(c.fee, 0) ELSE 0 END), 0) as income
+        COALESCE(SUM(CASE WHEN p.has_confirmed = 1 THEN p.income_confirmed_bob ELSE 0 END), 0) as income,
+        COALESCE(SUM(CASE WHEN p.has_confirmed = 1 THEN p.income_confirmed_usd ELSE 0 END), 0) as income_usd
       FROM appointments a
-      JOIN clients c ON c.id = a.client_id AND c.tenant_id = a.tenant_id
       LEFT JOIN (
         SELECT
           tenant_id,
           appointment_id,
-          MAX(CASE WHEN status = 'Confirmado' THEN 1 ELSE 0 END) as has_confirmed
+          MAX(CASE WHEN status = 'Confirmado' THEN 1 ELSE 0 END) as has_confirmed,
+          SUM(
+            CASE
+              WHEN status = 'Confirmado' AND UPPER(COALESCE(NULLIF(settled_currency, ''), NULLIF(currency, ''), 'BOB')) = 'BOB'
+                THEN COALESCE(settled_amount, amount, 0)
+              ELSE 0
+            END
+          ) as income_confirmed_bob,
+          SUM(
+            CASE
+              WHEN status = 'Confirmado' AND UPPER(COALESCE(NULLIF(settled_currency, ''), NULLIF(currency, ''), 'BOB')) = 'USD'
+                THEN COALESCE(settled_amount, amount, 0)
+              ELSE 0
+            END
+          ) as income_confirmed_usd
         FROM payments
         WHERE tenant_id = ?
         GROUP BY tenant_id, appointment_id
@@ -345,8 +406,21 @@ router.get('/summary', authMiddleware, async (req, res) => {
 
     // Payment detail for current month
     const [payments] = await pool.query(`
-      SELECT p.*, c.first_name, c.last_name, c.phone as client_phone, c.fee as client_fee,
-             COALESCE(c.fee, p.amount) as effective_amount,
+      SELECT p.*, c.first_name, c.last_name, c.phone as client_phone, c.fee as client_fee, c.fee_currency as client_fee_currency,
+             COALESCE(
+               CASE WHEN p.status = 'Confirmado' THEN p.settled_amount END,
+               p.amount,
+               c.fee,
+               0
+             ) as effective_amount,
+             UPPER(
+               COALESCE(
+                 CASE WHEN p.status = 'Confirmado' THEN NULLIF(p.settled_currency, '') END,
+                 NULLIF(p.currency, ''),
+                 NULLIF(c.fee_currency, ''),
+                 'BOB'
+               )
+             ) as effective_currency,
              a.date_time, a.status as appt_status, a.session_number,
              p.ocr_extracted_amount, p.ocr_extracted_ref
       FROM payments p
@@ -362,10 +436,40 @@ router.get('/summary', authMiddleware, async (req, res) => {
       [t]
     );
 
+    const normalizedCurrent = {
+      ...current,
+      year: y,
+      month: m,
+      total_sessions: Number(current?.total_sessions || 0),
+      paid_sessions: Number(current?.paid_sessions || 0),
+      pending_sessions: Number(current?.pending_sessions || 0),
+      income_confirmed_bob: Number(current?.income_confirmed_bob || 0),
+      income_confirmed_usd: Number(current?.income_confirmed_usd || 0),
+      income_pending_bob: Number(current?.income_pending_bob || 0),
+      income_pending_usd: Number(current?.income_pending_usd || 0),
+    };
+    normalizedCurrent.income_confirmed = normalizedCurrent.income_confirmed_bob; // backward compatibility
+    normalizedCurrent.income_pending = normalizedCurrent.income_pending_bob; // backward compatibility
+
+    const normalizedHistory = history.map((row) => ({
+      ...row,
+      year: Number(row.year),
+      month: Number(row.month),
+      sessions: Number(row.sessions || 0),
+      income: Number(row.income || 0),
+      income_usd: Number(row.income_usd || 0),
+    }));
+
+    const normalizedPayments = payments.map((payment) => ({
+      ...payment,
+      effective_amount: Number(payment.effective_amount || 0),
+      effective_currency: String(payment.effective_currency || 'BOB').toUpperCase(),
+    }));
+
     res.json({
-      current: { ...current, year: y, month: m },
-      history,
-      payments,
+      current: normalizedCurrent,
+      history: normalizedHistory,
+      payments: normalizedPayments,
       monthly_goal: cfg?.monthly_goal || null,
       pricing: {
         default_fee: Number(cfg?.default_fee || 250),

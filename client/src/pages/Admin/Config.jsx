@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Copy, Plus, Trash2, X } from 'lucide-react';
+import { Copy, ExternalLink, Plus, Trash2, X } from 'lucide-react';
 import { useSearchParams } from 'react-router-dom';
 import AdminLayout from '../../components/AdminLayout';
 import { api } from '../../utils/api';
@@ -27,6 +27,47 @@ const DEFAULT_RETENTION_RULES = {
   Mensual: { risk_days: 45, lost_days: 75 },
   Irregular: { risk_days: 30, lost_days: 60 },
 };
+
+function sanitizeForeignPricingProfiles(rawProfiles) {
+  let parsed = rawProfiles;
+  if (typeof parsed === 'string') {
+    try {
+      parsed = JSON.parse(parsed);
+    } catch {
+      parsed = [];
+    }
+  }
+  if (!Array.isArray(parsed)) return [];
+
+  const usedKeys = new Set();
+  const rows = [];
+
+  for (const row of parsed) {
+    const normalizedKey = String(row?.key || row?.name || row?.label || '')
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9_-]+/g, '-')
+      .slice(0, 40);
+    const key = normalizedKey || `usd-${rows.length + 1}`;
+    if (usedKeys.has(key)) continue;
+
+    const amount = Number(row?.amount);
+    const url = String(row?.url || '').trim();
+    if (!Number.isFinite(amount) || amount <= 0 || !url) continue;
+
+    usedKeys.add(key);
+    rows.push({
+      key,
+      name: String(row?.name || key).trim().slice(0, 80) || key,
+      amount: Math.round(amount * 100) / 100,
+      currency: String(row?.currency || 'USD').trim().toUpperCase() === 'BOB' ? 'BOB' : 'USD',
+      url,
+    });
+    if (rows.length >= 6) break;
+  }
+
+  return rows;
+}
 
 function generateTimeOptions() {
   const opts = [];
@@ -150,16 +191,20 @@ function normalizeConfigPayload(data) {
   const days = typeof data.available_days === 'string'
     ? JSON.parse(data.available_days) : (data.available_days || []);
   const capitalCities = (data.capital_cities || '').split(',').map(c => c.trim()).filter(Boolean);
+  const foreignPricingProfiles = sanitizeForeignPricingProfiles(data.foreign_pricing_profiles);
   return {
     ...data,
     payment_reminder_template: data.payment_reminder_template || '',
     retention_risk_template: data.retention_risk_template || '',
     retention_lost_template: data.retention_lost_template || '',
     whatsapp_template_language: data.whatsapp_template_language || 'es',
+    stripe_webhook_url: data.stripe_webhook_url || '',
+    stripe_webhook_secret: data.stripe_webhook_secret || '',
     _availableHours: hours,
     _availableDays: days,
     _capitalCities: capitalCities,
     _retentionRules: normalizeRetentionRules(data.retention_rules),
+    _foreignPricingProfiles: foreignPricingProfiles,
   };
 }
 
@@ -368,6 +413,67 @@ export default function Config() {
     }));
   }
 
+  function buildDefaultStripeWebhookUrl() {
+    if (typeof window === 'undefined') return '';
+    return `${window.location.origin}/api/stripe/webhook`;
+  }
+
+  function addForeignPricingProfile() {
+    setConfig(prev => {
+      const current = Array.isArray(prev?._foreignPricingProfiles) ? prev._foreignPricingProfiles : [];
+      if (current.length >= 6) return prev;
+      const nextIndex = current.length + 1;
+      const baseKey = `usd-${nextIndex}`;
+      return {
+        ...prev,
+        _foreignPricingProfiles: [
+          ...current,
+          {
+            key: baseKey,
+            name: `Monto ${nextIndex}`,
+            amount: '',
+            currency: 'USD',
+            url: '',
+          },
+        ],
+      };
+    });
+  }
+
+  function updateForeignPricingProfile(idx, field, value) {
+    setConfig(prev => {
+      const current = Array.isArray(prev?._foreignPricingProfiles) ? [...prev._foreignPricingProfiles] : [];
+      if (!current[idx]) return prev;
+
+      const next = { ...current[idx] };
+      if (field === 'key') {
+        next.key = String(value || '')
+          .trim()
+          .toLowerCase()
+          .replace(/[^a-z0-9_-]+/g, '-')
+          .slice(0, 40);
+      } else if (field === 'amount') {
+        const parsed = Number(value);
+        next.amount = Number.isFinite(parsed) ? parsed : '';
+      } else if (field === 'currency') {
+        next.currency = String(value || 'USD').toUpperCase() === 'BOB' ? 'BOB' : 'USD';
+      } else if (field === 'name' || field === 'url') {
+        next[field] = String(value || '');
+      }
+
+      current[idx] = next;
+      return { ...prev, _foreignPricingProfiles: current };
+    });
+  }
+
+  function removeForeignPricingProfile(idx) {
+    setConfig(prev => {
+      const current = Array.isArray(prev?._foreignPricingProfiles) ? [...prev._foreignPricingProfiles] : [];
+      current.splice(idx, 1);
+      return { ...prev, _foreignPricingProfiles: current };
+    });
+  }
+
   function updateSpecialFeePhone(value) {
     setSpecialFeePhone(value.replace(/\D/g, '').slice(0, 15));
     setSpecialFeeLinkData(null);
@@ -428,8 +534,9 @@ export default function Config() {
         capital_fee: config.capital_fee,
         default_fee: config.default_fee,
         special_fee: config.special_fee,
-        foreign_fee: config.foreign_fee,
-        foreign_currency: config.foreign_currency,
+        foreign_pricing_profiles: sanitizeForeignPricingProfiles(config._foreignPricingProfiles),
+        stripe_webhook_url: (config.stripe_webhook_url || buildDefaultStripeWebhookUrl() || '').trim(),
+        stripe_webhook_secret: (config.stripe_webhook_secret || '').trim(),
         capital_cities: config._capitalCities?.join(',') || '',
         reminder_enabled: config.reminder_enabled ? 1 : 0,
         reminder_time: config.reminder_time || '18:40',
@@ -473,7 +580,10 @@ export default function Config() {
   const activeSectionIndex = SETTINGS_SECTIONS.findIndex(section => section.key === activeSection) + 1;
   const sectionItems = [
     { ...SETTINGS_SECTIONS[0], detail: `${enabledDaysCount} día${enabledDaysCount === 1 ? '' : 's'} activos` },
-    { ...SETTINGS_SECTIONS[1], detail: `Base Bs ${config?.default_fee || 250} · especial Bs ${config?.special_fee || 150}` },
+    {
+      ...SETTINGS_SECTIONS[1],
+      detail: `Base Bs ${config?.default_fee || 250} · especial Bs ${config?.special_fee || 150} · Stripe ${(config?._foreignPricingProfiles || []).length}/6`,
+    },
     {
       ...SETTINGS_SECTIONS[2],
       detail: `${config?.reminder_enabled ? 'Citas ON' : 'Citas OFF'} · ${config?.payment_reminder_enabled ? 'Pagos ON' : 'Pagos OFF'}`,
@@ -696,7 +806,7 @@ export default function Config() {
           <div className="space-y-5">
             <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
               <h3 className="text-lg font-semibold mb-1">Aranceles</h3>
-              <p className="text-sm text-gray-400 mb-5">4 categorías de precio. El arancel se asigna automáticamente según la ciudad del cliente.</p>
+              <p className="text-sm text-gray-400 mb-5">Capital/provincia/especial en Bs y perfiles extranjeros con monto + URL Stripe asignables por cliente.</p>
 
               <div className="space-y-4">
                 <div className="border border-gray-200 rounded-xl p-4">
@@ -831,33 +941,159 @@ export default function Config() {
                 </div>
 
                 <div className="border border-gray-200 rounded-xl p-4">
-                  <div className="flex items-center justify-between mb-3">
+                  <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
                     <div>
-                      <div className="font-medium text-sm">Extranjero</div>
-                      <div className="text-xs text-gray-400">Clientes fuera de Bolivia</div>
+                      <div className="font-medium text-sm">Webhook Stripe</div>
+                      <div className="text-xs text-gray-400">URL para registrar en Stripe y capturar pagos confirmados automáticamente.</div>
                     </div>
-                    <div className="flex items-center gap-1">
-                      <span className="text-sm text-gray-400">{config?.foreign_currency || 'USD'}</span>
-                      <input
-                        type="number"
-                        value={config?.foreign_fee || ''}
-                        onChange={e => setConfig(c => ({ ...c, foreign_fee: parseFloat(e.target.value) }))}
-                        className="w-20 px-3 py-2 border border-gray-200 rounded-lg text-sm text-right font-medium"
-                      />
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-2 text-xs text-gray-400">
-                    <span>Moneda:</span>
-                    <select
-                      value={config?.foreign_currency || 'USD'}
-                      onChange={e => setConfig(c => ({ ...c, foreign_currency: e.target.value }))}
-                      className="px-2 py-1 border border-gray-200 rounded text-xs bg-white"
+                    <button
+                      type="button"
+                      onClick={() => setConfig(c => ({ ...c, stripe_webhook_url: buildDefaultStripeWebhookUrl() }))}
+                      className="rounded-lg border border-gray-200 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50"
                     >
-                      <option value="USD">USD</option>
-                      <option value="EUR">EUR</option>
-                      <option value="Bs">Bs</option>
-                    </select>
+                      Usar URL actual
+                    </button>
                   </div>
+
+                  <div className="mt-3 grid gap-3 lg:grid-cols-[1fr_auto]">
+                    <input
+                      type="text"
+                      value={config?.stripe_webhook_url || ''}
+                      onChange={e => setConfig(c => ({ ...c, stripe_webhook_url: e.target.value }))}
+                      placeholder={buildDefaultStripeWebhookUrl() || 'https://tu-dominio.com/api/stripe/webhook'}
+                      className="w-full px-3 py-2.5 border border-gray-200 rounded-lg text-sm"
+                    />
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        const webhookUrl = (config?.stripe_webhook_url || buildDefaultStripeWebhookUrl() || '').trim();
+                        if (!webhookUrl) return;
+                        try {
+                          await navigator.clipboard.writeText(webhookUrl);
+                          showToast('Webhook Stripe copiado');
+                        } catch {
+                          showToast('No se pudo copiar el webhook', 'error');
+                        }
+                      }}
+                      className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-slate-700 transition hover:border-slate-300 hover:text-slate-900"
+                    >
+                      <Copy size={14} />
+                      Copiar
+                    </button>
+                  </div>
+
+                  <div className="mt-3">
+                    <label className="block text-xs text-gray-500 mb-1">Signing secret de Stripe</label>
+                    <input
+                      type="password"
+                      value={config?.stripe_webhook_secret || ''}
+                      onChange={e => setConfig(c => ({ ...c, stripe_webhook_secret: e.target.value }))}
+                      placeholder="whsec_..."
+                      className="w-full px-3 py-2.5 border border-gray-200 rounded-lg text-sm"
+                    />
+                  </div>
+                </div>
+
+                <div className="border border-gray-200 rounded-xl p-4">
+                  <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                    <div>
+                      <div className="font-medium text-sm">Montos a cobrar Extranjeros</div>
+                      <div className="text-xs text-gray-400">Hasta 6 perfiles con monto + URL Stripe para asignar a clientes concretos.</div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={addForeignPricingProfile}
+                      disabled={(config?._foreignPricingProfiles || []).length >= 6}
+                      className="rounded-xl bg-[#4E769B] px-4 py-2 text-sm font-semibold text-white transition hover:bg-[#618BBF] disabled:cursor-not-allowed disabled:opacity-40"
+                    >
+                      Agregar monto
+                    </button>
+                  </div>
+
+                  {(config?._foreignPricingProfiles || []).length === 0 ? (
+                    <div className="mt-3 rounded-lg border border-dashed border-gray-200 bg-gray-50 px-3 py-2 text-xs text-gray-500">
+                      Aún no hay montos extranjeros configurados.
+                    </div>
+                  ) : (
+                    <div className="mt-3 space-y-3">
+                      {(config?._foreignPricingProfiles || []).map((profile, idx) => (
+                        <div key={`${profile.key || 'profile'}-${idx}`} className="rounded-xl border border-gray-200 bg-slate-50/50 p-3">
+                          <div className="grid gap-3 lg:grid-cols-[1fr_1fr_130px_auto]">
+                            <div>
+                              <label className="block text-xs text-gray-500 mb-1">Tipo / clave</label>
+                              <input
+                                type="text"
+                                value={profile.key || ''}
+                                onChange={e => updateForeignPricingProfile(idx, 'key', e.target.value)}
+                                placeholder="22us"
+                                className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-xs text-gray-500 mb-1">Nombre</label>
+                              <input
+                                type="text"
+                                value={profile.name || ''}
+                                onChange={e => updateForeignPricingProfile(idx, 'name', e.target.value)}
+                                placeholder="Monto 22 USD"
+                                className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-xs text-gray-500 mb-1">Monto</label>
+                              <div className="flex items-center gap-2">
+                                <input
+                                  type="number"
+                                  value={profile.amount}
+                                  onChange={e => updateForeignPricingProfile(idx, 'amount', e.target.value)}
+                                  className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm text-right"
+                                />
+                                <select
+                                  value={profile.currency || 'USD'}
+                                  onChange={e => updateForeignPricingProfile(idx, 'currency', e.target.value)}
+                                  className="px-2 py-2 border border-gray-200 rounded-lg text-xs bg-white"
+                                >
+                                  <option value="USD">USD</option>
+                                  <option value="BOB">BOB</option>
+                                </select>
+                              </div>
+                            </div>
+                            <div className="flex items-end gap-2">
+                              <button
+                                type="button"
+                                onClick={() => removeForeignPricingProfile(idx)}
+                                className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-red-200 bg-white text-red-500 hover:bg-red-50"
+                                title="Eliminar perfil"
+                              >
+                                <Trash2 size={14} />
+                              </button>
+                              {profile.url ? (
+                                <a
+                                  href={profile.url}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-gray-200 bg-white text-gray-600 hover:bg-gray-100"
+                                  title="Abrir URL"
+                                >
+                                  <ExternalLink size={14} />
+                                </a>
+                              ) : null}
+                            </div>
+                          </div>
+                          <div className="mt-3">
+                            <label className="block text-xs text-gray-500 mb-1">URL Stripe</label>
+                            <input
+                              type="url"
+                              value={profile.url || ''}
+                              onChange={e => updateForeignPricingProfile(idx, 'url', e.target.value)}
+                              placeholder="https://buy.stripe.com/..."
+                              className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm"
+                            />
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
               </div>
             </div>

@@ -164,7 +164,7 @@ function isScheduleActiveOnDate(schedule, dateKey) {
 
 async function getClientForRecurring(tenantId, clientId, conn = pool) {
   const [rows] = await conn.query(
-    `SELECT id, tenant_id, first_name, last_name, phone, fee, frequency
+    `SELECT id, tenant_id, first_name, last_name, phone, fee, fee_currency, frequency
      FROM clients
      WHERE tenant_id = ? AND id = ? AND deleted_at IS NULL
      LIMIT 1`,
@@ -285,6 +285,7 @@ async function getRecurringSchedule(tenantId, scheduleId, conn = pool) {
             c.last_name,
             c.phone,
             c.fee,
+            c.fee_currency,
             c.frequency,
             CASE WHEN rs.ended_at IS NULL AND rs.paused_at IS NULL THEN 1 ELSE 0 END AS is_active
      FROM recurring_schedules rs
@@ -429,6 +430,7 @@ async function listRecurringSchedules(tenantId) {
             c.last_name,
             c.phone,
             c.fee,
+            c.fee_currency,
             c.frequency,
             CASE WHEN rs.ended_at IS NULL AND rs.paused_at IS NULL THEN 1 ELSE 0 END AS is_active
      FROM recurring_schedules rs
@@ -751,9 +753,15 @@ async function materializeRecurringOccurrence({ tenantId, scheduleId, date, even
         });
 
         await conn.query(
-          `INSERT INTO payments (tenant_id, client_id, appointment_id, amount, status)
-           VALUES (?, ?, ?, ?, 'Pendiente')`,
-          [tenantId, schedule.client_id, insertResult.insertId, client.fee || 250]
+          `INSERT INTO payments (tenant_id, client_id, appointment_id, amount, currency, status)
+           VALUES (?, ?, ?, ?, ?, 'Pendiente')`,
+          [
+            tenantId,
+            schedule.client_id,
+            insertResult.insertId,
+            Number(client.fee || 250),
+            String(client.fee_currency || 'BOB').toUpperCase(),
+          ]
         );
 
         await conn.query(
@@ -810,7 +818,7 @@ async function getUpcomingRecurringSessions(tenantId, from, to) {
   }
 
   const [schedules] = await pool.query(
-    `SELECT rs.*, c.first_name, c.last_name, c.phone, c.fee
+    `SELECT rs.*, c.first_name, c.last_name, c.phone, c.fee, c.fee_currency
      FROM recurring_schedules rs
      JOIN clients c ON c.id = rs.client_id AND c.tenant_id = rs.tenant_id
      WHERE rs.tenant_id = ?
@@ -893,7 +901,8 @@ async function findRecurringScheduleForEventInstance(tenantId, recurringEventId,
             c.first_name,
             c.last_name,
             c.phone,
-            c.fee
+            c.fee,
+            c.fee_currency
      FROM recurring_schedules rs
      JOIN clients c ON c.id = rs.client_id AND c.tenant_id = rs.tenant_id
      WHERE rs.tenant_id = ?

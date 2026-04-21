@@ -781,11 +781,13 @@ router.post('/', async (req, res) => {
                           // All validations passed → Confirmado
                           await pool.query(
                             `UPDATE payments SET status = 'Confirmado', confirmed_at = NOW(),
+                             settled_amount = ?, settled_currency = 'BOB', settled_source = 'OCR',
                              receipt_file_key = ?, ocr_extracted_amount = ?, ocr_extracted_ref = ?,
                              ocr_extracted_date = ?, ocr_extracted_dest_name = ?,
                              notes = NULL
                              WHERE id = ? AND tenant_id = ?`,
                             [
+                              ocrResult.amount,
                               fileKey,
                               ocrResult.amount,
                               ocrResult.reference,
@@ -832,6 +834,7 @@ router.post('/', async (req, res) => {
                           await pool.query(
                             `UPDATE payments SET status = 'Mismatch', receipt_file_key = ?,
                              ocr_extracted_amount = ?, ocr_extracted_ref = ?, ocr_extracted_date = ?, ocr_extracted_dest_name = ?,
+                             settled_amount = NULL, settled_currency = NULL, settled_source = NULL,
                              notes = ?
                              WHERE id = ? AND tenant_id = ?`,
                             [

@@ -94,6 +94,8 @@ async function initializeDatabase() {
         source VARCHAR(100) DEFAULT 'Otro',
         referred_by VARCHAR(200),
         fee INT DEFAULT 250,
+        fee_currency VARCHAR(8) DEFAULT 'BOB',
+        foreign_pricing_key VARCHAR(60),
         payment_method ENUM('QR','Efectivo','Transferencia') DEFAULT 'QR',
         rating TINYINT DEFAULT 0,
         diagnosis TEXT,
@@ -200,6 +202,9 @@ async function initializeDatabase() {
         special_fee INT DEFAULT 150,
         foreign_fee INT DEFAULT 40,
         foreign_currency VARCHAR(10) DEFAULT 'USD',
+        foreign_pricing_profiles JSON,
+        stripe_webhook_url VARCHAR(500),
+        stripe_webhook_secret VARCHAR(255),
         qr_url_capital VARCHAR(500),
         qr_url_provincia VARCHAR(500),
         qr_url_especial VARCHAR(500),
@@ -233,6 +238,7 @@ async function initializeDatabase() {
         client_id INT NOT NULL,
         appointment_id INT,
         amount INT NOT NULL,
+        currency VARCHAR(8) DEFAULT 'BOB',
         method ENUM('QR','Efectivo','Transferencia') DEFAULT 'QR',
         status ENUM('Pendiente','Confirmado','Rechazado') DEFAULT 'Pendiente',
         receipt_file_key VARCHAR(50),
@@ -240,6 +246,16 @@ async function initializeDatabase() {
         ocr_extracted_ref VARCHAR(100),
         ocr_extracted_date VARCHAR(50),
         ocr_extracted_dest_name VARCHAR(255),
+        settled_amount DECIMAL(10,2),
+        settled_currency VARCHAR(8),
+        settled_source VARCHAR(20),
+        stripe_event_id VARCHAR(255),
+        stripe_session_id VARCHAR(255),
+        stripe_payment_intent VARCHAR(255),
+        stripe_payment_link_id VARCHAR(255),
+        stripe_charge_id VARCHAR(255),
+        stripe_customer_email VARCHAR(255),
+        stripe_amount_minor BIGINT,
         notes TEXT,
         confirmed_at DATETIME,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -247,13 +263,44 @@ async function initializeDatabase() {
         KEY idx_tenant (tenant_id),
         KEY idx_client (client_id),
         KEY idx_status (status),
+        KEY idx_currency (currency),
+        KEY idx_stripe_event (stripe_event_id),
         FOREIGN KEY (tenant_id) REFERENCES tenants(id),
         FOREIGN KEY (client_id) REFERENCES clients(id),
         FOREIGN KEY (appointment_id) REFERENCES appointments(id)
       )
     `);
 
-    // 8. deductions
+    // 8. stripe_events (idempotency + webhook audit)
+    await conn.query(`
+      CREATE TABLE IF NOT EXISTS stripe_events (
+        id BIGINT AUTO_INCREMENT PRIMARY KEY,
+        tenant_id INT NOT NULL,
+        stripe_event_id VARCHAR(255) NOT NULL,
+        event_type VARCHAR(120) NOT NULL,
+        livemode BOOLEAN DEFAULT FALSE,
+        currency VARCHAR(10),
+        amount_minor BIGINT,
+        amount DECIMAL(10,2),
+        payment_link_id VARCHAR(255),
+        checkout_session_id VARCHAR(255),
+        payment_intent_id VARCHAR(255),
+        customer_email VARCHAR(255),
+        profile_key VARCHAR(60),
+        matched_payment_id INT,
+        processed_status ENUM('processed','ignored','unmatched','error') DEFAULT 'processed',
+        notes VARCHAR(500),
+        payload JSON,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE KEY uniq_tenant_stripe_event (tenant_id, stripe_event_id),
+        KEY idx_tenant_created (tenant_id, created_at),
+        KEY idx_processed_status (tenant_id, processed_status, created_at),
+        FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE,
+        FOREIGN KEY (matched_payment_id) REFERENCES payments(id) ON DELETE SET NULL
+      )
+    `);
+
+    // 9. deductions
     await conn.query(`
       CREATE TABLE IF NOT EXISTS deductions (
         id INT AUTO_INCREMENT PRIMARY KEY,
@@ -267,7 +314,7 @@ async function initializeDatabase() {
       )
     `);
 
-    // 9. financial_goals
+    // 10. financial_goals
     await conn.query(`
       CREATE TABLE IF NOT EXISTS financial_goals (
         id INT AUTO_INCREMENT PRIMARY KEY,
@@ -284,7 +331,7 @@ async function initializeDatabase() {
       )
     `);
 
-    // 10. files (QR, receipts, logos — MySQL BLOB)
+    // 11. files (QR, receipts, logos — MySQL BLOB)
     await conn.query(`
       CREATE TABLE IF NOT EXISTS files (
         id INT AUTO_INCREMENT PRIMARY KEY,
@@ -301,7 +348,7 @@ async function initializeDatabase() {
       )
     `);
 
-    // 11. webhooks_log (activity + reminder dedup)
+    // 12. webhooks_log (activity + reminder dedup)
     await conn.query(`
       CREATE TABLE IF NOT EXISTS webhooks_log (
         id INT AUTO_INCREMENT PRIMARY KEY,
@@ -322,7 +369,7 @@ async function initializeDatabase() {
       )
     `);
 
-    // 12. wa_conversations (WhatsApp inbox)
+    // 13. wa_conversations (WhatsApp inbox)
     await conn.query(`
       CREATE TABLE IF NOT EXISTS wa_conversations (
         id INT AUTO_INCREMENT PRIMARY KEY,
@@ -346,7 +393,7 @@ async function initializeDatabase() {
       )
     `);
 
-    // 13. voice_commands_log (admin voice/text shortcut audit)
+    // 14. voice_commands_log (admin voice/text shortcut audit)
     await conn.query(`
       CREATE TABLE IF NOT EXISTS voice_commands_log (
         id INT AUTO_INCREMENT PRIMARY KEY,
@@ -368,7 +415,7 @@ async function initializeDatabase() {
       )
     `);
 
-    // 14. whatsapp_users — BSUID identity resolution layer
+    // 15. whatsapp_users — BSUID identity resolution layer
     // Meta está migrando de wa_id (teléfono) a Business-scoped user IDs (BSUID).
     // Esta tabla mapea BSUIDs ↔ teléfonos ↔ clientes internos.
     // Un mismo usuario puede llegar primero por teléfono y después por BSUID (o viceversa);
@@ -399,7 +446,7 @@ async function initializeDatabase() {
       )
     `);
 
-    // 15. meta_health_config (monitoring by tenant)
+    // 16. meta_health_config (monitoring by tenant)
     await conn.query(`
       CREATE TABLE IF NOT EXISTS meta_health_config (
         id INT AUTO_INCREMENT PRIMARY KEY,
@@ -426,7 +473,7 @@ async function initializeDatabase() {
       )
     `);
 
-    // 16. meta_health_webhook_raw (raw webhook payloads)
+    // 17. meta_health_webhook_raw (raw webhook payloads)
     await conn.query(`
       CREATE TABLE IF NOT EXISTS meta_health_webhook_raw (
         id BIGINT AUTO_INCREMENT PRIMARY KEY,
@@ -449,7 +496,7 @@ async function initializeDatabase() {
       )
     `);
 
-    // 17. meta_health_events (normalized webhook/watchdog events)
+    // 18. meta_health_events (normalized webhook/watchdog events)
     await conn.query(`
       CREATE TABLE IF NOT EXISTS meta_health_events (
         id BIGINT AUTO_INCREMENT PRIMARY KEY,
@@ -484,7 +531,7 @@ async function initializeDatabase() {
       )
     `);
 
-    // 18. meta_health_last_seen (last timestamps by event key)
+    // 19. meta_health_last_seen (last timestamps by event key)
     await conn.query(`
       CREATE TABLE IF NOT EXISTS meta_health_last_seen (
         tenant_id INT NOT NULL,
@@ -500,7 +547,7 @@ async function initializeDatabase() {
       )
     `);
 
-    // 19. meta_health_state (aggregated dashboard state)
+    // 20. meta_health_state (aggregated dashboard state)
     await conn.query(`
       CREATE TABLE IF NOT EXISTS meta_health_state (
         tenant_id INT PRIMARY KEY,
@@ -521,7 +568,7 @@ async function initializeDatabase() {
       )
     `);
 
-    // 20. meta_health_history (state snapshots)
+    // 21. meta_health_history (state snapshots)
     await conn.query(`
       CREATE TABLE IF NOT EXISTS meta_health_history (
         id BIGINT AUTO_INCREMENT PRIMARY KEY,
@@ -535,7 +582,7 @@ async function initializeDatabase() {
       )
     `);
 
-    // 21. meta_health_alerts (alert dispatch log)
+    // 22. meta_health_alerts (alert dispatch log)
     await conn.query(`
       CREATE TABLE IF NOT EXISTS meta_health_alerts (
         id BIGINT AUTO_INCREMENT PRIMARY KEY,
@@ -560,7 +607,7 @@ async function initializeDatabase() {
       )
     `);
 
-    // 22. meta_health_watchdog_runs (watchdog execution history)
+    // 23. meta_health_watchdog_runs (watchdog execution history)
     await conn.query(`
       CREATE TABLE IF NOT EXISTS meta_health_watchdog_runs (
         id BIGINT AUTO_INCREMENT PRIMARY KEY,
@@ -575,7 +622,7 @@ async function initializeDatabase() {
       )
     `);
 
-    // 23. meta_health_pipeline_checks (internal pipeline checks)
+    // 24. meta_health_pipeline_checks (internal pipeline checks)
     await conn.query(`
       CREATE TABLE IF NOT EXISTS meta_health_pipeline_checks (
         id BIGINT AUTO_INCREMENT PRIMARY KEY,
@@ -615,6 +662,9 @@ async function initializeDatabase() {
     await conn.query(`ALTER TABLE config ADD COLUMN IF NOT EXISTS retention_risk_template VARCHAR(120)`).catch(() => {});
     await conn.query(`ALTER TABLE config ADD COLUMN IF NOT EXISTS retention_lost_template VARCHAR(120)`).catch(() => {});
     await conn.query(`ALTER TABLE config ADD COLUMN IF NOT EXISTS whatsapp_template_language VARCHAR(10) DEFAULT 'es'`).catch(() => {});
+    await conn.query(`ALTER TABLE config ADD COLUMN IF NOT EXISTS foreign_pricing_profiles JSON`).catch(() => {});
+    await conn.query(`ALTER TABLE config ADD COLUMN IF NOT EXISTS stripe_webhook_url VARCHAR(500)`).catch(() => {});
+    await conn.query(`ALTER TABLE config ADD COLUMN IF NOT EXISTS stripe_webhook_secret VARCHAR(255)`).catch(() => {});
     await conn.query(`ALTER TABLE appointments MODIFY COLUMN status ENUM('Agendada','Confirmada','Reagendada','Cancelada','Completada','No-show') DEFAULT 'Agendada'`).catch(() => {});
     await conn.query(`ALTER TABLE appointments ADD COLUMN IF NOT EXISTS booking_context JSON DEFAULT NULL`).catch(() => {});
     await conn.query(`ALTER TABLE appointments ADD COLUMN IF NOT EXISTS source_schedule_id INT DEFAULT NULL`).catch(() => {});
@@ -630,15 +680,33 @@ async function initializeDatabase() {
     await conn.query(`UPDATE clients SET source = 'Referencia de amigos' WHERE source = 'Referido'`).catch(() => {});
     // Fee/amount columns → INT (no decimals, Bolivianos are whole numbers)
     await conn.query(`ALTER TABLE clients MODIFY COLUMN fee INT DEFAULT 250`).catch(() => {});
+    await conn.query(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS fee_currency VARCHAR(8) DEFAULT 'BOB'`).catch(() => {});
+    await conn.query(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS foreign_pricing_key VARCHAR(60)`).catch(() => {});
+    await conn.query(`ALTER TABLE clients ADD KEY IF NOT EXISTS idx_foreign_pricing_key (foreign_pricing_key)`).catch(() => {});
+    await conn.query(`UPDATE clients SET fee_currency = 'BOB' WHERE fee_currency IS NULL OR fee_currency = ''`).catch(() => {});
     await conn.query(`ALTER TABLE config MODIFY COLUMN default_fee INT DEFAULT 250`).catch(() => {});
     await conn.query(`ALTER TABLE config MODIFY COLUMN capital_fee INT DEFAULT 300`).catch(() => {});
     await conn.query(`ALTER TABLE config MODIFY COLUMN special_fee INT DEFAULT 150`).catch(() => {});
     await conn.query(`ALTER TABLE config MODIFY COLUMN foreign_fee INT DEFAULT 40`).catch(() => {});
     await conn.query(`ALTER TABLE config MODIFY COLUMN monthly_goal INT DEFAULT NULL`).catch(() => {});
     await conn.query(`ALTER TABLE payments MODIFY COLUMN amount INT NOT NULL`).catch(() => {});
+    await conn.query(`ALTER TABLE payments ADD COLUMN IF NOT EXISTS currency VARCHAR(8) DEFAULT 'BOB'`).catch(() => {});
     await conn.query(`ALTER TABLE payments MODIFY COLUMN ocr_extracted_amount INT`).catch(() => {});
     await conn.query(`ALTER TABLE payments ADD COLUMN IF NOT EXISTS ocr_extracted_date VARCHAR(50)`).catch(() => {});
     await conn.query(`ALTER TABLE payments ADD COLUMN IF NOT EXISTS ocr_extracted_dest_name VARCHAR(255)`).catch(() => {});
+    await conn.query(`ALTER TABLE payments ADD COLUMN IF NOT EXISTS settled_amount DECIMAL(10,2)`).catch(() => {});
+    await conn.query(`ALTER TABLE payments ADD COLUMN IF NOT EXISTS settled_currency VARCHAR(8)`).catch(() => {});
+    await conn.query(`ALTER TABLE payments ADD COLUMN IF NOT EXISTS settled_source VARCHAR(20)`).catch(() => {});
+    await conn.query(`ALTER TABLE payments ADD COLUMN IF NOT EXISTS stripe_event_id VARCHAR(255)`).catch(() => {});
+    await conn.query(`ALTER TABLE payments ADD COLUMN IF NOT EXISTS stripe_session_id VARCHAR(255)`).catch(() => {});
+    await conn.query(`ALTER TABLE payments ADD COLUMN IF NOT EXISTS stripe_payment_intent VARCHAR(255)`).catch(() => {});
+    await conn.query(`ALTER TABLE payments ADD COLUMN IF NOT EXISTS stripe_payment_link_id VARCHAR(255)`).catch(() => {});
+    await conn.query(`ALTER TABLE payments ADD COLUMN IF NOT EXISTS stripe_charge_id VARCHAR(255)`).catch(() => {});
+    await conn.query(`ALTER TABLE payments ADD COLUMN IF NOT EXISTS stripe_customer_email VARCHAR(255)`).catch(() => {});
+    await conn.query(`ALTER TABLE payments ADD COLUMN IF NOT EXISTS stripe_amount_minor BIGINT`).catch(() => {});
+    await conn.query(`ALTER TABLE payments ADD KEY IF NOT EXISTS idx_currency (currency)`).catch(() => {});
+    await conn.query(`ALTER TABLE payments ADD KEY IF NOT EXISTS idx_stripe_event (stripe_event_id)`).catch(() => {});
+    await conn.query(`UPDATE payments SET currency = 'BOB' WHERE currency IS NULL OR currency = ''`).catch(() => {});
     await conn.query(
       `UPDATE tenants
        SET domain = 'agenda.danielmaclean.com'

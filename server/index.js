@@ -29,6 +29,7 @@ const voiceRoutes = require('./routes/voice');
 const recurringRoutes = require('./routes/recurring');
 const quickActionsRoutes = require('./routes/quickActions');
 const metaHealthRoutes = require('./routes/metaHealth');
+const stripeWebhookRoutes = require('./routes/stripeWebhook');
 
 const app = express();
 app.set('trust proxy', 1);
@@ -36,7 +37,10 @@ app.use(cors());
 app.use(express.json({
   limit: '5mb',
   verify: (req, _res, buf) => {
-    if (req.originalUrl?.startsWith('/api/webhook')) {
+    if (
+      req.originalUrl?.startsWith('/api/webhook')
+      || req.originalUrl?.startsWith('/api/stripe/webhook')
+    ) {
       req.rawBody = Buffer.from(buf);
     }
   },
@@ -69,6 +73,7 @@ app.use('/api/voice', voiceRoutes);
 app.use('/api/recurring', recurringRoutes);
 app.use('/api/quick-actions', quickActionsRoutes);
 app.use('/api/meta-health', metaHealthRoutes);
+app.use('/api/stripe', stripeWebhookRoutes);
 
 // ─── Admin SSE stream (protected) ───────────────────────────────
 app.get('/api/admin/events', authMiddleware, sseHandler);

@@ -32,6 +32,32 @@ function getTimezoneOptions(currentTimezone) {
   return TIMEZONE_OPTIONS;
 }
 
+function parseForeignPricingProfiles(rawProfiles) {
+  let parsed = rawProfiles;
+  if (typeof parsed === 'string') {
+    try {
+      parsed = JSON.parse(parsed);
+    } catch {
+      parsed = [];
+    }
+  }
+  if (!Array.isArray(parsed)) return [];
+  return parsed
+    .map((profile) => {
+      const key = String(profile?.key || '').trim();
+      if (!key) return null;
+      const amount = Number(profile?.amount);
+      return {
+        key,
+        name: String(profile?.name || key).trim() || key,
+        amount: Number.isFinite(amount) ? amount : 0,
+        currency: String(profile?.currency || 'USD').toUpperCase() === 'BOB' ? 'BOB' : 'USD',
+        url: String(profile?.url || '').trim(),
+      };
+    })
+    .filter(Boolean);
+}
+
 function normalizePhoneInput(value) {
   return String(value || '').replace(/\D/g, '');
 }
@@ -128,6 +154,7 @@ export default function Clients() {
   const [sources, setSources] = useState(DEFAULT_SOURCES);
   const [newStatus, setNewStatus] = useState('');
   const [newSource, setNewSource] = useState('');
+  const [foreignPricingProfiles, setForeignPricingProfiles] = useState([]);
   const [saving, setSaving] = useState(false);
   const [savingRecurringClientId, setSavingRecurringClientId] = useState(null);
   const [recurringModal, setRecurringModal] = useState(null);
@@ -167,6 +194,7 @@ export default function Clients() {
         const s = typeof cfg.custom_sources === 'string' ? JSON.parse(cfg.custom_sources) : cfg.custom_sources;
         if (s.length > 0) setSources(s);
       }
+      setForeignPricingProfiles(parseForeignPricingProfiles(cfg.foreign_pricing_profiles));
     } catch (err) {
       console.error(err);
     }
@@ -202,6 +230,38 @@ export default function Clients() {
       setClients(prev => prev.map(c => c.id === id ? { ...c, [field]: value, calculated_status: field === 'status_override' ? value : c.calculated_status } : c));
     } catch (err) {
       console.error(err);
+    }
+  }
+
+  async function handleForeignPricingProfileChange(client, profileKey) {
+    const normalizedKey = String(profileKey || '').trim() || null;
+    const selectedProfile = normalizedKey
+      ? foreignPricingProfiles.find((profile) => profile.key === normalizedKey)
+      : null;
+
+    const payload = {
+      foreign_pricing_key: normalizedKey,
+    };
+    if (selectedProfile) {
+      payload.fee = Number(selectedProfile.amount || 0);
+      payload.fee_currency = selectedProfile.currency || 'USD';
+    }
+
+    try {
+      await api.put(`/clients/${client.id}`, payload);
+      setClients(prev => prev.map((row) => (
+        row.id === client.id
+          ? {
+            ...row,
+            foreign_pricing_key: normalizedKey,
+            fee: selectedProfile ? Number(selectedProfile.amount || 0) : row.fee,
+            fee_currency: selectedProfile ? (selectedProfile.currency || 'USD') : (row.fee_currency || 'BOB'),
+          }
+          : row
+      )));
+      showToast(normalizedKey ? 'Perfil Stripe asignado' : 'Perfil Stripe removido');
+    } catch (err) {
+      showToast('Error: ' + err.message, 'error');
     }
   }
 
@@ -511,6 +571,7 @@ export default function Clients() {
                 <th className="text-left p-3 font-medium">Retención</th>
                 <th className="text-left p-3 font-medium">Sesiones</th>
                 <th className="text-left p-3 font-medium">Arancel</th>
+                <th className="text-left p-3 font-medium min-w-[180px]">Perfil Stripe</th>
                 <th className="text-left p-3 font-medium">Fuente</th>
                 <th className="text-left p-3 font-medium w-10"></th>
               </tr>
@@ -645,12 +706,29 @@ export default function Clients() {
                   </td>
                   <td className="p-3 text-center">{client.completed_sessions || 0}</td>
                   <td className="p-3">
-                    <input
-                      type="number"
-                      value={client.fee || ''}
-                      onChange={e => handleUpdate(client.id, 'fee', parseFloat(e.target.value))}
-                      className="w-20 text-sm px-2 py-1 border border-gray-200 rounded text-right"
-                    />
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-[11px] text-gray-400">{(client.fee_currency || 'BOB').toUpperCase() === 'USD' ? 'USD' : 'Bs'}</span>
+                      <input
+                        type="number"
+                        value={client.fee || ''}
+                        onChange={e => handleUpdate(client.id, 'fee', parseFloat(e.target.value))}
+                        className="w-20 text-sm px-2 py-1 border border-gray-200 rounded text-right"
+                      />
+                    </div>
+                  </td>
+                  <td className="p-3">
+                    <select
+                      value={client.foreign_pricing_key || ''}
+                      onChange={e => handleForeignPricingProfileChange(client, e.target.value)}
+                      className="w-full text-xs px-2 py-1 border border-gray-200 rounded bg-white"
+                    >
+                      <option value="">Sin perfil</option>
+                      {foreignPricingProfiles.map(profile => (
+                        <option key={profile.key} value={profile.key}>
+                          {profile.key} · {profile.currency} {profile.amount}
+                        </option>
+                      ))}
+                    </select>
                   </td>
                   <td className="p-3">
                     <select
@@ -707,7 +785,7 @@ export default function Clients() {
                 </tr>
               )})}
               {filtered.length === 0 && (
-                <tr><td colSpan={14} className="p-8 text-center text-gray-400">Sin resultados</td></tr>
+                <tr><td colSpan={15} className="p-8 text-center text-gray-400">Sin resultados</td></tr>
               )}
             </tbody>
           </table>
@@ -748,6 +826,7 @@ export default function Clients() {
           saving={saving}
           sources={sources}
           statuses={statuses}
+          foreignPricingProfiles={foreignPricingProfiles}
         />
       )}
 
@@ -763,6 +842,7 @@ export default function Clients() {
           }}
           sources={sources}
           statuses={statuses}
+          foreignPricingProfiles={foreignPricingProfiles}
           showToast={showToast}
         />
       )}
@@ -780,11 +860,11 @@ export default function Clients() {
   );
 }
 
-function CreateClientModal({ onClose, onCreate, saving, sources }) {
+function CreateClientModal({ onClose, onCreate, saving, sources, foreignPricingProfiles }) {
   const [form, setForm] = useState({
     phone: '', first_name: '', last_name: '', age: '',
     city: 'Cochabamba', country: 'Bolivia', timezone: 'America/La_Paz',
-    source: 'Otro', fee: '250', modality: 'Online',
+    source: 'Otro', fee: '250', fee_currency: 'BOB', foreign_pricing_key: '', modality: 'Online',
   });
 
   function set(k, v) { setForm(f => ({ ...f, [k]: v })); }
@@ -795,6 +875,7 @@ function CreateClientModal({ onClose, onCreate, saving, sources }) {
       ...form,
       age: form.age ? parseInt(form.age) : undefined,
       fee: form.fee ? parseFloat(form.fee) : undefined,
+      foreign_pricing_key: form.foreign_pricing_key || null,
     });
   }
 
@@ -843,8 +924,36 @@ function CreateClientModal({ onClose, onCreate, saving, sources }) {
                 {sources.map(s => <option key={s} value={s}>{s}</option>)}
               </select>
             </Field>
-            <Field label="Arancel (Bs)">
+            <Field label={`Arancel (${form.fee_currency === 'USD' ? 'USD' : 'Bs'})`}>
               <input type="number" value={form.fee} onChange={e => set('fee', e.target.value)} className="input" />
+            </Field>
+            <Field label="Moneda arancel">
+              <select value={form.fee_currency} onChange={e => set('fee_currency', e.target.value)} className="input">
+                <option value="BOB">BOB</option>
+                <option value="USD">USD</option>
+              </select>
+            </Field>
+            <Field label="Perfil Stripe">
+              <select
+                value={form.foreign_pricing_key}
+                onChange={e => {
+                  const nextKey = e.target.value;
+                  const selectedProfile = (foreignPricingProfiles || []).find((profile) => profile.key === nextKey);
+                  set('foreign_pricing_key', nextKey);
+                  if (selectedProfile) {
+                    set('fee', String(selectedProfile.amount || ''));
+                    set('fee_currency', selectedProfile.currency || 'USD');
+                  }
+                }}
+                className="input"
+              >
+                <option value="">Sin perfil</option>
+                {(foreignPricingProfiles || []).map((profile) => (
+                  <option key={profile.key} value={profile.key}>
+                    {profile.key} · {profile.currency} {profile.amount}
+                  </option>
+                ))}
+              </select>
             </Field>
           </div>
 
@@ -871,7 +980,7 @@ function getRecurringStatusMeta(schedule) {
   return { label: 'Activa', className: 'bg-blue-100 text-blue-700' };
 }
 
-function EditClientModal({ client, recurringSchedule, onClose, onSave, onRecurringChange, sources, statuses, showToast }) {
+function EditClientModal({ client, recurringSchedule, onClose, onSave, onRecurringChange, sources, statuses, foreignPricingProfiles, showToast }) {
   const [form, setForm] = useState({ ...client });
   const [saving, setSaving] = useState(false);
   const [currentSchedule, setCurrentSchedule] = useState(recurringSchedule);
@@ -972,7 +1081,11 @@ function EditClientModal({ client, recurringSchedule, onClose, onSave, onRecurri
   async function handleSave() {
     setSaving(true);
     try {
-      const fields = ['first_name', 'last_name', 'phone', 'age', 'city', 'country', 'timezone', 'modality', 'frequency', 'source', 'referred_by', 'fee', 'payment_method', 'notes', 'diagnosis', 'status_override'];
+      const fields = [
+        'first_name', 'last_name', 'phone', 'age', 'city', 'country', 'timezone', 'modality', 'frequency',
+        'source', 'referred_by', 'fee', 'fee_currency', 'foreign_pricing_key', 'payment_method',
+        'notes', 'diagnosis', 'status_override',
+      ];
       for (const f of fields) {
         if (form[f] !== client[f]) {
           await onSave(client.id, f, form[f]);
@@ -1039,8 +1152,36 @@ function EditClientModal({ client, recurringSchedule, onClose, onSave, onRecurri
             <Field label="Referido por">
               <input value={form.referred_by || ''} onChange={e => set('referred_by', e.target.value)} className="input" />
             </Field>
-            <Field label="Arancel (Bs)">
+            <Field label={`Arancel (${(form.fee_currency || 'BOB') === 'USD' ? 'USD' : 'Bs'})`}>
               <input type="number" value={form.fee || ''} onChange={e => set('fee', parseFloat(e.target.value))} className="input" />
+            </Field>
+            <Field label="Moneda arancel">
+              <select value={form.fee_currency || 'BOB'} onChange={e => set('fee_currency', e.target.value)} className="input">
+                <option value="BOB">BOB</option>
+                <option value="USD">USD</option>
+              </select>
+            </Field>
+            <Field label="Perfil Stripe">
+              <select
+                value={form.foreign_pricing_key || ''}
+                onChange={e => {
+                  const nextKey = e.target.value || null;
+                  const selectedProfile = (foreignPricingProfiles || []).find((profile) => profile.key === nextKey);
+                  set('foreign_pricing_key', nextKey);
+                  if (selectedProfile) {
+                    set('fee', Number(selectedProfile.amount || 0));
+                    set('fee_currency', selectedProfile.currency || 'USD');
+                  }
+                }}
+                className="input"
+              >
+                <option value="">Sin perfil</option>
+                {(foreignPricingProfiles || []).map((profile) => (
+                  <option key={profile.key} value={profile.key}>
+                    {profile.key} · {profile.currency} {profile.amount}
+                  </option>
+                ))}
+              </select>
             </Field>
             <Field label="Método de pago">
               <select value={form.payment_method || 'QR'} onChange={e => set('payment_method', e.target.value)} className="input">

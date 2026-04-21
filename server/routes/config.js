@@ -19,6 +19,54 @@ function buildTenantBaseUrl(req, domain) {
   return `${req.protocol}://${req.get('host')}`;
 }
 
+function normalizeForeignPricingProfiles(input) {
+  if (input == null || input === '') return [];
+
+  let parsed = input;
+  if (typeof parsed === 'string') {
+    try {
+      parsed = JSON.parse(parsed);
+    } catch {
+      parsed = [];
+    }
+  }
+  if (!Array.isArray(parsed)) return [];
+
+  const usedKeys = new Set();
+  const normalized = [];
+
+  for (const row of parsed) {
+    if (!row || typeof row !== 'object') continue;
+    const baseKey = String(row.key || row.name || row.label || '').trim().toLowerCase().replace(/[^a-z0-9_-]+/g, '-').slice(0, 40);
+    const key = baseKey || `usd-${normalized.length + 1}`;
+    if (usedKeys.has(key)) continue;
+
+    const amount = Number(row.amount);
+    const url = String(row.url || '').trim();
+    if (!Number.isFinite(amount) || amount <= 0 || !url) continue;
+
+    let parsedUrl = null;
+    try {
+      parsedUrl = new URL(url);
+    } catch {
+      parsedUrl = null;
+    }
+    if (!parsedUrl || !/^https?:$/i.test(parsedUrl.protocol)) continue;
+
+    usedKeys.add(key);
+    normalized.push({
+      key,
+      name: String(row.name || row.label || key).trim().slice(0, 80),
+      amount: Math.round(amount * 100) / 100,
+      currency: String(row.currency || 'USD').trim().toUpperCase() === 'BOB' ? 'BOB' : 'USD',
+      url: parsedUrl.toString(),
+    });
+    if (normalized.length >= 6) break;
+  }
+
+  return normalized;
+}
+
 // GET /api/config — get full config (admin)
 router.get('/', authMiddleware, async (req, res) => {
   try {
@@ -40,6 +88,7 @@ router.put('/', authMiddleware, async (req, res) => {
       'available_hours', 'available_days', 'window_days', 'buffer_hours',
       'appointment_duration', 'break_start', 'break_end', 'min_age', 'max_age',
       'default_fee', 'capital_fee', 'special_fee', 'foreign_fee', 'foreign_currency',
+      'foreign_pricing_profiles', 'stripe_webhook_url', 'stripe_webhook_secret',
       'capital_cities', 'reminder_time', 'reminder_enabled',
       'payment_reminder_enabled', 'payment_reminder_hours',
       'payment_reminder_template', 'retention_risk_template', 'retention_lost_template', 'whatsapp_template_language',
@@ -50,9 +99,22 @@ router.put('/', authMiddleware, async (req, res) => {
     ];
     const updates = {};
     for (const key of allowed) {
-      if (req.body[key] !== undefined) {
-        updates[key] = typeof req.body[key] === 'object' ? JSON.stringify(req.body[key]) : req.body[key];
+      if (req.body[key] === undefined) continue;
+      if (key === 'foreign_pricing_profiles') {
+        updates[key] = JSON.stringify(normalizeForeignPricingProfiles(req.body[key]));
+        continue;
       }
+      if (key === 'stripe_webhook_url') {
+        const value = String(req.body[key] || '').trim().slice(0, 500);
+        updates[key] = value || null;
+        continue;
+      }
+      if (key === 'stripe_webhook_secret') {
+        const value = String(req.body[key] || '').trim().slice(0, 255);
+        updates[key] = value || null;
+        continue;
+      }
+      updates[key] = typeof req.body[key] === 'object' ? JSON.stringify(req.body[key]) : req.body[key];
     }
     if (Object.keys(updates).length === 0) return res.status(400).json({ error: 'No hay campos para actualizar' });
 

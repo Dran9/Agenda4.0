@@ -1031,9 +1031,9 @@ export default function Config() {
                     <div className="mt-3 space-y-3">
                       {(config?._foreignPricingProfiles || []).map((profile, idx) => (
                         <div key={`${profile.key || 'profile'}-${idx}`} className="rounded-xl border border-gray-200 bg-slate-50/50 p-3">
-                          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-[minmax(140px,0.9fr)_minmax(190px,1fr)_minmax(360px,2fr)_minmax(120px,0.7fr)_minmax(120px,0.7fr)_minmax(170px,0.9fr)_auto]">
-                            <div>
-                              <label className="mb-1 block whitespace-nowrap text-xs text-gray-500">Tipo / clave</label>
+                          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-6 2xl:grid-cols-12">
+                            <div className="min-w-0 2xl:col-span-2">
+                              <label className="mb-1 block text-xs text-gray-500">Tipo / clave</label>
                               <input
                                 type="text"
                                 value={profile.key || ''}
@@ -1042,8 +1042,8 @@ export default function Config() {
                                 className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm"
                               />
                             </div>
-                            <div>
-                              <label className="mb-1 block whitespace-nowrap text-xs text-gray-500">Nombre</label>
+                            <div className="min-w-0 2xl:col-span-2">
+                              <label className="mb-1 block text-xs text-gray-500">Nombre</label>
                               <input
                                 type="text"
                                 value={profile.name || ''}
@@ -1052,8 +1052,8 @@ export default function Config() {
                                 className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm"
                               />
                             </div>
-                            <div>
-                              <label className="mb-1 block whitespace-nowrap text-xs text-gray-500">Monto</label>
+                            <div className="min-w-0 sm:col-span-2 lg:col-span-2 2xl:col-span-3">
+                              <label className="mb-1 block text-xs text-gray-500">Monto</label>
                               <div className="flex items-center gap-2">
                                 <input
                                   type="number"
@@ -1071,8 +1071,8 @@ export default function Config() {
                                 </select>
                               </div>
                             </div>
-                            <div>
-                              <label className="mb-1 block whitespace-nowrap text-xs text-gray-500">% Stripe</label>
+                            <div className="min-w-0 2xl:col-span-1">
+                              <label className="mb-1 block text-xs text-gray-500">% Stripe</label>
                               <input
                                 type="number"
                                 min="0"
@@ -1082,8 +1082,8 @@ export default function Config() {
                                 className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm text-right"
                               />
                             </div>
-                            <div>
-                              <label className="mb-1 block whitespace-nowrap text-xs text-gray-500">% Meru</label>
+                            <div className="min-w-0 2xl:col-span-1">
+                              <label className="mb-1 block text-xs text-gray-500">% Meru</label>
                               <input
                                 type="number"
                                 min="0"
@@ -1093,8 +1093,8 @@ export default function Config() {
                                 className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm text-right"
                               />
                             </div>
-                            <div>
-                              <label className="mb-1 block whitespace-nowrap text-xs text-gray-500">Cargo fijo Stripe</label>
+                            <div className="min-w-0 lg:col-span-2 2xl:col-span-2">
+                              <label className="mb-1 block text-xs text-gray-500">Cargo fijo Stripe</label>
                               <input
                                 type="number"
                                 min="0"
@@ -1104,7 +1104,7 @@ export default function Config() {
                                 className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm text-right"
                               />
                             </div>
-                            <div className="flex items-end gap-2 sm:col-span-2 xl:col-span-1">
+                            <div className="flex items-end gap-2 sm:col-span-2 lg:col-span-1 2xl:col-span-1">
                               <button
                                 type="button"
                                 onClick={() => removeForeignPricingProfile(idx)}

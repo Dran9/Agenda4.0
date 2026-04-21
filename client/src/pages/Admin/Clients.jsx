@@ -617,18 +617,18 @@ export default function Clients() {
                           className="w-4 h-4 accent-black rounded"
                         />
                       </td>
-                      <td className="p-3" onClick={(e) => e.stopPropagation()}>
-                        <button
-                          type="button"
-                          onClick={() => setEditClient(client)}
-                          className="text-left hover:text-blue-600"
-                        >
-                          <div className="font-medium text-gray-800">{client.first_name} {client.last_name}</div>
-                          <div className="text-xs text-gray-500">{client.country || '-'}</div>
-                        </button>
+                      <td className="p-3">
+                        <div className="font-medium text-gray-800">{client.first_name} {client.last_name}</div>
+                        <div className="text-xs text-gray-500">{client.country || '-'}</div>
                       </td>
-                      <td className="p-3 whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
-                        <a href={`https://wa.me/${client.phone}`} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">
+                      <td className="p-3 whitespace-nowrap">
+                        <a
+                          href={`https://wa.me/${client.phone}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          onClick={(e) => e.stopPropagation()}
+                          className="text-blue-600 hover:underline"
+                        >
                           {client.phone}
                         </a>
                       </td>
@@ -636,7 +636,7 @@ export default function Clients() {
                       <td className="p-3 text-xs text-gray-500 whitespace-nowrap">
                         {formatTimezoneLabel(client.timezone || 'America/La_Paz')}
                       </td>
-                      <td className="p-3" onClick={(e) => e.stopPropagation()}>
+                      <td className="p-3">
                         {isArchived ? (
                           <span className={`inline-flex items-center rounded-full border px-3 py-1 text-xs font-semibold ${recurringButtonClassName}`}>
                             {recurringButtonLabel}
@@ -644,7 +644,10 @@ export default function Clients() {
                         ) : (
                           <button
                             type="button"
-                            onClick={() => openRecurringModal(client, recurringSchedule)}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              openRecurringModal(client, recurringSchedule);
+                            }}
                             disabled={loadingRecurringModal || savingRecurringClientId === client.id}
                             className={`inline-flex items-center rounded-full border px-3 py-1 text-xs font-semibold transition disabled:opacity-60 ${recurringButtonClassName}`}
                           >
@@ -652,7 +655,7 @@ export default function Clients() {
                           </button>
                         )}
                       </td>
-                      <td className="p-3" onClick={(e) => e.stopPropagation()}>
+                      <td className="p-3">
                         {isArchived ? (
                           <span className="inline-flex rounded-full bg-gray-100 px-2.5 py-1 text-xs font-semibold text-gray-500">
                             Archivado
@@ -661,6 +664,7 @@ export default function Clients() {
                           <select
                             value={client.status_override || client.calculated_status || ''}
                             onChange={e => handleUpdate(client.id, 'status_override', e.target.value || null)}
+                            onClick={(e) => e.stopPropagation()}
                             className="text-xs px-2 py-1 rounded-full font-medium border-0 cursor-pointer"
                             style={statusStyle((statuses.find(s => s.name === (client.status_override || client.calculated_status))?.color) || '#9CA3AF')}
                           >
@@ -671,22 +675,24 @@ export default function Clients() {
                           </select>
                         )}
                       </td>
-                      <td className="p-3" onClick={(e) => e.stopPropagation()}>
+                      <td className="p-3">
                         <div className="flex items-center gap-1.5">
                           <span className="text-[11px] text-gray-400">{(client.fee_currency || 'BOB').toUpperCase() === 'USD' ? 'USD' : 'Bs'}</span>
                           <input
                             type="number"
                             value={client.fee || ''}
                             onChange={e => handleUpdate(client.id, 'fee', parseFloat(e.target.value))}
+                            onClick={(e) => e.stopPropagation()}
                             disabled={isArchived}
                             className="w-24 text-sm px-2 py-1 border border-gray-200 rounded text-right disabled:opacity-50"
                           />
                         </div>
                       </td>
-                      <td className="p-3" onClick={(e) => e.stopPropagation()}>
+                      <td className="p-3">
                         <select
                           value={client.foreign_pricing_key || ''}
                           onChange={e => handleForeignPricingProfileChange(client, e.target.value)}
+                          onClick={(e) => e.stopPropagation()}
                           disabled={isArchived}
                           className="w-full text-xs px-2 py-1 border border-gray-200 rounded bg-white disabled:opacity-50"
                         >

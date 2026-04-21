@@ -429,7 +429,9 @@ router.post('/', async (req, res) => {
                 // Si no tenemos teléfono (solo BSUID), el link de reagendamiento no va a funcionar
                 // porque usa ?r=phone — en ese caso omitir el link
                 const rescheduleLink = phone ? `\n\nhttps://${domain}/?r=${phone}` : '';
-                replyText = `${nombre}, vamos a reprogramar tu cita.${rescheduleLink}`;
+                replyText = phone
+                  ? `${nombre}, vamos a reprogramar tu cita.\n👉 haz clic en el enlace a continuación:${rescheduleLink}`
+                  : `${nombre}, vamos a reprogramar tu cita.`;
               } else if (payload === 'DANIEL_NOW' && cfg?.auto_reply_contact) {
                 replyText = cfg.auto_reply_contact;
               }

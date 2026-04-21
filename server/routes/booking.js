@@ -15,11 +15,57 @@ const { sendServerError } = require('../utils/httpErrors');
 const { normalizePhone } = require('../utils/phone');
 const { broadcast } = require('../services/adminEvents');
 const { getSpecialFee } = require('../services/clientPricing');
+const { sendTextMessage } = require('../services/whatsapp');
 
 const router = Router();
 
 // Default tenant (Daniel) — later resolved by domain/slug
 const DEFAULT_TENANT = 1;
+
+function formatRescheduleConfirmationDateParts(dateInput, timeZone = 'America/La_Paz') {
+  const date = new Date(String(dateInput).includes('T') ? `${dateInput}:00-04:00` : dateInput);
+  const dateLabel = new Intl.DateTimeFormat('es-BO', {
+    timeZone,
+    weekday: 'long',
+    day: 'numeric',
+    month: 'long',
+  }).format(date);
+  const timeLabel = new Intl.DateTimeFormat('es-BO', {
+    timeZone,
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  }).format(date);
+
+  return {
+    dateLabel: dateLabel.charAt(0).toUpperCase() + dateLabel.slice(1),
+    timeLabel,
+  };
+}
+
+async function sendPublicRescheduleConfirmation({ tenantId, clientId, phone, dateTime }) {
+  if (!phone) return;
+
+  const [clientRows] = await pool.query(
+    'SELECT first_name, timezone FROM clients WHERE id = ? AND tenant_id = ? LIMIT 1',
+    [clientId, tenantId]
+  );
+  const client = clientRows[0];
+  if (!client) return;
+
+  const { dateLabel, timeLabel } = formatRescheduleConfirmationDateParts(
+    dateTime,
+    client.timezone || 'America/La_Paz'
+  );
+  const message = `✅ Perfecto ${client.first_name || 'hola'}, tu sesión está reprogramada para el *${dateLabel}* a las *${timeLabel}*.\nHasta pronto.`;
+  const result = await sendTextMessage(phone, message);
+
+  await pool.query(
+    `INSERT INTO wa_conversations (tenant_id, client_id, client_phone, direction, message_type, content, wa_message_id)
+     VALUES (?, ?, ?, 'outbound', 'auto_reply', ?, ?)`,
+    [tenantId, clientId, phone, message, result.messages?.[0]?.id || null]
+  ).catch(() => {});
+}
 
 function sanitizePublicClientStatus(result) {
   if (!result?.status) return { status: 'new' };
@@ -285,6 +331,16 @@ router.post('/reschedule', publicRateLimit, validate(publicRescheduleSchema), as
     const result = await rescheduleAppointment(decoded.clientId, decoded.appointmentId, date_time, tenantId, bookingContext);
     if (result.error) return res.status(result.status).json({ error: result.error });
     broadcast('appointment:change', { action: 'rescheduled', source: 'public' }, tenantId);
+
+    sendPublicRescheduleConfirmation({
+      tenantId,
+      clientId: decoded.clientId,
+      phone: normalizePhone(phone),
+      dateTime: result?.appointment?.date_time || date_time,
+    }).catch((waErr) => {
+      console.error('[booking] Public reschedule confirmation WhatsApp failed:', waErr.message);
+    });
+
     res.json(result);
   } catch (err) {
     sendServerError(res, req, err, {

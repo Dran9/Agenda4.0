@@ -83,6 +83,33 @@ function retentionStyle(status) {
   return { backgroundColor: '#E5E7EB', color: '#4B5563' };
 }
 
+function formatShortDate(dateStr) {
+  if (!dateStr) return '—';
+  return new Date(dateStr).toLocaleDateString('es-BO', {
+    day: '2-digit',
+    month: 'short',
+    year: '2-digit',
+    timeZone: 'America/La_Paz',
+  });
+}
+
+function formatClientLocation(client) {
+  const parts = [client.city, client.country].filter(Boolean);
+  return parts.length ? parts.join(', ') : 'Sin ubicación';
+}
+
+function formatRetentionInline(client) {
+  const label = client.retention_status || 'Sin dato';
+  if (client.days_since_last_session == null) return label;
+  return `${label} · ${client.days_since_last_session}d`;
+}
+
+function formatRecurringInline(schedule) {
+  if (!schedule || schedule.ended_at) return 'No recurrente';
+  const slot = `${formatWeekdayShort(schedule.day_of_week)} ${schedule.time}`;
+  return schedule.paused_at ? `Pausada · ${slot}` : slot;
+}
+
 function buildRecurringForm(schedule, client) {
   return {
     day_of_week: schedule?.day_of_week ?? '',
@@ -143,6 +170,9 @@ const WEEKDAY_OPTIONS = [
   { value: 6, label: 'Sábado' },
   { value: 0, label: 'Domingo' },
 ];
+
+const INLINE_SELECT_CLASS = 'h-9 rounded-xl border border-gray-200 bg-white px-3 text-xs font-medium text-gray-700 outline-none transition focus:border-gray-400 focus:ring-0 disabled:opacity-50';
+const INLINE_ACTION_CLASS = 'inline-flex h-8 items-center rounded-lg border px-2.5 text-[11px] font-semibold whitespace-nowrap transition';
 
 export default function Clients() {
   const [clients, setClients] = useState([]);
@@ -552,7 +582,7 @@ export default function Clients() {
         {loading ? (
           <div className="p-8 text-center text-gray-400">Cargando...</div>
         ) : (
-          <table className="w-full min-w-[1760px] text-sm">
+          <table className="w-full min-w-[2140px] text-sm">
             <thead>
               <tr className="text-xs text-gray-500 border-b border-gray-100 bg-gray-50">
                 <th className="p-3 w-10">
@@ -563,35 +593,37 @@ export default function Clients() {
                     className="w-4 h-4 accent-black rounded"
                   />
                 </th>
-                <th className="text-left p-3 font-medium min-w-[220px]">Cliente</th>
-                <th className="text-left p-3 font-medium min-w-[220px]">Ubicación y zona</th>
-                <th className="text-left p-3 font-medium min-w-[300px]">Recurrencia</th>
-                <th className="text-left p-3 font-medium min-w-[240px]">Status y retención</th>
-                <th className="text-left p-3 font-medium min-w-[280px]">Arancel y perfil Stripe</th>
-                <th className="text-left p-3 font-medium min-w-[230px]">Fuente y sesiones</th>
-                <th className="text-left p-3 font-medium min-w-[250px]">Acciones</th>
+                <th className="text-left p-3 font-medium min-w-[190px]">Cliente</th>
+                <th className="text-left p-3 font-medium min-w-[165px]">Celular</th>
+                <th className="text-left p-3 font-medium min-w-[180px]">Ubicación</th>
+                <th className="text-left p-3 font-medium min-w-[210px]">Zona horaria</th>
+                <th className="text-left p-3 font-medium min-w-[320px]">Recurrencia</th>
+                <th className="text-left p-3 font-medium min-w-[160px]">Status</th>
+                <th className="text-left p-3 font-medium min-w-[150px]">Retención</th>
+                <th className="text-left p-3 font-medium min-w-[180px]">Arancel</th>
+                <th className="text-left p-3 font-medium min-w-[210px]">Perfil Stripe</th>
+                <th className="text-left p-3 font-medium min-w-[170px]">Fuente</th>
+                <th className="text-left p-3 font-medium min-w-[110px]">Sesiones</th>
+                <th className="text-left p-3 font-medium min-w-[110px]">Registro</th>
+                <th className="text-left p-3 font-medium min-w-[210px]">Acciones</th>
               </tr>
             </thead>
             <tbody>
               {filtered.map((client, index) => {
                 const recurringSchedule = recurringByClient.get(client.id) || null;
-                const recurringMeta = getRecurringFieldMeta(recurringSchedule);
                 const isArchived = Boolean(client.deleted_at);
                 const rowTone = index % 2 === 0 ? 'appointments-zebra-even' : 'appointments-zebra-odd';
-                const recurringButtonLabel = isArchived
-                  ? 'Archivado'
-                  : recurringMeta.label === '—'
-                    ? 'No recurrente'
-                    : recurringMeta.label;
+                const recurringMeta = getRecurringFieldMeta(recurringSchedule);
+                const recurringLabel = isArchived ? 'Archivado' : formatRecurringInline(recurringSchedule);
                 const recurringButtonClassName = isArchived
                   ? 'border-gray-200 bg-gray-100 text-gray-500'
-                  : recurringMeta.label === '—'
+                  : !recurringSchedule || recurringSchedule.ended_at
                     ? 'border-gray-200 bg-white text-gray-500 hover:bg-gray-50'
                     : `${recurringMeta.className} hover:brightness-[0.98]`;
 
                 return (
-                  <tr key={client.id} className={`border-b border-gray-100 align-top transition-colors appointments-zebra-hover ${rowTone}`}>
-                    <td className="p-3">
+                  <tr key={client.id} className={`border-b border-gray-100 transition-colors appointments-zebra-hover ${rowTone}`}>
+                    <td className="p-3 align-middle">
                       <input
                         type="checkbox"
                         checked={selected.has(client.id)}
@@ -600,33 +632,37 @@ export default function Clients() {
                       />
                     </td>
 
-                    <td className="p-3">
+                    <td className="p-3 align-middle whitespace-nowrap">
                       <button
                         type="button"
                         onClick={() => setEditClient(client)}
-                        className="text-left hover:text-blue-600"
+                        className="text-left text-[13px] font-semibold text-gray-800 transition hover:text-blue-600"
                       >
-                        <div className="font-medium text-gray-800">{client.first_name} {client.last_name}</div>
+                        {client.first_name} {client.last_name}
                       </button>
+                    </td>
+
+                    <td className="p-3 align-middle whitespace-nowrap">
                       <a
                         href={`https://wa.me/${client.phone}`}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="mt-1 inline-flex text-xs text-blue-600 hover:underline"
+                        className="font-mono text-xs text-blue-600 hover:underline"
                       >
                         {client.phone}
                       </a>
                     </td>
 
-                    <td className="p-3">
-                      <div className="text-xs font-medium text-gray-700">
-                        {[client.city, client.country].filter(Boolean).join(', ') || 'Sin ubicación'}
-                      </div>
+                    <td className="p-3 align-middle whitespace-nowrap text-xs font-medium text-gray-700">
+                      {formatClientLocation(client)}
+                    </td>
+
+                    <td className="p-3 align-middle">
                       <select
                         value={client.timezone || 'America/La_Paz'}
                         onChange={e => handleUpdate(client.id, 'timezone', e.target.value)}
                         disabled={isArchived}
-                        className="mt-1 w-full rounded-lg border border-gray-200 bg-white px-2 py-1 text-xs text-gray-600 disabled:opacity-50"
+                        className={`w-full min-w-[190px] ${INLINE_SELECT_CLASS}`}
                       >
                         {getTimezoneOptions(client.timezone || 'America/La_Paz').map((zone) => (
                           <option key={zone.tz} value={zone.tz}>{zone.label}</option>
@@ -634,78 +670,65 @@ export default function Clients() {
                       </select>
                     </td>
 
-                    <td className="p-3">
-                      <div className="flex flex-wrap items-center gap-1.5">
+                    <td className="p-3 align-middle">
+                      <div className="flex items-center gap-1.5 whitespace-nowrap">
                         <button
                           type="button"
                           onClick={() => openRecurringModal(client, recurringSchedule)}
                           disabled={isArchived || loadingRecurringModal || savingRecurringClientId === client.id}
-                          className={`inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-semibold transition disabled:opacity-60 ${recurringButtonClassName}`}
+                          className={`inline-flex h-8 items-center rounded-full border px-3 text-xs font-semibold transition disabled:opacity-60 ${recurringButtonClassName}`}
                         >
-                          {recurringButtonLabel}
+                          {recurringLabel}
                         </button>
-                        {recurringMeta.detail ? (
-                          <span className="inline-flex items-center gap-1 text-[11px] font-medium text-gray-500">
-                            <Repeat size={11} className="text-gray-400" />
-                            {recurringMeta.detail}
-                          </span>
+                        {!isArchived && recurringSchedule && !recurringSchedule.ended_at ? (
+                          <>
+                            {!recurringSchedule.paused_at ? (
+                              <button
+                                type="button"
+                                onClick={() => handleRecurringQuickAction(client, recurringSchedule, 'pause')}
+                                disabled={savingRecurringClientId === client.id}
+                                className={`${INLINE_ACTION_CLASS} border-amber-200 text-amber-700 hover:bg-amber-50 disabled:opacity-60`}
+                              >
+                                Pausar
+                              </button>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={() => handleRecurringQuickAction(client, recurringSchedule, 'resume')}
+                                disabled={savingRecurringClientId === client.id}
+                                className={`${INLINE_ACTION_CLASS} border-emerald-200 text-emerald-700 hover:bg-emerald-50 disabled:opacity-60`}
+                              >
+                                Reactivar
+                              </button>
+                            )}
+                            <InlineConfirmButton
+                              onConfirm={() => handleRecurringQuickAction(client, recurringSchedule, 'end')}
+                              confirmLabel="Confirmar"
+                              cancelLabel="Cancelar"
+                              compactCancel
+                              wrapperClassName="flex items-center gap-2"
+                              idleClassName={`${INLINE_ACTION_CLASS} border-rose-200 text-rose-700 hover:bg-rose-50 disabled:opacity-60`}
+                              confirmClassName="inline-flex h-8 items-center gap-1 rounded-lg border border-rose-200 bg-rose-50 px-2.5 text-[11px] font-semibold text-rose-700 hover:bg-rose-100"
+                              cancelClassName="inline-flex items-center justify-center rounded-lg border border-gray-200 p-1 text-gray-500 hover:bg-gray-50"
+                              disabled={savingRecurringClientId === client.id}
+                            >
+                              Quitar
+                            </InlineConfirmButton>
+                          </>
                         ) : null}
                       </div>
-
-                      {!isArchived && recurringSchedule && !recurringSchedule.ended_at ? (
-                        <div className="mt-2 flex flex-wrap gap-2">
-                          {!recurringSchedule.paused_at ? (
-                            <button
-                              type="button"
-                              onClick={() => handleRecurringQuickAction(client, recurringSchedule, 'pause')}
-                              disabled={savingRecurringClientId === client.id}
-                              className="rounded-lg border border-amber-200 px-2.5 py-1 text-xs font-medium text-amber-700 hover:bg-amber-50 disabled:opacity-60"
-                            >
-                              Pausar
-                            </button>
-                          ) : (
-                            <button
-                              type="button"
-                              onClick={() => handleRecurringQuickAction(client, recurringSchedule, 'resume')}
-                              disabled={savingRecurringClientId === client.id}
-                              className="rounded-lg border border-emerald-200 px-2.5 py-1 text-xs font-medium text-emerald-700 hover:bg-emerald-50 disabled:opacity-60"
-                            >
-                              Reactivar
-                            </button>
-                          )}
-                          <InlineConfirmButton
-                            onConfirm={() => handleRecurringQuickAction(client, recurringSchedule, 'end')}
-                            confirmLabel="Confirmar"
-                            cancelLabel="Cancelar"
-                            compactCancel
-                            wrapperClassName="flex items-center gap-2"
-                            idleClassName="rounded-lg border border-rose-200 px-2.5 py-1 text-xs font-medium text-rose-700 hover:bg-rose-50 disabled:opacity-60"
-                            confirmClassName="inline-flex items-center gap-1 rounded-lg border border-rose-200 bg-rose-50 px-2.5 py-1 text-xs font-medium text-rose-700 hover:bg-rose-100"
-                            cancelClassName="inline-flex items-center justify-center rounded-lg border border-gray-200 p-1 text-gray-500 hover:bg-gray-50"
-                            disabled={savingRecurringClientId === client.id}
-                          >
-                            Quitar
-                          </InlineConfirmButton>
-                        </div>
-                      ) : null}
-
-                      {isArchived ? (
-                        <div className="mt-2 text-[11px] font-medium text-gray-400">
-                          Archivado{client.deleted_at ? ` el ${new Date(client.deleted_at).toLocaleDateString('es-BO')}` : ''}
-                        </div>
-                      ) : null}
                     </td>
 
-                    <td className="p-3">
+                    <td className="p-3 align-middle">
                       {isArchived ? (
-                        <span className="inline-flex rounded-full bg-gray-100 px-2.5 py-1 text-xs font-semibold text-gray-500">
+                        <span className="inline-flex h-8 items-center rounded-full bg-gray-100 px-3 text-xs font-semibold text-gray-500">
                           Archivado
                         </span>
                       ) : (
                         <select
                           value={client.status_override || client.calculated_status || ''}
                           onChange={e => handleUpdate(client.id, 'status_override', e.target.value || null)}
-                          className="w-full text-xs px-2 py-1 rounded-full font-medium border-0 cursor-pointer"
+                          className="w-full min-w-[140px] h-9 rounded-full border-0 px-3 text-xs font-semibold cursor-pointer"
                           style={statusStyle((statuses.find(s => s.name === (client.status_override || client.calculated_status))?.color) || '#9CA3AF')}
                         >
                           <option value="">Auto ({client.calculated_status})</option>
@@ -714,73 +737,88 @@ export default function Clients() {
                           ))}
                         </select>
                       )}
-                      <div className="mt-2 flex flex-col gap-1">
-                        <span
-                          className="inline-flex w-fit rounded-full px-2.5 py-1 text-xs font-semibold"
-                          style={retentionStyle(client.retention_status)}
-                        >
-                          {client.retention_status || 'Sin dato'}
-                        </span>
-                        <span className="text-[11px] text-gray-400">
-                          {client.days_since_last_session != null
-                            ? `${client.days_since_last_session} día${client.days_since_last_session === 1 ? '' : 's'} desde última sesión`
-                            : 'Sin sesiones completadas'}
-                        </span>
-                      </div>
                     </td>
 
-                    <td className="p-3">
-                      <div className="flex items-center gap-1.5">
-                        <span className="text-[11px] text-gray-400">{(client.fee_currency || 'BOB').toUpperCase() === 'USD' ? 'USD' : 'Bs'}</span>
+                    <td className="p-3 align-middle">
+                      <span
+                        className="inline-flex h-8 items-center rounded-full px-3 text-xs font-semibold whitespace-nowrap"
+                        style={retentionStyle(client.retention_status)}
+                      >
+                        {formatRetentionInline(client)}
+                      </span>
+                    </td>
+
+                    <td className="p-3 align-middle">
+                      <div className="flex items-center gap-2 whitespace-nowrap">
                         <input
                           type="number"
                           value={client.fee || ''}
                           onChange={e => handleUpdate(client.id, 'fee', e.target.value === '' ? null : parseFloat(e.target.value))}
                           disabled={isArchived}
-                          className="w-24 text-sm px-2 py-1 border border-gray-200 rounded text-right disabled:opacity-50"
+                          className="h-9 w-24 rounded-xl border border-gray-200 bg-white px-3 text-right text-sm font-semibold text-gray-700 outline-none transition focus:border-gray-400 focus:ring-0 disabled:opacity-50"
                         />
+                        <select
+                          value={client.fee_currency || 'BOB'}
+                          onChange={e => handleUpdate(client.id, 'fee_currency', e.target.value)}
+                          disabled={isArchived}
+                          className={`w-[72px] ${INLINE_SELECT_CLASS}`}
+                        >
+                          <option value="BOB">BOB</option>
+                          <option value="USD">USD</option>
+                        </select>
                       </div>
-                      <select
-                        value={client.foreign_pricing_key || ''}
-                        onChange={e => handleForeignPricingProfileChange(client, e.target.value)}
-                        disabled={isArchived}
-                        className="mt-2 w-full text-xs px-2 py-1 border border-gray-200 rounded bg-white disabled:opacity-50"
-                      >
-                        <option value="">Sin perfil Stripe</option>
-                        {foreignPricingProfiles.map(profile => (
-                          <option key={profile.key} value={profile.key}>
-                            {profile.key} · {profile.currency} {profile.amount}
-                          </option>
-                        ))}
-                      </select>
                     </td>
 
-                    <td className="p-3">
+                    <td className="p-3 align-middle">
+                      {isArchived ? (
+                        <span className="text-xs text-gray-400 whitespace-nowrap">
+                          {client.foreign_pricing_key || 'Sin perfil'}
+                        </span>
+                      ) : (
+                        <select
+                          value={client.foreign_pricing_key || ''}
+                          onChange={e => handleForeignPricingProfileChange(client, e.target.value)}
+                          disabled={isArchived}
+                          className={`w-full min-w-[190px] ${INLINE_SELECT_CLASS}`}
+                        >
+                          <option value="">Sin perfil Stripe</option>
+                          {foreignPricingProfiles.map(profile => (
+                            <option key={profile.key} value={profile.key}>
+                              {profile.key} · {profile.currency} {profile.amount}
+                            </option>
+                          ))}
+                        </select>
+                      )}
+                    </td>
+
+                    <td className="p-3 align-middle">
                       <select
                         value={client.source || 'Otro'}
                         onChange={e => handleUpdate(client.id, 'source', e.target.value)}
                         disabled={isArchived}
-                        className="w-full rounded-lg border border-gray-200 bg-white px-2 py-1 text-xs text-gray-600 disabled:opacity-50"
+                        className={`w-full min-w-[150px] ${INLINE_SELECT_CLASS}`}
                       >
                         {sources.map((source) => (
                           <option key={source} value={source}>{source}</option>
                         ))}
                       </select>
-                      <div className="mt-2 text-xs text-gray-600">
-                        Sesiones completadas: <span className="font-semibold">{client.completed_sessions || 0}</span>
-                      </div>
-                      <div className="mt-1 text-[11px] text-gray-400">
-                        Registro: {client.created_at ? new Date(client.created_at).toLocaleDateString('es-BO') : '—'}
-                      </div>
                     </td>
 
-                    <td className="p-3">
+                    <td className="p-3 align-middle text-center text-sm font-semibold text-gray-700">
+                      {client.completed_sessions || 0}
+                    </td>
+
+                    <td className="p-3 align-middle whitespace-nowrap text-xs font-medium text-gray-500">
+                      {formatShortDate(client.created_at)}
+                    </td>
+
+                    <td className="p-3 align-middle">
                       {isArchived ? (
-                        <div className="flex flex-wrap gap-2">
+                        <div className="flex items-center gap-1.5 whitespace-nowrap">
                           <button
                             type="button"
                             onClick={() => handleRestore(client.id)}
-                            className="rounded-lg border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-xs font-medium text-emerald-700 hover:bg-emerald-100"
+                            className={`${INLINE_ACTION_CLASS} border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100`}
                           >
                             Restaurar
                           </button>
@@ -790,8 +828,8 @@ export default function Clients() {
                             cancelLabel="Cancelar"
                             compactCancel
                             wrapperClassName="flex items-center gap-2"
-                            idleClassName="inline-flex items-center rounded-lg bg-[#B34E35] px-2.5 py-1 text-xs font-medium text-white transition hover:bg-[#9f452f]"
-                            confirmClassName="inline-flex items-center gap-1 rounded-lg bg-[#FF2C2C] px-2.5 py-1 text-xs font-medium text-white transition hover:bg-[#e32727]"
+                            idleClassName="inline-flex h-8 items-center rounded-lg bg-[#B34E35] px-2.5 text-[11px] font-semibold text-white transition hover:bg-[#9f452f]"
+                            confirmClassName="inline-flex h-8 items-center gap-1 rounded-lg bg-[#FF2C2C] px-2.5 text-[11px] font-semibold text-white transition hover:bg-[#e32727]"
                             cancelClassName="inline-flex items-center justify-center rounded-lg border border-gray-200 p-1 text-gray-500 hover:bg-gray-50"
                             idleTitle="Borrar definitivamente"
                           >
@@ -799,11 +837,11 @@ export default function Clients() {
                           </InlineConfirmButton>
                         </div>
                       ) : (
-                        <div className="flex flex-wrap gap-2">
+                        <div className="flex items-center gap-1.5 whitespace-nowrap">
                           <button
                             type="button"
                             onClick={() => setEditClient(client)}
-                            className="rounded-lg border border-gray-200 px-2.5 py-1 text-xs font-medium text-gray-700 hover:bg-gray-50"
+                            className={`${INLINE_ACTION_CLASS} border-gray-200 text-gray-700 hover:bg-gray-50`}
                           >
                             Editar
                           </button>
@@ -813,8 +851,8 @@ export default function Clients() {
                             cancelLabel="Cancelar"
                             compactCancel
                             wrapperClassName="flex items-center gap-2"
-                            idleClassName="inline-flex items-center rounded-lg bg-[#B34E35] px-2.5 py-1 text-xs font-medium text-white transition hover:bg-[#9f452f]"
-                            confirmClassName="inline-flex items-center gap-1 rounded-lg bg-[#FF2C2C] px-2.5 py-1 text-xs font-medium text-white transition hover:bg-[#e32727]"
+                            idleClassName="inline-flex h-8 items-center rounded-lg bg-[#B34E35] px-2.5 text-[11px] font-semibold text-white transition hover:bg-[#9f452f]"
+                            confirmClassName="inline-flex h-8 items-center gap-1 rounded-lg bg-[#FF2C2C] px-2.5 text-[11px] font-semibold text-white transition hover:bg-[#e32727]"
                             cancelClassName="inline-flex items-center justify-center rounded-lg border border-gray-200 p-1 text-gray-500 hover:bg-gray-50"
                             idleTitle="Archivar"
                           >
@@ -827,7 +865,7 @@ export default function Clients() {
                 );
               })}
               {filtered.length === 0 && (
-                <tr><td colSpan={8} className="p-8 text-center text-gray-400">Sin resultados</td></tr>
+                <tr><td colSpan={14} className="p-8 text-center text-gray-400">Sin resultados</td></tr>
               )}
             </tbody>
           </table>

@@ -830,9 +830,9 @@ export default function Clients() {
 
                       <td className="p-3 align-middle whitespace-nowrap text-xs font-semibold text-gray-700">
                         {client.fee_currency} {formatFeeAmount(client.fee, client.fee_currency)}
-                        {client.special_fee_enabled && (
+                        {client.special_fee_enabled ? (
                           <span className="block text-[10px] text-amber-600 font-normal">QR Especial</span>
-                        )}
+                        ) : null}
                       </td>
 
                       <td className="p-3 align-middle">

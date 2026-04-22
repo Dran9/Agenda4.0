@@ -6,6 +6,7 @@ import { lazy, Suspense } from 'react';
 const AdminLogin = lazy(() => import('./pages/Admin/Login'));
 const AdminDashboard = lazy(() => import('./pages/Admin/Dashboard'));
 const AdminClients = lazy(() => import('./pages/Admin/Clients'));
+const AdminClientProfile = lazy(() => import('./pages/Admin/ClientProfile'));
 const AdminAppointments = lazy(() => import('./pages/Admin/Appointments'));
 const AdminQuickActions = lazy(() => import('./pages/Admin/QuickActions'));
 const AdminConfig = lazy(() => import('./pages/Admin/Config'));
@@ -54,6 +55,11 @@ export default function App() {
         <Route path="/admin/clients" element={
           <Suspense fallback={<AdminFallback />}>
             <AdminClients />
+          </Suspense>
+        } />
+        <Route path="/admin/clients/:id" element={
+          <Suspense fallback={<AdminFallback />}>
+            <AdminClientProfile />
           </Suspense>
         } />
         <Route path="/admin/appointments" element={

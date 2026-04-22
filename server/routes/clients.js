@@ -97,6 +97,57 @@ router.get('/', authMiddleware, async (req, res) => {
         ? '1=1'
         : 'c.deleted_at IS NULL';
 
+    // Build filter conditions
+    const filters = [deletedFilter];
+    const filterParams = [];
+
+    // Search filter (name, phone, city)
+    const search = String(req.query.search || '').trim();
+    if (search) {
+      filters.push(`(c.first_name LIKE ? OR c.last_name LIKE ? OR c.phone LIKE ? OR c.city LIKE ?)`);
+      const searchPattern = `%${search}%`;
+      filterParams.push(searchPattern, searchPattern, searchPattern, searchPattern);
+    }
+
+    // City filter
+    const city = String(req.query.city || '').trim();
+    if (city && city !== 'all') {
+      filters.push('c.city = ?');
+      filterParams.push(city);
+    }
+
+    // Source filter
+    const source = String(req.query.source || '').trim();
+    if (source && source !== 'all') {
+      filters.push('c.source = ?');
+      filterParams.push(source);
+    }
+
+    // Status filter applied after calculation (see below)
+
+    const whereClause = filters.join(' AND ');
+
+    // Sorting
+    const sortBy = String(req.query.sort_by || 'created');
+    const sortDir = String(req.query.sort_dir || 'desc').toLowerCase() === 'asc' ? 'ASC' : 'DESC';
+
+    let orderBy;
+    switch (sortBy) {
+      case 'name':
+        orderBy = `c.first_name ${sortDir}, c.last_name ${sortDir}`;
+        break;
+      case 'last_session':
+        orderBy = `last_session ${sortDir} IS NULL, last_session ${sortDir}`;
+        break;
+      case 'next_session':
+        orderBy = `next_session ${sortDir} IS NULL, next_session ${sortDir}`;
+        break;
+      case 'created':
+      default:
+        orderBy = `CASE WHEN c.deleted_at IS NULL THEN 0 ELSE 1 END, COALESCE(c.deleted_at, c.created_at) ${sortDir}`;
+        break;
+    }
+
     const [clients] = await pool.query(
       `SELECT c.*,
         (SELECT COUNT(*) FROM appointments WHERE client_id = c.id AND tenant_id = ? AND status = 'Completada') as completed_sessions,
@@ -108,18 +159,18 @@ router.get('/', authMiddleware, async (req, res) => {
         (SELECT COUNT(*) FROM recurring_schedules WHERE client_id = c.id AND tenant_id = ? AND ended_at IS NULL AND paused_at IS NULL) as has_active_recurring,
         (SELECT COUNT(*) FROM recurring_schedules WHERE client_id = c.id AND tenant_id = ? AND ended_at IS NULL AND paused_at IS NOT NULL) as has_paused_recurring
        FROM clients c
-       WHERE c.tenant_id = ? AND ${deletedFilter}
-       ORDER BY
-         CASE WHEN c.deleted_at IS NULL THEN 0 ELSE 1 END,
-         COALESCE(c.deleted_at, c.created_at) DESC`,
-      [req.tenantId, req.tenantId, req.tenantId, req.tenantId, req.tenantId, req.tenantId, req.tenantId, req.tenantId, req.tenantId]
+       WHERE c.tenant_id = ? AND ${whereClause}
+       ORDER BY ${orderBy}`,
+      [req.tenantId, req.tenantId, req.tenantId, req.tenantId, req.tenantId, req.tenantId, req.tenantId, req.tenantId, req.tenantId, ...filterParams]
     );
 
     const [cfgRows] = await pool.query('SELECT retention_rules FROM config WHERE tenant_id = ? LIMIT 1', [req.tenantId]);
     const retentionRules = cfgRows[0]?.retention_rules || null;
 
     // Calculate status and retention for each
-    for (const client of clients) {
+    let result = clients;
+    
+    for (const client of result) {
       const futureAppt = client.next_session ? { date_time: client.next_session } : null;
       const lastAppt = client.last_session ? { date_time: client.last_session } : null;
       client.calculated_status = calculateStatus(client, lastAppt, futureAppt, client.completed_sessions);
@@ -139,7 +190,16 @@ router.get('/', authMiddleware, async (req, res) => {
       client.retention_thresholds = retention.thresholds;
     }
 
-    res.json(clients);
+    // Apply status filter after calculation
+    const statusFilter = String(req.query.status || '').trim();
+    if (statusFilter && statusFilter !== 'all') {
+      result = result.filter(client => 
+        client.status_override === statusFilter || 
+        (!client.status_override && client.calculated_status === statusFilter)
+      );
+    }
+
+    res.json(result);
   } catch (err) {
     sendServerError(res, req, err, {
       message: 'No se pudieron cargar los clientes',

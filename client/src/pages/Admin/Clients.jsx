@@ -99,6 +99,21 @@ function formatClientLocation(client) {
   return parts.length ? parts.join(', ') : 'Sin ubicación';
 }
 
+function formatFeeAmount(value, currency) {
+  const amount = Number(value);
+  if (!Number.isFinite(amount)) return '0';
+
+  const normalizedCurrency = String(currency || 'BOB').toUpperCase();
+  if (normalizedCurrency === 'USD') {
+    return amount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  }
+
+  return amount.toLocaleString('es-BO', {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: Number.isInteger(amount) ? 0 : 2,
+  });
+}
+
 function formatRetentionInline(client) {
   const label = client.retention_status || 'Sin dato';
   if (client.days_since_last_session == null) return label;
@@ -806,7 +821,7 @@ export default function Clients() {
                       </td>
 
                       <td className="p-3 align-middle whitespace-nowrap text-xs font-semibold text-gray-700">
-                        {client.fee_currency} {client.fee}
+                        {client.fee_currency} {formatFeeAmount(client.fee, client.fee_currency)}
                         {client.special_fee_enabled && (
                           <span className="block text-[10px] text-amber-600 font-normal">QR Especial</span>
                         )}

@@ -157,25 +157,40 @@ router.get('/', authMiddleware, async (req, res) => {
         (SELECT COUNT(*) FROM appointments WHERE client_id = c.id AND tenant_id = ?) as total_appointments,
         (SELECT COUNT(*) FROM appointments WHERE client_id = c.id AND tenant_id = ? AND status = 'Reagendada') as reschedule_count,
         (SELECT COUNT(*) FROM recurring_schedules WHERE client_id = c.id AND tenant_id = ? AND ended_at IS NULL AND paused_at IS NULL) as has_active_recurring,
-        (SELECT COUNT(*) FROM recurring_schedules WHERE client_id = c.id AND tenant_id = ? AND ended_at IS NULL AND paused_at IS NOT NULL) as has_paused_recurring,
-        GREATEST(
-          COALESCE((SELECT MAX(date_time) FROM appointments WHERE client_id = c.id AND tenant_id = ? AND status = 'Completada'), '1970-01-01'),
-          COALESCE((SELECT MAX(created_at) FROM payments WHERE client_id = c.id AND tenant_id = ?), '1970-01-01'),
-          COALESCE((SELECT MAX(received_at) FROM webhooks_log WHERE client_id = c.id AND tenant_id = ?), '1970-01-01')
-        ) as last_activity
+        (SELECT COUNT(*) FROM recurring_schedules WHERE client_id = c.id AND tenant_id = ? AND ended_at IS NULL AND paused_at IS NOT NULL) as has_paused_recurring
        FROM clients c
        WHERE c.tenant_id = ? AND ${whereClause}
        ORDER BY ${orderBy}`,
-      [req.tenantId, req.tenantId, req.tenantId, req.tenantId, req.tenantId, req.tenantId, req.tenantId, req.tenantId, req.tenantId, req.tenantId, req.tenantId, req.tenantId, req.tenantId, ...filterParams]
+      [req.tenantId, req.tenantId, req.tenantId, req.tenantId, req.tenantId, req.tenantId, req.tenantId, req.tenantId, req.tenantId, ...filterParams]
     );
 
     const [cfgRows] = await pool.query('SELECT retention_rules FROM config WHERE tenant_id = ? LIMIT 1', [req.tenantId]);
     const retentionRules = cfgRows[0]?.retention_rules || null;
 
+    // Calculate last_activity for each client (batch query)
+    const clientIds = clients.map((c) => c.id);
+    let lastActivityMap = new Map();
+    if (clientIds.length > 0) {
+      const [activityRows] = await pool.query(
+        `SELECT client_id, MAX(last_date) as last_activity FROM (
+          SELECT client_id, MAX(date_time) as last_date FROM appointments WHERE client_id IN (?) AND tenant_id = ? AND status = 'Completada' GROUP BY client_id
+          UNION ALL
+          SELECT client_id, MAX(created_at) as last_date FROM payments WHERE client_id IN (?) AND tenant_id = ? GROUP BY client_id
+          UNION ALL
+          SELECT client_id, MAX(received_at) as last_date FROM webhooks_log WHERE client_id IN (?) AND tenant_id = ? GROUP BY client_id
+        ) combined GROUP BY client_id`,
+        [clientIds, req.tenantId, clientIds, req.tenantId, clientIds, req.tenantId]
+      );
+      for (const row of activityRows) {
+        lastActivityMap.set(row.client_id, row.last_activity);
+      }
+    }
+
     // Calculate status and retention for each
     let result = clients;
     
     for (const client of result) {
+      client.last_activity = lastActivityMap.get(client.id) || null;
       const futureAppt = client.next_session ? { date_time: client.next_session } : null;
       const lastAppt = client.last_session ? { date_time: client.last_session } : null;
       client.calculated_status = calculateStatus(client, lastAppt, futureAppt, client.completed_sessions);
@@ -238,18 +253,13 @@ router.get('/export', authMiddleware, async (req, res) => {
         (SELECT COUNT(*) FROM appointments WHERE client_id = c.id AND tenant_id = ?) as total_appointments,
         (SELECT COUNT(*) FROM appointments WHERE client_id = c.id AND tenant_id = ? AND status = 'Reagendada') as reschedule_count,
         (SELECT COUNT(*) FROM recurring_schedules WHERE client_id = c.id AND tenant_id = ? AND ended_at IS NULL AND paused_at IS NULL) as has_active_recurring,
-        (SELECT COUNT(*) FROM recurring_schedules WHERE client_id = c.id AND tenant_id = ? AND ended_at IS NULL AND paused_at IS NOT NULL) as has_paused_recurring,
-        GREATEST(
-          COALESCE((SELECT MAX(date_time) FROM appointments WHERE client_id = c.id AND tenant_id = ? AND status = 'Completada'), '1970-01-01'),
-          COALESCE((SELECT MAX(created_at) FROM payments WHERE client_id = c.id AND tenant_id = ?), '1970-01-01'),
-          COALESCE((SELECT MAX(received_at) FROM webhooks_log WHERE client_id = c.id AND tenant_id = ?), '1970-01-01')
-        ) as last_activity
+        (SELECT COUNT(*) FROM recurring_schedules WHERE client_id = c.id AND tenant_id = ? AND ended_at IS NULL AND paused_at IS NOT NULL) as has_paused_recurring
        FROM clients c
        WHERE c.tenant_id = ? AND ${deletedFilter}${searchFilter}
        ORDER BY
          CASE WHEN c.deleted_at IS NULL THEN 0 ELSE 1 END,
          COALESCE(c.deleted_at, c.created_at) DESC`,
-      [...params, req.tenantId, req.tenantId, req.tenantId, req.tenantId]
+      params
     );
 
     const [cfgRows] = await pool.query('SELECT retention_rules FROM config WHERE tenant_id = ? LIMIT 1', [req.tenantId]);
@@ -273,7 +283,25 @@ router.get('/export', authMiddleware, async (req, res) => {
       }
     }
 
+    let lastActivityMap = new Map();
+    if (clientIds.length > 0) {
+      const [activityRows] = await pool.query(
+        `SELECT client_id, MAX(last_date) as last_activity FROM (
+          SELECT client_id, MAX(date_time) as last_date FROM appointments WHERE client_id IN (?) AND tenant_id = ? AND status = 'Completada' GROUP BY client_id
+          UNION ALL
+          SELECT client_id, MAX(created_at) as last_date FROM payments WHERE client_id IN (?) AND tenant_id = ? GROUP BY client_id
+          UNION ALL
+          SELECT client_id, MAX(received_at) as last_date FROM webhooks_log WHERE client_id IN (?) AND tenant_id = ? GROUP BY client_id
+        ) combined GROUP BY client_id`,
+        [clientIds, req.tenantId, clientIds, req.tenantId, clientIds, req.tenantId]
+      );
+      for (const row of activityRows) {
+        lastActivityMap.set(row.client_id, row.last_activity);
+      }
+    }
+
     for (const client of clients) {
+      client.last_activity = lastActivityMap.get(client.id) || null;
       const futureAppt = client.next_session ? { date_time: client.next_session } : null;
       const lastAppt = client.last_session ? { date_time: client.last_session } : null;
       client.calculated_status = calculateStatus(client, lastAppt, futureAppt, client.completed_sessions);

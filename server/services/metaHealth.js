@@ -368,7 +368,7 @@ function buildTemplateUsageItem({
 
 async function listTemplatesInUse(tenantId) {
   const [rows] = await pool.query(
-    `SELECT payment_reminder_template, retention_risk_template, retention_lost_template, whatsapp_template_language
+    `SELECT payment_reminder_template, whatsapp_template_language
        FROM config
       WHERE tenant_id = ?
       LIMIT 1`,
@@ -385,7 +385,7 @@ async function listTemplatesInUse(tenantId) {
       templateName: DEFAULT_CONFIRMATION_TEMPLATE,
       language: 'es',
       source: 'app_default',
-      notes: 'Template fijo usado por los recordatorios de cita.',
+      notes: 'Se envía en los recordatorios automáticos de cita. Desde este template salen los botones para confirmar, reagendar o pedir contacto.',
     }),
     buildTemplateUsageItem({
       key: 'reschedule_link',
@@ -394,7 +394,7 @@ async function listTemplatesInUse(tenantId) {
       templateName: process.env.WA_RESCHEDULE_TEMPLATE || DEFAULT_RESCHEDULE_TEMPLATE,
       language: 'es',
       source: process.env.WA_RESCHEDULE_TEMPLATE ? 'env_override' : 'app_default',
-      notes: 'El botón REAGEN_NOW desde WhatsApp usa texto libre, no template.',
+      notes: 'Se usa cuando el admin envía manualmente el link de reagenda. Si el cliente toca REAGEN_NOW en WhatsApp, la app responde con texto libre y no con este template.',
     }),
     buildTemplateUsageItem({
       key: 'payment_reminder',
@@ -403,27 +403,7 @@ async function listTemplatesInUse(tenantId) {
       templateName: cfg.payment_reminder_template || process.env.WA_PAYMENT_REMINDER_TEMPLATE || DEFAULT_PAYMENT_REMINDER_TEMPLATE,
       language: sharedLanguage,
       source: cfg.payment_reminder_template ? 'tenant_config' : process.env.WA_PAYMENT_REMINDER_TEMPLATE ? 'env_override' : 'app_default',
-      notes: 'Usado por el scheduler interno de pagos pendientes.',
-    }),
-    buildTemplateUsageItem({
-      key: 'retention_risk',
-      label: 'Retención en riesgo',
-      trigger: 'Campañas o automatizaciones futuras de retención',
-      templateName: cfg.retention_risk_template || '',
-      language: sharedLanguage,
-      source: cfg.retention_risk_template ? 'tenant_config' : 'not_configured',
-      status: cfg.retention_risk_template ? 'active' : 'missing',
-      notes: cfg.retention_risk_template ? 'Template guardado en configuración.' : 'Aún no hay template asignado.',
-    }),
-    buildTemplateUsageItem({
-      key: 'retention_lost',
-      label: 'Retención perdido',
-      trigger: 'Campañas o automatizaciones futuras de retención',
-      templateName: cfg.retention_lost_template || '',
-      language: sharedLanguage,
-      source: cfg.retention_lost_template ? 'tenant_config' : 'not_configured',
-      status: cfg.retention_lost_template ? 'active' : 'missing',
-      notes: cfg.retention_lost_template ? 'Template guardado en configuración.' : 'Aún no hay template asignado.',
+      notes: 'Se envía desde la automatización interna de pagos pendientes antes de la cita. Puede venir del tenant, del entorno o del default de la app.',
     }),
   ];
 }

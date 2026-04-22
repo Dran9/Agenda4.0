@@ -1,9 +1,6 @@
-import { Fragment, useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   RefreshCw,
-  History,
-  Eye,
-  Trash2,
   AlertTriangle,
   ShieldCheck,
   Save,
@@ -24,12 +21,6 @@ const HEALTH_CLASSES = {
   yellow: 'bg-amber-100 text-amber-700 border-amber-200',
   red: 'bg-red-100 text-red-700 border-red-200',
   gray: 'bg-slate-100 text-slate-500 border-slate-200',
-};
-
-const SEVERITY_CLASSES = {
-  info: 'bg-slate-100 text-slate-600',
-  warning: 'bg-amber-100 text-amber-700',
-  critical: 'bg-red-100 text-red-700',
 };
 
 const TEMPLATE_STATUS_CLASSES = {
@@ -93,64 +84,20 @@ export default function MetaHealthPanel() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [panel, setPanel] = useState(null);
-  const [timeline, setTimeline] = useState([]);
-  const [timelineMeta, setTimelineMeta] = useState({ page: 1, limit: 50, total: 0 });
-  const [filters, setFilters] = useState({
-    severity: '',
-    field: '',
-    phone: '',
-    date_from: '',
-    date_to: '',
-  });
-  const [detailById, setDetailById] = useState({});
-  const [loadingDetailId, setLoadingDetailId] = useState(null);
-  const [showFullHistory, setShowFullHistory] = useState(false);
-  const [selectedEventIds, setSelectedEventIds] = useState([]);
-  const [deletingSingleId, setDeletingSingleId] = useState(null);
-  const [deletingBatch, setDeletingBatch] = useState(false);
-  const [armedSingleDeleteId, setArmedSingleDeleteId] = useState(null);
-  const [armedBatchDelete, setArmedBatchDelete] = useState(false);
-  const [successSingleDeleteId, setSuccessSingleDeleteId] = useState(null);
-  const [successBatchDelete, setSuccessBatchDelete] = useState(false);
-
   const [configDraft, setConfigDraft] = useState(null);
   const [savingConfig, setSavingConfig] = useState(false);
-
   const { toast, show: showToast } = useToast();
 
-  const timelineLimit = showFullHistory ? 100 : 50;
-
   async function loadPanel() {
-    const data = await api.get(`/meta-health?timeline_limit=${timelineLimit}`);
+    const data = await api.get('/meta-health');
     setPanel(data);
     setConfigDraft(data.config || null);
-  }
-
-  async function loadEvents({ page = 1 } = {}) {
-    const params = new URLSearchParams({
-      page: String(page),
-      limit: String(timelineLimit),
-    });
-
-    if (filters.severity) params.set('severity', filters.severity);
-    if (filters.field) params.set('field', filters.field);
-    if (filters.phone) params.set('phone', filters.phone);
-    if (filters.date_from) params.set('date_from', filters.date_from);
-    if (filters.date_to) params.set('date_to', filters.date_to);
-
-    const data = await api.get(`/meta-health/events?${params.toString()}`);
-    const items = data.items || [];
-    setTimeline(items);
-    setTimelineMeta({ page: data.page || 1, limit: data.limit || timelineLimit, total: data.total || 0 });
-    setSelectedEventIds((prev) => prev.filter((id) => items.some((event) => event.id === id)));
-    setArmedSingleDeleteId((current) => (items.some((event) => event.id === current) ? current : null));
-    return data;
   }
 
   async function bootstrap() {
     setLoading(true);
     try {
-      await Promise.all([loadPanel(), loadEvents({ page: 1 })]);
+      await loadPanel();
     } catch (err) {
       showToast(`No se pudo cargar Meta health: ${err.message}`, 'error');
     } finally {
@@ -161,173 +108,18 @@ export default function MetaHealthPanel() {
   useEffect(() => {
     bootstrap();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [showFullHistory]);
-
-  useEffect(() => {
-    if (!armedSingleDeleteId || deletingSingleId !== null || deletingBatch) return undefined;
-    const timer = window.setTimeout(() => setArmedSingleDeleteId(null), 4500);
-    return () => window.clearTimeout(timer);
-  }, [armedSingleDeleteId, deletingSingleId, deletingBatch]);
-
-  useEffect(() => {
-    if (!armedBatchDelete || deletingBatch || deletingSingleId !== null) return undefined;
-    const timer = window.setTimeout(() => setArmedBatchDelete(false), 4500);
-    return () => window.clearTimeout(timer);
-  }, [armedBatchDelete, deletingBatch, deletingSingleId]);
-
-  useEffect(() => {
-    if (!successSingleDeleteId) return undefined;
-    const timer = window.setTimeout(() => setSuccessSingleDeleteId(null), 1400);
-    return () => window.clearTimeout(timer);
-  }, [successSingleDeleteId]);
-
-  useEffect(() => {
-    if (!successBatchDelete) return undefined;
-    const timer = window.setTimeout(() => setSuccessBatchDelete(false), 1400);
-    return () => window.clearTimeout(timer);
-  }, [successBatchDelete]);
-
-  useEffect(() => {
-    if (selectedEventIds.length === 0) setArmedBatchDelete(false);
-  }, [selectedEventIds]);
+  }, []);
 
   async function handleRefresh() {
     setRefreshing(true);
     try {
       await api.post('/meta-health/refresh', { run_watchdog: true });
-      await Promise.all([loadPanel(), loadEvents({ page: 1 })]);
+      await loadPanel();
       showToast('Meta health refrescado');
     } catch (err) {
       showToast(`No se pudo refrescar: ${err.message}`, 'error');
     } finally {
       setRefreshing(false);
-    }
-  }
-
-  async function applyFilters() {
-    try {
-      await loadEvents({ page: 1 });
-    } catch (err) {
-      showToast(`No se pudieron aplicar filtros: ${err.message}`, 'error');
-    }
-  }
-
-  async function loadEventDetail(eventId) {
-    if (detailById[eventId]) {
-      setDetailById((prev) => {
-        const next = { ...prev };
-        delete next[eventId];
-        return next;
-      });
-      return;
-    }
-
-    setLoadingDetailId(eventId);
-    try {
-      const detail = await api.get(`/meta-health/events/${eventId}`);
-      setDetailById((prev) => ({ ...prev, [eventId]: detail }));
-    } catch (err) {
-      showToast(`No se pudo cargar detalle: ${err.message}`, 'error');
-    } finally {
-      setLoadingDetailId(null);
-    }
-  }
-
-  function toggleEventSelected(eventId, checked) {
-    setSelectedEventIds((prev) => {
-      if (checked) return prev.includes(eventId) ? prev : [...prev, eventId];
-      return prev.filter((id) => id !== eventId);
-    });
-  }
-
-  function toggleSelectCurrentPage(checked) {
-    const pageIds = timeline.map((event) => event.id);
-    if (checked) {
-      setSelectedEventIds((prev) => [...new Set([...prev, ...pageIds])]);
-      return;
-    }
-    setSelectedEventIds((prev) => prev.filter((id) => !pageIds.includes(id)));
-  }
-
-  async function refreshAfterDelete() {
-    const currentPage = timelineMeta.page || 1;
-    const currentData = await loadEvents({ page: currentPage });
-    const total = Number(currentData?.total || 0);
-    const limit = Number(currentData?.limit || timelineLimit);
-    const maxPageAfterDelete = Math.max(1, Math.ceil(total / Math.max(1, limit)));
-
-    if (currentPage > maxPageAfterDelete) {
-      await loadEvents({ page: maxPageAfterDelete });
-    }
-
-    await loadPanel();
-  }
-
-  async function handleDeleteOne(eventId) {
-    if (deletingSingleId !== null || deletingBatch) return;
-    if (armedSingleDeleteId !== eventId) {
-      setArmedSingleDeleteId(eventId);
-      setSuccessSingleDeleteId(null);
-      setSuccessBatchDelete(false);
-      return;
-    }
-
-    setArmedSingleDeleteId(null);
-    setDeletingSingleId(eventId);
-    try {
-      const result = await api.delete(`/meta-health/events/${eventId}`);
-      if (!result?.deleted) {
-        showToast('El log ya no existe o no se pudo eliminar', 'error');
-        return;
-      }
-      setDetailById((prev) => {
-        const next = { ...prev };
-        delete next[eventId];
-        return next;
-      });
-      setSelectedEventIds((prev) => prev.filter((id) => id !== eventId));
-      await refreshAfterDelete();
-      setSuccessSingleDeleteId(eventId);
-      showToast('Log eliminado');
-    } catch (err) {
-      showToast(`No se pudo eliminar el log: ${err.message}`, 'error');
-    } finally {
-      setDeletingSingleId(null);
-    }
-  }
-
-  async function handleDeleteBatch() {
-    if (selectedEventIds.length === 0) return;
-    if (deletingBatch || deletingSingleId !== null) return;
-    if (!armedBatchDelete) {
-      setArmedBatchDelete(true);
-      setSuccessBatchDelete(false);
-      setSuccessSingleDeleteId(null);
-      return;
-    }
-
-    setArmedBatchDelete(false);
-    setDeletingBatch(true);
-    try {
-      const result = await api.post('/meta-health/events/delete-batch', { ids: selectedEventIds });
-      if (!result?.deleted) {
-        showToast('No se eliminaron logs para la selección actual', 'error');
-        return;
-      }
-      const deletedIds = new Set((result.deleted_ids || []).map(Number));
-      setDetailById((prev) => {
-        const next = { ...prev };
-        for (const id of deletedIds) delete next[id];
-        return next;
-      });
-      setSelectedEventIds([]);
-      await refreshAfterDelete();
-      setSuccessBatchDelete(true);
-      showToast(`Logs eliminados: ${result.deleted}`);
-    } catch (err) {
-      showToast(`No se pudo eliminar el lote: ${err.message}`, 'error');
-    } finally {
-      setDeletingBatch(false);
     }
   }
 
@@ -346,31 +138,6 @@ export default function MetaHealthPanel() {
     }
   }
 
-  const maxPages = useMemo(() => {
-    if (!timelineMeta.total || !timelineMeta.limit) return 1;
-    return Math.max(1, Math.ceil(timelineMeta.total / timelineMeta.limit));
-  }, [timelineMeta]);
-
-  const currentPageIds = useMemo(() => timeline.map((event) => event.id), [timeline]);
-  const selectedCount = selectedEventIds.length;
-  const allCurrentPageSelected = currentPageIds.length > 0 && currentPageIds.every((id) => selectedEventIds.includes(id));
-  const canDelete = !deletingBatch && deletingSingleId === null;
-  const batchButtonDisabled = !canDelete || (selectedCount === 0 && !successBatchDelete);
-  const batchButtonLabel = deletingBatch
-    ? 'Eliminando...'
-    : successBatchDelete
-      ? 'Eliminado'
-      : armedBatchDelete
-        ? '¿Confirmas?'
-        : 'Eliminar seleccionados';
-  const batchButtonClass = deletingBatch
-    ? 'border-slate-200 bg-slate-100 text-slate-600'
-    : successBatchDelete
-      ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
-      : armedBatchDelete
-        ? 'border-red-600 bg-red-600 text-white'
-        : 'border-red-200 bg-red-50 text-red-700 hover:bg-red-100';
-
   if (loading) {
     return (
       <div className="rounded-2xl border border-slate-200 bg-white px-6 py-10 text-center text-slate-500">
@@ -382,7 +149,6 @@ export default function MetaHealthPanel() {
   const summary = panel?.summary || {};
   const cards = panel?.cards || [];
   const recommendations = panel?.recommendations || [];
-  const supportedFields = panel?.supported_fields || [];
   const globalClass = HEALTH_CLASSES[summary.global_status] || HEALTH_CLASSES.gray;
 
   return (
@@ -422,14 +188,6 @@ export default function MetaHealthPanel() {
             >
               {refreshing ? <LoaderCircle size={15} className="animate-spin" /> : <RefreshCw size={15} />}
               Refrescar vista
-            </button>
-            <button
-              type="button"
-              onClick={() => setShowFullHistory((prev) => !prev)}
-              className="inline-flex items-center justify-center gap-2 rounded-xl bg-[#4E769B] px-4 py-2.5 text-sm font-semibold text-white hover:bg-[#618BBF]"
-            >
-              <History size={15} />
-              {showFullHistory ? 'Ver últimos 50' : 'Abrir historial completo'}
             </button>
           </div>
         </div>
@@ -471,246 +229,6 @@ export default function MetaHealthPanel() {
               </article>
             );
           })}
-        </div>
-      </section>
-
-      <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm space-y-4">
-        <div className="flex items-center gap-2 text-slate-700">
-          <History size={16} />
-          <h4 className="text-sm font-semibold uppercase tracking-[0.12em]">Timeline / historial</h4>
-        </div>
-
-        <div className="grid grid-cols-1 gap-2 md:grid-cols-5">
-          <select
-            value={filters.severity}
-            onChange={(e) => setFilters((prev) => ({ ...prev, severity: e.target.value }))}
-            className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm"
-          >
-            <option value="">Severidad: todas</option>
-            <option value="info">Info</option>
-            <option value="warning">Warning</option>
-            <option value="critical">Crítico</option>
-          </select>
-
-          <select
-            value={filters.field}
-            onChange={(e) => setFilters((prev) => ({ ...prev, field: e.target.value }))}
-            className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm"
-          >
-            <option value="">Field: todos</option>
-            {supportedFields.map((field) => (
-              <option key={field} value={field}>{field}</option>
-            ))}
-          </select>
-
-          <input
-            type="text"
-            value={filters.phone}
-            onChange={(e) => setFilters((prev) => ({ ...prev, phone: e.target.value }))}
-            placeholder="phone_number_id"
-            className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm"
-          />
-
-          <input
-            type="date"
-            value={filters.date_from}
-            onChange={(e) => setFilters((prev) => ({ ...prev, date_from: e.target.value }))}
-            className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm"
-          />
-
-          <div className="flex items-center gap-2">
-            <input
-              type="date"
-              value={filters.date_to}
-              onChange={(e) => setFilters((prev) => ({ ...prev, date_to: e.target.value }))}
-              className="flex-1 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm"
-            />
-            <button
-              type="button"
-              onClick={applyFilters}
-              className="rounded-lg bg-slate-900 px-3 py-2 text-xs font-semibold text-white"
-            >
-              Aplicar
-            </button>
-          </div>
-        </div>
-
-        <div className="flex flex-col gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 sm:flex-row sm:items-center sm:justify-between">
-          <label className="inline-flex items-center gap-2 text-xs font-medium text-slate-700">
-            <input
-              type="checkbox"
-              checked={allCurrentPageSelected}
-              onChange={(e) => toggleSelectCurrentPage(e.target.checked)}
-              className="h-4 w-4 rounded border-slate-300 text-[#4E769B] focus:ring-[#4E769B]"
-            />
-            Seleccionar página actual
-          </label>
-          <div className="flex items-center gap-2">
-            <span className="text-xs text-slate-500">{selectedCount} seleccionados</span>
-            <button
-              type="button"
-              disabled={batchButtonDisabled}
-              onClick={handleDeleteBatch}
-              className={`inline-flex items-center gap-1 rounded-lg border px-3 py-1.5 text-xs font-semibold transition disabled:cursor-not-allowed disabled:opacity-50 ${batchButtonClass}`}
-            >
-              {deletingBatch ? <LoaderCircle size={13} className="animate-spin" /> : <Trash2 size={13} />}
-              {batchButtonLabel}
-            </button>
-          </div>
-        </div>
-
-        <div className="overflow-x-auto rounded-xl border border-slate-200">
-          <table className="min-w-full text-sm">
-            <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
-              <tr>
-                <th className="px-3 py-2 w-12 text-center">Sel</th>
-                <th className="px-3 py-2">Fecha/hora</th>
-                <th className="px-3 py-2">Severidad</th>
-                <th className="px-3 py-2">Tipo</th>
-                <th className="px-3 py-2">Field</th>
-                <th className="px-3 py-2">Resumen</th>
-                <th className="px-3 py-2">Estado</th>
-                <th className="px-3 py-2 text-right">Acción</th>
-              </tr>
-            </thead>
-            <tbody>
-              {timeline.length === 0 ? (
-                <tr>
-                  <td colSpan={8} className="px-3 py-8 text-center text-sm text-slate-500">
-                    No hay eventos para los filtros seleccionados.
-                  </td>
-                </tr>
-              ) : (
-                timeline.map((event) => {
-                  const detail = detailById[event.id];
-                  const checked = selectedEventIds.includes(event.id);
-                  const isSingleRunning = deletingSingleId === event.id;
-                  const isSingleArmed = armedSingleDeleteId === event.id;
-                  const isSingleSuccess = successSingleDeleteId === event.id;
-                  const singleButtonLabel = isSingleRunning
-                    ? 'Borrando...'
-                    : isSingleSuccess
-                      ? 'Eliminado'
-                      : isSingleArmed
-                        ? '¿Confirmas?'
-                        : 'Borrar';
-                  const singleButtonClass = isSingleRunning
-                    ? 'border-slate-200 bg-slate-100 text-slate-600'
-                    : isSingleSuccess
-                      ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
-                      : isSingleArmed
-                        ? 'border-red-600 bg-red-600 text-white'
-                        : 'border-red-200 bg-red-50 text-red-700 hover:bg-red-100';
-                  return (
-                    <Fragment key={event.id}>
-                      <tr className="border-t border-slate-100 align-top">
-                        <td className="px-3 py-2 text-center">
-                          <input
-                            type="checkbox"
-                            checked={checked}
-                            onChange={(e) => toggleEventSelected(event.id, e.target.checked)}
-                            className="h-4 w-4 rounded border-slate-300 text-[#4E769B] focus:ring-[#4E769B]"
-                          />
-                        </td>
-                        <td className="px-3 py-2 text-xs text-slate-600">{formatDateTime(event.received_at)}</td>
-                        <td className="px-3 py-2">
-                          <span className={`inline-flex rounded-full px-2 py-1 text-[11px] font-semibold ${SEVERITY_CLASSES[event.severity] || SEVERITY_CLASSES.info}`}>
-                            {event.severity}
-                          </span>
-                        </td>
-                        <td className="px-3 py-2 font-medium text-slate-800">{event.event_type}</td>
-                        <td className="px-3 py-2 text-slate-600">{event.field}</td>
-                        <td className="px-3 py-2 text-slate-600 max-w-[420px]">{event.summary || '—'}</td>
-                        <td className="px-3 py-2 text-slate-600">{event.status || event.quality || '—'}</td>
-                        <td className="px-3 py-2 text-right">
-                          <div className="inline-flex items-center gap-1">
-                            <button
-                              type="button"
-                              onClick={() => loadEventDetail(event.id)}
-                              className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs text-slate-700 hover:bg-slate-50"
-                            >
-                              {loadingDetailId === event.id ? <LoaderCircle size={13} className="animate-spin" /> : <Eye size={13} />}
-                              {detail ? 'Ocultar' : 'Ver detalle'}
-                            </button>
-                            <button
-                              type="button"
-                              disabled={!canDelete}
-                              onClick={() => handleDeleteOne(event.id)}
-                              className={`inline-flex items-center gap-1 rounded-lg border px-2.5 py-1.5 text-xs transition disabled:cursor-not-allowed disabled:opacity-50 ${singleButtonClass}`}
-                            >
-                              {isSingleRunning ? <LoaderCircle size={13} className="animate-spin" /> : <Trash2 size={13} />}
-                              {singleButtonLabel}
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-
-                      {detail ? (
-                        <tr className="border-t border-slate-100 bg-slate-50/70">
-                          <td colSpan={8} className="px-3 py-3">
-                            <div className="grid grid-cols-1 gap-3 xl:grid-cols-2">
-                              <div className="rounded-lg border border-slate-200 bg-white p-3">
-                                <div className="text-xs font-semibold uppercase tracking-[0.1em] text-slate-500 mb-2">Evento normalizado</div>
-                                <pre className="max-h-72 overflow-auto whitespace-pre-wrap break-words rounded border border-slate-100 bg-slate-50 p-2 text-[11px] text-slate-700">
-                                  {JSON.stringify(detail.event?.normalized_payload || {}, null, 2)}
-                                </pre>
-                              </div>
-
-                              <div className="rounded-lg border border-slate-200 bg-white p-3">
-                                <div className="text-xs font-semibold uppercase tracking-[0.1em] text-slate-500 mb-2">Raw payload</div>
-                                <pre className="max-h-72 overflow-auto whitespace-pre-wrap break-words rounded border border-slate-100 bg-slate-50 p-2 text-[11px] text-slate-700">
-                                  {JSON.stringify(detail.raw_payload || {}, null, 2)}
-                                </pre>
-                              </div>
-                            </div>
-
-                            <div className="mt-3 rounded-lg border border-slate-200 bg-white p-3">
-                              <div className="text-xs font-semibold uppercase tracking-[0.1em] text-slate-500 mb-2">Alertas correlacionadas</div>
-                              {detail.alerts?.length ? (
-                                <div className="space-y-1 text-xs text-slate-600">
-                                  {detail.alerts.map((alert) => (
-                                    <div key={alert.id} className="rounded border border-slate-200 bg-slate-50 px-2 py-1.5">
-                                      Canal: <span className="font-medium">{alert.channel}</span> · Estado:{' '}
-                                      <span className="font-medium">{alert.status}</span> · Fecha: {formatDateTime(alert.created_at)}
-                                    </div>
-                                  ))}
-                                </div>
-                              ) : (
-                                <div className="text-xs text-slate-500">No hay alertas emitidas para este evento.</div>
-                              )}
-                            </div>
-                          </td>
-                        </tr>
-                      ) : null}
-                    </Fragment>
-                  );
-                })
-              )}
-            </tbody>
-          </table>
-        </div>
-
-        <div className="flex items-center justify-between text-xs text-slate-500">
-          <span>{timelineMeta.total} eventos</span>
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              disabled={timelineMeta.page <= 1}
-              onClick={() => loadEvents({ page: Math.max(1, timelineMeta.page - 1) })}
-              className="rounded border border-slate-200 px-2 py-1 disabled:opacity-40"
-            >
-              Anterior
-            </button>
-            <span>Página {timelineMeta.page} de {maxPages}</span>
-            <button
-              type="button"
-              disabled={timelineMeta.page >= maxPages}
-              onClick={() => loadEvents({ page: Math.min(maxPages, timelineMeta.page + 1) })}
-              className="rounded border border-slate-200 px-2 py-1 disabled:opacity-40"
-            >
-              Siguiente
-            </button>
-          </div>
         </div>
       </section>
 
@@ -882,7 +400,7 @@ export default function MetaHealthPanel() {
                 },
               }))}
               label="Telegram activo"
-              hint="Canal único de alertas (según alcance actual)"
+              hint="Canal único de alertas y avisos operativos"
             />
             <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
               <label className="text-xs text-slate-600">
@@ -930,7 +448,7 @@ export default function MetaHealthPanel() {
         <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm space-y-4">
           <div>
             <h4 className="text-sm font-semibold uppercase tracking-[0.12em] text-slate-700">Templates en uso</h4>
-            <p className="text-xs text-slate-500 mt-1">Inventario de templates WhatsApp que la app usa hoy por default, env o configuración del tenant.</p>
+            <p className="text-xs text-slate-500 mt-1">Solo muestra templates que la app usa hoy de verdad por default, env o configuración del tenant.</p>
           </div>
 
           <div className="grid grid-cols-1 gap-3 xl:grid-cols-2">
@@ -950,7 +468,12 @@ export default function MetaHealthPanel() {
                   <div><span className="font-medium text-slate-700">Template:</span> {item.template_name || '—'}</div>
                   <div><span className="font-medium text-slate-700">Idioma:</span> {item.language || '—'}</div>
                   <div><span className="font-medium text-slate-700">Origen:</span> {formatTemplateSource(item.source)}</div>
-                  {item.notes ? <div><span className="font-medium text-slate-700">Nota:</span> {item.notes}</div> : null}
+                  {item.notes ? (
+                    <div>
+                      <span className="rounded bg-amber-200 px-1.5 py-0.5 font-semibold text-amber-900">Uso:</span>{' '}
+                      {item.notes}
+                    </div>
+                  ) : null}
                 </div>
               </div>
             ))}

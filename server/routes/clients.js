@@ -157,11 +157,16 @@ router.get('/', authMiddleware, async (req, res) => {
         (SELECT COUNT(*) FROM appointments WHERE client_id = c.id AND tenant_id = ?) as total_appointments,
         (SELECT COUNT(*) FROM appointments WHERE client_id = c.id AND tenant_id = ? AND status = 'Reagendada') as reschedule_count,
         (SELECT COUNT(*) FROM recurring_schedules WHERE client_id = c.id AND tenant_id = ? AND ended_at IS NULL AND paused_at IS NULL) as has_active_recurring,
-        (SELECT COUNT(*) FROM recurring_schedules WHERE client_id = c.id AND tenant_id = ? AND ended_at IS NULL AND paused_at IS NOT NULL) as has_paused_recurring
+        (SELECT COUNT(*) FROM recurring_schedules WHERE client_id = c.id AND tenant_id = ? AND ended_at IS NULL AND paused_at IS NOT NULL) as has_paused_recurring,
+        GREATEST(
+          COALESCE((SELECT MAX(date_time) FROM appointments WHERE client_id = c.id AND tenant_id = ? AND status = 'Completada'), '1970-01-01'),
+          COALESCE((SELECT MAX(created_at) FROM payments WHERE client_id = c.id AND tenant_id = ?), '1970-01-01'),
+          COALESCE((SELECT MAX(received_at) FROM webhooks_log WHERE client_id = c.id AND tenant_id = ?), '1970-01-01')
+        ) as last_activity
        FROM clients c
        WHERE c.tenant_id = ? AND ${whereClause}
        ORDER BY ${orderBy}`,
-      [req.tenantId, req.tenantId, req.tenantId, req.tenantId, req.tenantId, req.tenantId, req.tenantId, req.tenantId, req.tenantId, ...filterParams]
+      [req.tenantId, req.tenantId, req.tenantId, req.tenantId, req.tenantId, req.tenantId, req.tenantId, req.tenantId, req.tenantId, req.tenantId, req.tenantId, req.tenantId, req.tenantId, ...filterParams]
     );
 
     const [cfgRows] = await pool.query('SELECT retention_rules FROM config WHERE tenant_id = ? LIMIT 1', [req.tenantId]);
@@ -233,13 +238,18 @@ router.get('/export', authMiddleware, async (req, res) => {
         (SELECT COUNT(*) FROM appointments WHERE client_id = c.id AND tenant_id = ?) as total_appointments,
         (SELECT COUNT(*) FROM appointments WHERE client_id = c.id AND tenant_id = ? AND status = 'Reagendada') as reschedule_count,
         (SELECT COUNT(*) FROM recurring_schedules WHERE client_id = c.id AND tenant_id = ? AND ended_at IS NULL AND paused_at IS NULL) as has_active_recurring,
-        (SELECT COUNT(*) FROM recurring_schedules WHERE client_id = c.id AND tenant_id = ? AND ended_at IS NULL AND paused_at IS NOT NULL) as has_paused_recurring
+        (SELECT COUNT(*) FROM recurring_schedules WHERE client_id = c.id AND tenant_id = ? AND ended_at IS NULL AND paused_at IS NOT NULL) as has_paused_recurring,
+        GREATEST(
+          COALESCE((SELECT MAX(date_time) FROM appointments WHERE client_id = c.id AND tenant_id = ? AND status = 'Completada'), '1970-01-01'),
+          COALESCE((SELECT MAX(created_at) FROM payments WHERE client_id = c.id AND tenant_id = ?), '1970-01-01'),
+          COALESCE((SELECT MAX(received_at) FROM webhooks_log WHERE client_id = c.id AND tenant_id = ?), '1970-01-01')
+        ) as last_activity
        FROM clients c
        WHERE c.tenant_id = ? AND ${deletedFilter}${searchFilter}
        ORDER BY
          CASE WHEN c.deleted_at IS NULL THEN 0 ELSE 1 END,
          COALESCE(c.deleted_at, c.created_at) DESC`,
-      params
+      [...params, req.tenantId, req.tenantId, req.tenantId, req.tenantId]
     );
 
     const [cfgRows] = await pool.query('SELECT retention_rules FROM config WHERE tenant_id = ? LIMIT 1', [req.tenantId]);

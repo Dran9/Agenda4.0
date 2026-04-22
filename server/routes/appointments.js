@@ -59,6 +59,7 @@ router.get('/', authMiddleware, async (req, res) => {
     if (from) { where += ' AND a.date_time >= ?'; params.push(from); }
     if (to) { where += ' AND a.date_time <= ?'; params.push(to + ' 23:59:59'); }
     if (status) { where += ' AND a.status = ?'; params.push(status); }
+    if (req.query.client_id) { where += ' AND a.client_id = ?'; params.push(parseInt(req.query.client_id)); }
     if (search) {
       where += ' AND (c.first_name LIKE ? OR c.last_name LIKE ? OR c.phone LIKE ?)';
       const s = `%${search}%`;

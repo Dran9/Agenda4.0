@@ -31,15 +31,21 @@ function getDefaultAdminTenantSlug() {
   return process.env.ADMIN_APP_TENANT_SLUG || 'daniel';
 }
 
-// POST /api/auth/login — simple password-based login
+// POST /api/auth/login — 6-digit PIN login
 router.post('/login', loginLimiter, async (req, res) => {
   try {
-    const { password, slug } = req.body;
-    if (!password) return res.status(400).json({ error: 'Password requerido' });
+    const { pin, slug } = req.body;
+    if (!pin) return res.status(400).json({ error: 'PIN requerido' });
 
-    // For now: single admin password from env
-    if (password !== process.env.ADMIN_PASSWORD) {
-      return res.status(401).json({ error: 'Contraseña incorrecta' });
+    // Validate PIN format: exactly 6 digits
+    if (!/^\d{6}$/.test(String(pin))) {
+      return res.status(400).json({ error: 'El PIN debe tener exactamente 6 dígitos numéricos' });
+    }
+
+    // Check PIN against env
+    const expectedPin = process.env.ADMIN_PIN || process.env.ADMIN_PASSWORD;
+    if (String(pin) !== String(expectedPin)) {
+      return res.status(401).json({ error: 'PIN incorrecto' });
     }
 
     // Resolve tenant

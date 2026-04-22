@@ -1,6 +1,7 @@
 import UIKit
 import Capacitor
 import LocalAuthentication
+import WebKit
 
 @UIApplicationMain
 class AppDelegate: UIResponder, UIApplicationDelegate {
@@ -8,13 +9,34 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
     var window: UIWindow?
     private var lockView: UIView?
     private var privacyView: UIView?
+    private var refreshControl: UIRefreshControl?
 
     func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
         DispatchQueue.main.async { [weak self] in
             self?.presentLockOverlay()
             self?.authenticateWithBiometrics()
         }
+        // Setup pull-to-refresh after webView is ready
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
+            self?.setupPullToRefresh()
+        }
         return true
+    }
+
+    private func setupPullToRefresh() {
+        guard let bridgeVC = window?.rootViewController as? CAPBridgeViewController,
+              let webView = bridgeVC.bridge?.webView else { return }
+        let rc = UIRefreshControl()
+        rc.addTarget(self, action: #selector(handleRefresh), for: .valueChanged)
+        webView.scrollView.addSubview(rc)
+        refreshControl = rc
+    }
+
+    @objc private func handleRefresh() {
+        guard let bridgeVC = window?.rootViewController as? CAPBridgeViewController,
+              let webView = bridgeVC.bridge?.webView else { return }
+        webView.reload()
+        refreshControl?.endRefreshing()
     }
 
     func applicationWillResignActive(_ application: UIApplication) {

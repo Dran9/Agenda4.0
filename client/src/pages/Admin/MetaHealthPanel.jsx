@@ -32,6 +32,18 @@ const SEVERITY_CLASSES = {
   critical: 'bg-red-100 text-red-700',
 };
 
+const TEMPLATE_STATUS_CLASSES = {
+  active: 'bg-emerald-100 text-emerald-700 border-emerald-200',
+  missing: 'bg-amber-100 text-amber-700 border-amber-200',
+};
+
+const TEMPLATE_SOURCE_LABELS = {
+  app_default: 'Default app',
+  env_override: 'Env',
+  tenant_config: 'Config tenant',
+  not_configured: 'Sin configurar',
+};
+
 function formatDateTime(value) {
   if (!value) return '—';
   const date = new Date(value);
@@ -48,6 +60,10 @@ function formatGlobalStatus(status) {
   if (status === 'yellow') return 'Con advertencias';
   if (status === 'red') return 'Crítico';
   return 'Sin señal';
+}
+
+function formatTemplateSource(source) {
+  return TEMPLATE_SOURCE_LABELS[source] || source || '—';
 }
 
 function Toggle({ checked, onChange, label, hint }) {
@@ -906,6 +922,38 @@ export default function MetaHealthPanel() {
                 />
               </label>
             </div>
+          </div>
+        </section>
+      ) : null}
+
+      {Array.isArray(panel?.templates_in_use) && panel.templates_in_use.length > 0 ? (
+        <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm space-y-4">
+          <div>
+            <h4 className="text-sm font-semibold uppercase tracking-[0.12em] text-slate-700">Templates en uso</h4>
+            <p className="text-xs text-slate-500 mt-1">Inventario de templates WhatsApp que la app usa hoy por default, env o configuración del tenant.</p>
+          </div>
+
+          <div className="grid grid-cols-1 gap-3 xl:grid-cols-2">
+            {panel.templates_in_use.map((item) => (
+              <div key={item.key} className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <div className="text-sm font-semibold text-slate-900">{item.label}</div>
+                    <div className="mt-1 text-xs text-slate-500">{item.trigger}</div>
+                  </div>
+                  <span className={`rounded-full border px-2.5 py-1 text-[11px] font-semibold ${TEMPLATE_STATUS_CLASSES[item.status] || TEMPLATE_STATUS_CLASSES.active}`}>
+                    {item.status === 'missing' ? 'Falta' : 'Activo'}
+                  </span>
+                </div>
+
+                <div className="mt-4 space-y-2 text-xs text-slate-600">
+                  <div><span className="font-medium text-slate-700">Template:</span> {item.template_name || '—'}</div>
+                  <div><span className="font-medium text-slate-700">Idioma:</span> {item.language || '—'}</div>
+                  <div><span className="font-medium text-slate-700">Origen:</span> {formatTemplateSource(item.source)}</div>
+                  {item.notes ? <div><span className="font-medium text-slate-700">Nota:</span> {item.notes}</div> : null}
+                </div>
+              </div>
+            ))}
           </div>
         </section>
       ) : null}

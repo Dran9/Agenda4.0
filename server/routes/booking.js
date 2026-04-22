@@ -16,6 +16,7 @@ const { normalizePhone } = require('../utils/phone');
 const { broadcast } = require('../services/adminEvents');
 const { getSpecialFee } = require('../services/clientPricing');
 const { sendTextMessage } = require('../services/whatsapp');
+const { sendTelegramOperationalNotice } = require('../services/metaHealth');
 
 const router = Router();
 
@@ -65,6 +66,56 @@ async function sendPublicRescheduleConfirmation({ tenantId, clientId, phone, dat
      VALUES (?, ?, ?, 'outbound', 'auto_reply', ?, ?)`,
     [tenantId, clientId, phone, message, result.messages?.[0]?.id || null]
   ).catch(() => {});
+}
+
+async function sendPublicRescheduleTelegramNotice({ tenantId, clientId, dateTime }) {
+  const [clientRows] = await pool.query(
+    'SELECT first_name FROM clients WHERE id = ? AND tenant_id = ? LIMIT 1',
+    [clientId, tenantId]
+  );
+  const client = clientRows[0];
+  if (!client) return;
+
+  const { dateLabel, timeLabel } = formatRescheduleConfirmationDateParts(dateTime, 'America/La_Paz');
+  const message = `👉 ${client.first_name || 'Cliente'} ha reagendado para ${dateLabel} a las ${timeLabel}`;
+
+  await sendTelegramOperationalNotice(tenantId, {
+    text: message,
+    alertType: 'reschedule_notice',
+    severity: 'info',
+    payload: {
+      source: 'public_reschedule',
+      client_id: clientId,
+      client_name: client.first_name || null,
+      date_time: dateTime,
+      timezone: 'America/La_Paz',
+    },
+  });
+}
+
+async function sendPublicBookingTelegramNotice({ tenantId, clientId, dateTime }) {
+  const [clientRows] = await pool.query(
+    'SELECT first_name FROM clients WHERE id = ? AND tenant_id = ? LIMIT 1',
+    [clientId, tenantId]
+  );
+  const client = clientRows[0];
+  if (!client) return;
+
+  const { dateLabel, timeLabel } = formatRescheduleConfirmationDateParts(dateTime, 'America/La_Paz');
+  const message = `🎁 ${client.first_name || 'Cliente'} ha agendado una sesión ${dateLabel} a las ${timeLabel}`;
+
+  await sendTelegramOperationalNotice(tenantId, {
+    text: message,
+    alertType: 'booking_notice',
+    severity: 'info',
+    payload: {
+      source: 'public_booking',
+      client_id: clientId,
+      client_name: client.first_name || null,
+      date_time: dateTime,
+      timezone: 'America/La_Paz',
+    },
+  });
 }
 
 function sanitizePublicClientStatus(result) {
@@ -232,6 +283,15 @@ router.post('/book', publicRateLimit, validate(publicBookingSchema), async (req,
       if (result.error) return res.status(result.status).json({ error: result.error });
       broadcast('appointment:change', { id: result.appointment_id, action: 'created', source: 'public' }, tenantId);
       broadcast('client:change', { id: newClient.id, action: 'created' }, tenantId);
+
+      sendPublicBookingTelegramNotice({
+        tenantId,
+        clientId: newClient.id,
+        dateTime: result?.appointment?.date_time || date_time,
+      }).catch((telegramErr) => {
+        console.error('[booking] Public booking Telegram notice failed:', telegramErr.message);
+      });
+
       return res.json({ status: 'booked', ...result, client_name: newClient.first_name });
     }
 
@@ -258,6 +318,15 @@ router.post('/book', publicRateLimit, validate(publicBookingSchema), async (req,
     const result = await createBooking(client, date_time, tenantId, bookingContext);
     if (result.error) return res.status(result.status).json({ error: result.error });
     broadcast('appointment:change', { id: result.appointment_id, action: 'created', source: 'public' }, tenantId);
+
+    sendPublicBookingTelegramNotice({
+      tenantId,
+      clientId: client.id,
+      dateTime: result?.appointment?.date_time || date_time,
+    }).catch((telegramErr) => {
+      console.error('[booking] Public booking Telegram notice failed:', telegramErr.message);
+    });
+
     return res.json({ status: 'booked', ...result, client_name: client.first_name });
   } catch (err) {
     sendServerError(res, req, err, {
@@ -339,6 +408,14 @@ router.post('/reschedule', publicRateLimit, validate(publicRescheduleSchema), as
       dateTime: result?.appointment?.date_time || date_time,
     }).catch((waErr) => {
       console.error('[booking] Public reschedule confirmation WhatsApp failed:', waErr.message);
+    });
+
+    sendPublicRescheduleTelegramNotice({
+      tenantId,
+      clientId: decoded.clientId,
+      dateTime: result?.appointment?.date_time || date_time,
+    }).catch((telegramErr) => {
+      console.error('[booking] Public reschedule Telegram notice failed:', telegramErr.message);
     });
 
     res.json(result);

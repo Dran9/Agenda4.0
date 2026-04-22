@@ -54,6 +54,11 @@ const DEFAULT_META_HEALTH_CONFIG = {
   alert_channels: DEFAULT_ALERT_CHANNELS,
 };
 
+const DEFAULT_WHATSAPP_TEMPLATE_LANGUAGE = 'es';
+const DEFAULT_CONFIRMATION_TEMPLATE = 'recordatorionovum26';
+const DEFAULT_RESCHEDULE_TEMPLATE = 'reprogramar_sesion';
+const DEFAULT_PAYMENT_REMINDER_TEMPLATE = 'recordatorio_pago';
+
 const CRITICAL_TERMS = [
   'restricted',
   'restriction',
@@ -337,6 +342,90 @@ async function getMetaHealthConfig(tenantId) {
   await ensureMetaHealthConfig(tenantId);
   const [rows] = await pool.query('SELECT * FROM meta_health_config WHERE tenant_id = ? LIMIT 1', [tenantId]);
   return normalizeConfigRow(rows[0]);
+}
+
+function buildTemplateUsageItem({
+  key,
+  label,
+  trigger,
+  templateName,
+  language,
+  source,
+  status = 'active',
+  notes = '',
+}) {
+  return {
+    key,
+    label,
+    trigger,
+    template_name: templateName || '',
+    language: language || DEFAULT_WHATSAPP_TEMPLATE_LANGUAGE,
+    source,
+    status,
+    notes,
+  };
+}
+
+async function listTemplatesInUse(tenantId) {
+  const [rows] = await pool.query(
+    `SELECT payment_reminder_template, retention_risk_template, retention_lost_template, whatsapp_template_language
+       FROM config
+      WHERE tenant_id = ?
+      LIMIT 1`,
+    [tenantId]
+  );
+  const cfg = rows[0] || {};
+  const sharedLanguage = String(cfg.whatsapp_template_language || DEFAULT_WHATSAPP_TEMPLATE_LANGUAGE).trim() || DEFAULT_WHATSAPP_TEMPLATE_LANGUAGE;
+
+  return [
+    buildTemplateUsageItem({
+      key: 'appointment_reminder',
+      label: 'Recordatorio de cita',
+      trigger: 'Recordatorio diario + botones confirmar/reagendar',
+      templateName: DEFAULT_CONFIRMATION_TEMPLATE,
+      language: 'es',
+      source: 'app_default',
+      notes: 'Template fijo usado por los recordatorios de cita.',
+    }),
+    buildTemplateUsageItem({
+      key: 'reschedule_link',
+      label: 'Link de reagendamiento',
+      trigger: 'Quick action admin para enviar enlace de reagenda',
+      templateName: process.env.WA_RESCHEDULE_TEMPLATE || DEFAULT_RESCHEDULE_TEMPLATE,
+      language: 'es',
+      source: process.env.WA_RESCHEDULE_TEMPLATE ? 'env_override' : 'app_default',
+      notes: 'El botón REAGEN_NOW desde WhatsApp usa texto libre, no template.',
+    }),
+    buildTemplateUsageItem({
+      key: 'payment_reminder',
+      label: 'Recordatorio de pago',
+      trigger: 'Automatización de pago pendiente antes de la cita',
+      templateName: cfg.payment_reminder_template || process.env.WA_PAYMENT_REMINDER_TEMPLATE || DEFAULT_PAYMENT_REMINDER_TEMPLATE,
+      language: sharedLanguage,
+      source: cfg.payment_reminder_template ? 'tenant_config' : process.env.WA_PAYMENT_REMINDER_TEMPLATE ? 'env_override' : 'app_default',
+      notes: 'Usado por el scheduler interno de pagos pendientes.',
+    }),
+    buildTemplateUsageItem({
+      key: 'retention_risk',
+      label: 'Retención en riesgo',
+      trigger: 'Campañas o automatizaciones futuras de retención',
+      templateName: cfg.retention_risk_template || '',
+      language: sharedLanguage,
+      source: cfg.retention_risk_template ? 'tenant_config' : 'not_configured',
+      status: cfg.retention_risk_template ? 'active' : 'missing',
+      notes: cfg.retention_risk_template ? 'Template guardado en configuración.' : 'Aún no hay template asignado.',
+    }),
+    buildTemplateUsageItem({
+      key: 'retention_lost',
+      label: 'Retención perdido',
+      trigger: 'Campañas o automatizaciones futuras de retención',
+      templateName: cfg.retention_lost_template || '',
+      language: sharedLanguage,
+      source: cfg.retention_lost_template ? 'tenant_config' : 'not_configured',
+      status: cfg.retention_lost_template ? 'active' : 'missing',
+      notes: cfg.retention_lost_template ? 'Template guardado en configuración.' : 'Aún no hay template asignado.',
+    }),
+  ];
 }
 
 function sanitizeConfigPayload(payload = {}, existingConfig = DEFAULT_META_HEALTH_CONFIG) {
@@ -1512,6 +1601,87 @@ async function sendTelegramAlert(channelConfig, payload) {
   };
 }
 
+async function sendTelegramOperationalNotice(tenantId, {
+  text,
+  alertType = 'operational_notice',
+  severity = 'info',
+  payload = null,
+} = {}) {
+  const message = String(text || '').trim();
+  if (!message) {
+    return { success: false, skipped: true, reason: 'empty_text' };
+  }
+
+  const config = await getMetaHealthConfig(tenantId);
+  const channelCfg = config.alert_channels?.telegram;
+  if (!toBool(channelCfg?.enabled, false)) {
+    return { success: false, skipped: true, reason: 'telegram_disabled' };
+  }
+  if (!channelCfg?.bot_token || !channelCfg?.chat_id) {
+    return { success: false, skipped: true, reason: 'telegram_missing_credentials' };
+  }
+
+  const normalizedSeverity = severity === 'warning' || severity === 'critical' ? severity : 'info';
+  const dedupeKey = crypto.createHash('sha1').update(`${alertType}|${Date.now()}|${message}`).digest('hex');
+  const dispatchPayload = {
+    subject: `[${alertType}]`,
+    text: message,
+    body: payload || { text: message, source: 'operational_notice' },
+  };
+
+  try {
+    const dispatchResult = await sendTelegramAlert(channelCfg, dispatchPayload);
+    await pool.query(
+      `INSERT INTO meta_health_alerts (
+        tenant_id,
+        event_id,
+        alert_type,
+        severity,
+        channel,
+        dedupe_key,
+        status,
+        payload,
+        response_status,
+        response_body,
+        sent_at
+      ) VALUES (?, NULL, ?, ?, 'telegram', ?, 'sent', ?, ?, ?, NOW())`,
+      [
+        tenantId,
+        alertType,
+        normalizedSeverity,
+        dedupeKey,
+        JSON.stringify(dispatchPayload.body),
+        dispatchResult.statusCode || null,
+        compactText(dispatchResult.body, 2000),
+      ]
+    );
+    return { success: true, skipped: false };
+  } catch (err) {
+    await pool.query(
+      `INSERT INTO meta_health_alerts (
+        tenant_id,
+        event_id,
+        alert_type,
+        severity,
+        channel,
+        dedupe_key,
+        status,
+        payload,
+        response_body
+      ) VALUES (?, NULL, ?, ?, 'telegram', ?, 'error', ?, ?)`,
+      [
+        tenantId,
+        alertType,
+        normalizedSeverity,
+        dedupeKey,
+        JSON.stringify(dispatchPayload.body),
+        compactText(err.message, 2000),
+      ]
+    ).catch(() => {});
+    throw err;
+  }
+}
+
 async function maybeSendAlertsForEvent(tenantId, event, config) {
   const severityEnabled =
     (event.severity === 'critical' && config.alert_critical_enabled) ||
@@ -2204,6 +2374,7 @@ async function ingestMetaWebhookPayload({
 
 async function getMetaHealthPanel(tenantId, { timelineLimit = 50 } = {}) {
   const config = await getMetaHealthConfig(tenantId);
+  const templatesInUse = await listTemplatesInUse(tenantId);
 
   const [stateRows, eventsRows] = await Promise.all([
     pool.query('SELECT * FROM meta_health_state WHERE tenant_id = ? LIMIT 1', [tenantId]),
@@ -2253,6 +2424,7 @@ async function getMetaHealthPanel(tenantId, { timelineLimit = 50 } = {}) {
     cards: parseJsonSafe(stateRow?.cards, []),
     recommendations: parseJsonSafe(stateRow?.diagnostics, []),
     config,
+    templates_in_use: templatesInUse,
     timeline: (eventsRows[0] || []).map((row) => ({
       id: row.id,
       received_at: row.received_at,
@@ -2813,6 +2985,8 @@ module.exports = {
   SUPPORTED_WEBHOOK_FIELDS,
   getMetaHealthConfig,
   updateMetaHealthConfig,
+  listTemplatesInUse,
+  sendTelegramOperationalNotice,
   ingestMetaWebhookPayload,
   getMetaHealthPanel,
   listMetaHealthEvents,

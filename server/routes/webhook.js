@@ -205,7 +205,7 @@ router.post('/', async (req, res) => {
         const tenantId = 1; // Default tenant for now
 
         // Extraer WABA ID y phone_number_id del metadata del webhook (para whatsapp_users)
-        const wabaId = process.env.WABA_ID || null;
+        const wabaId = value.metadata?.display_phone_number ? null : null; // Meta no expone WABA ID aquí directamente
         const webhookPhoneNumberId = value.metadata?.phone_number_id || null;
 
         if (Array.isArray(value.statuses) && value.statuses.length > 0) {

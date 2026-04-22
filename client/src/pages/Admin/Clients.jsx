@@ -720,7 +720,6 @@ export default function Clients() {
                     Próxima cita {sortBy === 'next_session' && (sortDir === 'asc' ? '↑' : '↓')}
                   </button>
                 </th>
-                <th className="text-left p-3 font-medium">Última actividad</th>
                 <th className="text-left p-3 font-medium">Arancel</th>
                 <th className="text-left p-3 font-medium w-24">Acciones</th>
               </tr>
@@ -803,14 +802,6 @@ export default function Clients() {
                           <span className="font-medium text-gray-900">{formatDateBolivia(client.next_session)}</span>
                         ) : (
                           <span className="text-gray-400">Sin cita</span>
-                        )}
-                      </td>
-
-                      <td className="p-3 align-middle whitespace-nowrap text-xs">
-                        {client.last_activity && client.last_activity !== '1970-01-01T00:00:00.000Z' ? (
-                          <span className="font-medium text-gray-900">{formatDateBolivia(client.last_activity)}</span>
-                        ) : (
-                          <span className="text-gray-400">Sin actividad</span>
                         )}
                       </td>
 

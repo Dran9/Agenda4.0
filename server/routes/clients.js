@@ -167,30 +167,10 @@ router.get('/', authMiddleware, async (req, res) => {
     const [cfgRows] = await pool.query('SELECT retention_rules FROM config WHERE tenant_id = ? LIMIT 1', [req.tenantId]);
     const retentionRules = cfgRows[0]?.retention_rules || null;
 
-    // Calculate last_activity for each client (batch query)
-    const clientIds = clients.map((c) => c.id);
-    let lastActivityMap = new Map();
-    if (clientIds.length > 0) {
-      const [activityRows] = await pool.query(
-        `SELECT client_id, MAX(last_date) as last_activity FROM (
-          SELECT client_id, MAX(date_time) as last_date FROM appointments WHERE client_id IN (?) AND tenant_id = ? AND status = 'Completada' GROUP BY client_id
-          UNION ALL
-          SELECT client_id, MAX(created_at) as last_date FROM payments WHERE client_id IN (?) AND tenant_id = ? GROUP BY client_id
-          UNION ALL
-          SELECT client_id, MAX(received_at) as last_date FROM webhooks_log WHERE client_id IN (?) AND tenant_id = ? GROUP BY client_id
-        ) combined GROUP BY client_id`,
-        [clientIds, req.tenantId, clientIds, req.tenantId, clientIds, req.tenantId]
-      );
-      for (const row of activityRows) {
-        lastActivityMap.set(row.client_id, row.last_activity);
-      }
-    }
-
     // Calculate status and retention for each
     let result = clients;
     
     for (const client of result) {
-      client.last_activity = lastActivityMap.get(client.id) || null;
       const futureAppt = client.next_session ? { date_time: client.next_session } : null;
       const lastAppt = client.last_session ? { date_time: client.last_session } : null;
       client.calculated_status = calculateStatus(client, lastAppt, futureAppt, client.completed_sessions);
@@ -283,25 +263,7 @@ router.get('/export', authMiddleware, async (req, res) => {
       }
     }
 
-    let lastActivityMap = new Map();
-    if (clientIds.length > 0) {
-      const [activityRows] = await pool.query(
-        `SELECT client_id, MAX(last_date) as last_activity FROM (
-          SELECT client_id, MAX(date_time) as last_date FROM appointments WHERE client_id IN (?) AND tenant_id = ? AND status = 'Completada' GROUP BY client_id
-          UNION ALL
-          SELECT client_id, MAX(created_at) as last_date FROM payments WHERE client_id IN (?) AND tenant_id = ? GROUP BY client_id
-          UNION ALL
-          SELECT client_id, MAX(received_at) as last_date FROM webhooks_log WHERE client_id IN (?) AND tenant_id = ? GROUP BY client_id
-        ) combined GROUP BY client_id`,
-        [clientIds, req.tenantId, clientIds, req.tenantId, clientIds, req.tenantId]
-      );
-      for (const row of activityRows) {
-        lastActivityMap.set(row.client_id, row.last_activity);
-      }
-    }
-
     for (const client of clients) {
-      client.last_activity = lastActivityMap.get(client.id) || null;
       const futureAppt = client.next_session ? { date_time: client.next_session } : null;
       const lastAppt = client.last_session ? { date_time: client.last_session } : null;
       client.calculated_status = calculateStatus(client, lastAppt, futureAppt, client.completed_sessions);

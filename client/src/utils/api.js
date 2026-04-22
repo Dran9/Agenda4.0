@@ -25,7 +25,14 @@ async function request(path, options = {}) {
   }
 
   const response = await fetch(buildApiUrl(path), config);
-  const data = await response.json();
+  let data;
+  const contentType = response.headers.get('content-type') || '';
+  if (contentType.includes('application/json')) {
+    data = await response.json();
+  } else {
+    const text = await response.text();
+    data = { error: text.slice(0, 200) || `HTTP ${response.status}` };
+  }
 
   if (!response.ok) {
     if (response.status === 401 && token) {

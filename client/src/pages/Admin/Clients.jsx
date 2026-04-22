@@ -100,10 +100,18 @@ function formatClientLocation(client) {
 }
 
 function formatFeeAmount(value, currency) {
-  const amount = Number(value);
+  let amount = Number(value);
   if (!Number.isFinite(amount)) return '0';
 
   const normalizedCurrency = String(currency || 'BOB').toUpperCase();
+
+  if (normalizedCurrency === 'BOB' && amount >= 1000 && amount % 10 === 0) {
+    const scaledDown = amount / 10;
+    if (scaledDown >= 80 && scaledDown <= 800) {
+      amount = scaledDown;
+    }
+  }
+
   if (normalizedCurrency === 'USD') {
     return amount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   }

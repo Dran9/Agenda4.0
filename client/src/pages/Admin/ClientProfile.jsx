@@ -2,12 +2,13 @@ import { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
   ArrowLeft, Phone, MapPin, Clock, Calendar, DollarSign, MessageSquare,
-  User, Activity, FileText, ChevronRight
+  User, Activity, FileText, ChevronRight, Save, X
 } from 'lucide-react';
 import AdminLayout from '../../components/AdminLayout';
 import { api } from '../../utils/api';
 import { useToast, Toast } from '../../hooks/useToast';
 import { formatDateBolivia, formatTimeBolivia, formatRelativeDay } from '../../utils/dates';
+import { TIMEZONE_OPTIONS } from '../../utils/timezones';
 
 const TABS = [
   { id: 'info', label: 'Info general', icon: User },
@@ -16,6 +17,22 @@ const TABS = [
   { id: 'whatsapp', label: 'WhatsApp', icon: MessageSquare },
   { id: 'timeline', label: 'Timeline', icon: Activity },
 ];
+
+const DEFAULT_STATUSES = [
+  { name: 'Nuevo', color: '#3B82F6' },
+  { name: 'Activo', color: '#10B981' },
+  { name: 'Recurrente', color: '#059669' },
+  { name: 'En pausa', color: '#F59E0B' },
+  { name: 'Inactivo', color: '#9CA3AF' },
+  { name: 'Archivado', color: '#EF4444' },
+];
+
+const DEFAULT_SOURCES = ['Referencia de amigos', 'Redes sociales', 'Otro'];
+
+const MODALITIES = ['Presencial', 'Online', 'Mixto'];
+const FREQUENCIES = ['Semanal', 'Quincenal', 'Mensual', 'Irregular'];
+const PAYMENT_METHODS = ['QR', 'Efectivo', 'Transferencia'];
+const CURRENCIES = ['BOB', 'USD'];
 
 function statusColor(status) {
   const colors = {
@@ -33,7 +50,7 @@ function retentionColor(status) {
   const colors = {
     'Con cita': { bg: '#dbeafe', text: '#1d4ed8' },
     'Recurrente': { bg: '#dbeafe', text: '#1d4ed8' },
-    'Al día': { bg: '#d1fae5', text: '#047857' },
+    'Al dia': { bg: '#d1fae5', text: '#047857' },
     'En pausa': { bg: '#fef3c7', text: '#b45309' },
     'En riesgo': { bg: '#fef3c7', text: '#92400e' },
     'Perdido': { bg: '#fee2e2', text: '#b91c1c' },
@@ -41,30 +58,54 @@ function retentionColor(status) {
   return colors[status] || { bg: '#e5e7eb', text: '#4b5563' };
 }
 
+function getTimezoneOptions(currentTimezone) {
+  const tzSet = new Set(TIMEZONE_OPTIONS.map((option) => option.tz));
+  if (currentTimezone && !tzSet.has(currentTimezone)) {
+    return [{ tz: currentTimezone, label: currentTimezone }, ...TIMEZONE_OPTIONS];
+  }
+  return TIMEZONE_OPTIONS;
+}
+
 export default function ClientProfile() {
   const { id } = useParams();
   const navigate = useNavigate();
   const { toast, show: showToast } = useToast();
   const [client, setClient] = useState(null);
+  const [draft, setDraft] = useState(null);
   const [appointments, setAppointments] = useState([]);
   const [payments, setPayments] = useState([]);
   const [waMessages, setWaMessages] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
   const [activeTab, setActiveTab] = useState('info');
+  const [statuses, setStatuses] = useState(DEFAULT_STATUSES);
+  const [sources, setSources] = useState(DEFAULT_SOURCES);
 
   const loadData = useCallback(async () => {
     setLoading(true);
     try {
-      const [clientRes, apptsRes, paymentsRes, waRes] = await Promise.all([
+      const [clientRes, apptsRes, paymentsRes, waRes, cfgRes] = await Promise.all([
         api.get(`/clients/${id}`),
         api.get(`/appointments?client_id=${id}&limit=100`).catch(() => ({ appointments: [] })),
         api.get(`/payments?client_id=${id}&limit=100`).catch(() => ({ payments: [] })),
         api.get(`/webhook/conversations?limit=50`).catch(() => ({ conversations: [] })),
+        api.get('/config').catch(() => ({}))
       ]);
-      setClient(clientRes.client || clientRes);
+      const c = clientRes.client || clientRes;
+      setClient(c);
+      setDraft({ ...c });
       setAppointments(apptsRes.appointments || []);
       setPayments(paymentsRes.payments || []);
       setWaMessages((waRes.conversations || []).filter(m => m.client_id == id));
+
+      if (cfgRes.custom_statuses) {
+        const s = typeof cfgRes.custom_statuses === 'string' ? JSON.parse(cfgRes.custom_statuses) : cfgRes.custom_statuses;
+        if (s.length > 0) setStatuses(s);
+      }
+      if (cfgRes.custom_sources) {
+        const s = typeof cfgRes.custom_sources === 'string' ? JSON.parse(cfgRes.custom_sources) : cfgRes.custom_sources;
+        if (s.length > 0) setSources(s);
+      }
     } catch (err) {
       showToast('Error cargando perfil: ' + err.message, 'error');
     } finally {
@@ -76,6 +117,39 @@ export default function ClientProfile() {
     loadData();
   }, [loadData]);
 
+  const hasChanges = draft && client && JSON.stringify(draft) !== JSON.stringify(client);
+
+  function updateField(field, value) {
+    setDraft(prev => ({ ...prev, [field]: value }));
+  }
+
+  async function handleSave() {
+    if (!draft || !client) return;
+    setSaving(true);
+    try {
+      const fields = [
+        'first_name', 'last_name', 'phone', 'age', 'city', 'country', 'timezone',
+        'modality', 'frequency', 'source', 'fee', 'fee_currency', 'payment_method',
+        'notes', 'diagnosis', 'status_override'
+      ];
+      for (const f of fields) {
+        if (draft[f] !== client[f]) {
+          await api.put(`/clients/${id}`, { [f]: draft[f] });
+        }
+      }
+      setClient({ ...draft });
+      showToast('Cambios guardados');
+    } catch (err) {
+      showToast('Error guardando: ' + err.message, 'error');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  function handleCancel() {
+    if (client) setDraft({ ...client });
+  }
+
   if (loading) {
     return (
       <AdminLayout title="Perfil de cliente">
@@ -84,7 +158,7 @@ export default function ClientProfile() {
     );
   }
 
-  if (!client) {
+  if (!client || !draft) {
     return (
       <AdminLayout title="Perfil de cliente">
         <div className="p-8 text-center">
@@ -101,7 +175,7 @@ export default function ClientProfile() {
     );
   }
 
-  const fullName = `${client.first_name} ${client.last_name}`.trim();
+  const fullName = `${draft.first_name || ''} ${draft.last_name || ''}`.trim();
   const stColor = statusColor(client.calculated_status);
   const rtColor = retentionColor(client.retention_status);
 
@@ -133,8 +207,68 @@ export default function ClientProfile() {
     })),
   ].sort((a, b) => new Date(b.date) - new Date(a.date));
 
+  // Reusable inline field component
+  function InlineField({ label, field, type = 'text', options = null, textarea = false, placeholder = '' }) {
+    const value = draft[field];
+
+    if (textarea) {
+      return (
+        <div className="py-2">
+          <span className="text-xs text-gray-400 block mb-1.5 uppercase tracking-wider font-semibold">{label}</span>
+          <textarea
+            value={value || ''}
+            onChange={e => updateField(field, e.target.value || null)}
+            placeholder={placeholder}
+            rows={3}
+            className="w-full text-sm text-gray-900 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:border-[#4E769B] focus:ring-1 focus:ring-[#4E769B] resize-none"
+          />
+        </div>
+      );
+    }
+
+    if (options) {
+      return (
+        <div className="flex justify-between items-center py-2 border-b border-gray-100">
+          <span className="text-sm text-gray-500">{label}</span>
+          <select
+            value={value || ''}
+            onChange={e => updateField(field, e.target.value || null)}
+            className="text-sm font-medium text-gray-900 bg-gray-50 border border-gray-200 rounded-lg px-3 py-1.5 focus:outline-none focus:border-[#4E769B] focus:ring-1 focus:ring-[#4E769B]"
+          >
+            {field === 'status_override' && <option value="">Auto ({client.calculated_status})</option>}
+            {options.map(opt => (
+              typeof opt === 'string'
+                ? <option key={opt} value={opt}>{opt}</option>
+                : <option key={opt.value || opt.name} value={opt.value || opt.name}>{opt.label || opt.name}</option>
+            ))}
+          </select>
+        </div>
+      );
+    }
+
+    return (
+      <div className="flex justify-between items-center py-2 border-b border-gray-100">
+        <span className="text-sm text-gray-500">{label}</span>
+        <input
+          type={type}
+          value={value || ''}
+          onChange={e => {
+            const raw = e.target.value;
+            if (type === 'number') {
+              updateField(field, raw === '' ? null : parseFloat(raw));
+            } else {
+              updateField(field, raw || null);
+            }
+          }}
+          placeholder={placeholder}
+          className="text-sm font-medium text-gray-900 bg-gray-50 border border-gray-200 rounded-lg px-3 py-1.5 w-40 text-right focus:outline-none focus:border-[#4E769B] focus:ring-1 focus:ring-[#4E769B]"
+        />
+      </div>
+    );
+  }
+
   return (
-    <AdminLayout title={fullName}>
+    <AdminLayout title={fullName || 'Perfil de cliente'}>
       <Toast toast={toast} />
 
       {/* Header */}
@@ -149,26 +283,26 @@ export default function ClientProfile() {
 
         <div className="flex items-start gap-4">
           <div className="w-14 h-14 rounded-full bg-[#4E769B] text-white flex items-center justify-center text-xl font-bold flex-shrink-0">
-            {client.first_name?.[0]}{client.last_name?.[0]}
+            {draft.first_name?.[0]}{draft.last_name?.[0]}
           </div>
           <div className="flex-1 min-w-0">
-            <h1 className="text-2xl font-bold text-gray-900">{fullName}</h1>
+            <h1 className="text-2xl font-bold text-gray-900">{fullName || 'Sin nombre'}</h1>
             <div className="flex flex-wrap items-center gap-3 mt-2">
               <a
-                href={`https://wa.me/${client.phone}`}
+                href={`https://wa.me/${draft.phone}`}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="inline-flex items-center gap-1 text-sm text-blue-600 hover:underline"
               >
-                <Phone size={14} /> {client.phone}
+                <Phone size={14} /> {draft.phone || '—'}
               </a>
-              {(client.city || client.country) && (
+              {(draft.city || draft.country) && (
                 <span className="inline-flex items-center gap-1 text-sm text-gray-500">
-                  <MapPin size={14} /> {[client.city, client.country].filter(Boolean).join(', ')}
+                  <MapPin size={14} /> {[draft.city, draft.country].filter(Boolean).join(', ')}
                 </span>
               )}
               <span className="inline-flex items-center gap-1 text-sm text-gray-500">
-                <Clock size={14} /> {client.timezone || 'America/La_Paz'}
+                <Clock size={14} /> {draft.timezone || 'America/La_Paz'}
               </span>
             </div>
 
@@ -191,21 +325,13 @@ export default function ClientProfile() {
                   Recurrente
                 </span>
               )}
-              {client.special_fee_enabled && (
+              {draft.special_fee_enabled && (
                 <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold bg-amber-50 text-amber-700">
                   QR Especial
                 </span>
               )}
             </div>
           </div>
-
-          <button
-            type="button"
-            onClick={() => navigate(`/admin/clients?edit=${id}`)}
-            className="px-4 py-2 bg-gray-900 text-white rounded-lg text-sm font-medium hover:bg-gray-800 flex-shrink-0"
-          >
-            Editar
-          </button>
         </div>
       </div>
 
@@ -213,11 +339,11 @@ export default function ClientProfile() {
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
         <div className="bg-white rounded-xl border border-gray-200 p-4">
           <div className="text-xs text-gray-400 uppercase tracking-wider font-semibold mb-1">Edad</div>
-          <div className="text-lg font-bold text-gray-900">{client.age ? `${client.age} años` : '—'}</div>
+          <div className="text-lg font-bold text-gray-900">{draft.age ? `${draft.age} años` : '—'}</div>
         </div>
         <div className="bg-white rounded-xl border border-gray-200 p-4">
           <div className="text-xs text-gray-400 uppercase tracking-wider font-semibold mb-1">Arancel</div>
-          <div className="text-lg font-bold text-gray-900">{client.fee_currency} {client.fee}</div>
+          <div className="text-lg font-bold text-gray-900">{draft.fee_currency} {draft.fee}</div>
         </div>
         <div className="bg-white rounded-xl border border-gray-200 p-4">
           <div className="text-xs text-gray-400 uppercase tracking-wider font-semibold mb-1">Sesiones</div>
@@ -225,7 +351,7 @@ export default function ClientProfile() {
         </div>
         <div className="bg-white rounded-xl border border-gray-200 p-4">
           <div className="text-xs text-gray-400 uppercase tracking-wider font-semibold mb-1">Fuente</div>
-          <div className="text-lg font-bold text-gray-900">{client.source || '—'}</div>
+          <div className="text-lg font-bold text-gray-900">{draft.source || '—'}</div>
         </div>
       </div>
 
@@ -254,7 +380,7 @@ export default function ClientProfile() {
       </div>
 
       {/* Tab content */}
-      <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+      <div className="bg-white rounded-xl border border-gray-200 overflow-hidden mb-24">
         {activeTab === 'info' && (
           <div className="p-6">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -262,35 +388,18 @@ export default function ClientProfile() {
                 <h3 className="text-sm font-semibold text-gray-900 mb-3 flex items-center gap-2">
                   <User size={16} /> Información personal
                 </h3>
-                <div className="space-y-3">
-                  <div className="flex justify-between py-2 border-b border-gray-100">
-                    <span className="text-sm text-gray-500">Nombre</span>
-                    <span className="text-sm font-medium text-gray-900">{client.first_name}</span>
-                  </div>
-                  <div className="flex justify-between py-2 border-b border-gray-100">
-                    <span className="text-sm text-gray-500">Apellido</span>
-                    <span className="text-sm font-medium text-gray-900">{client.last_name}</span>
-                  </div>
-                  <div className="flex justify-between py-2 border-b border-gray-100">
-                    <span className="text-sm text-gray-500">Teléfono</span>
-                    <a href={`https://wa.me/${client.phone}`} className="text-sm font-medium text-blue-600 hover:underline">{client.phone}</a>
-                  </div>
-                  <div className="flex justify-between py-2 border-b border-gray-100">
-                    <span className="text-sm text-gray-500">Edad</span>
-                    <span className="text-sm font-medium text-gray-900">{client.age || '—'}</span>
-                  </div>
-                  <div className="flex justify-between py-2 border-b border-gray-100">
-                    <span className="text-sm text-gray-500">Ciudad</span>
-                    <span className="text-sm font-medium text-gray-900">{client.city || '—'}</span>
-                  </div>
-                  <div className="flex justify-between py-2 border-b border-gray-100">
-                    <span className="text-sm text-gray-500">País</span>
-                    <span className="text-sm font-medium text-gray-900">{client.country || '—'}</span>
-                  </div>
-                  <div className="flex justify-between py-2 border-b border-gray-100">
-                    <span className="text-sm text-gray-500">Zona horaria</span>
-                    <span className="text-sm font-medium text-gray-900">{client.timezone}</span>
-                  </div>
+                <div className="space-y-0">
+                  <InlineField label="Nombre" field="first_name" />
+                  <InlineField label="Apellido" field="last_name" />
+                  <InlineField label="Teléfono" field="phone" />
+                  <InlineField label="Edad" field="age" type="number" />
+                  <InlineField label="Ciudad" field="city" />
+                  <InlineField label="País" field="country" />
+                  <InlineField
+                    label="Zona horaria"
+                    field="timezone"
+                    options={getTimezoneOptions(draft.timezone)}
+                  />
                 </div>
               </div>
 
@@ -298,39 +407,46 @@ export default function ClientProfile() {
                 <h3 className="text-sm font-semibold text-gray-900 mb-3 flex items-center gap-2">
                   <FileText size={16} /> Detalles clínicos y administrativos
                 </h3>
-                <div className="space-y-3">
-                  <div className="flex justify-between py-2 border-b border-gray-100">
-                    <span className="text-sm text-gray-500">Modalidad</span>
-                    <span className="text-sm font-medium text-gray-900">{client.modality || '—'}</span>
-                  </div>
-                  <div className="flex justify-between py-2 border-b border-gray-100">
-                    <span className="text-sm text-gray-500">Frecuencia</span>
-                    <span className="text-sm font-medium text-gray-900">{client.frequency || '—'}</span>
-                  </div>
-                  <div className="flex justify-between py-2 border-b border-gray-100">
-                    <span className="text-sm text-gray-500">Fuente</span>
-                    <span className="text-sm font-medium text-gray-900">{client.source || '—'}</span>
-                  </div>
-                  <div className="flex justify-between py-2 border-b border-gray-100">
-                    <span className="text-sm text-gray-500">Referido por</span>
-                    <span className="text-sm font-medium text-gray-900">{client.referred_by || '—'}</span>
-                  </div>
-                  <div className="flex justify-between py-2 border-b border-gray-100">
+                <div className="space-y-0">
+                  <InlineField label="Modalidad" field="modality" options={MODALITIES} />
+                  <InlineField label="Frecuencia" field="frequency" options={FREQUENCIES} />
+                  <InlineField label="Fuente" field="source" options={sources} />
+                  <div className="flex justify-between items-center py-2 border-b border-gray-100">
                     <span className="text-sm text-gray-500">Arancel</span>
-                    <span className="text-sm font-medium text-gray-900">{client.fee_currency} {client.fee}</span>
+                    <div className="flex items-center gap-2">
+                      <select
+                        value={draft.fee_currency || 'BOB'}
+                        onChange={e => updateField('fee_currency', e.target.value)}
+                        className="text-sm font-medium text-gray-900 bg-gray-50 border border-gray-200 rounded-lg px-2 py-1.5 focus:outline-none focus:border-[#4E769B]"
+                      >
+                        {CURRENCIES.map(c => <option key={c} value={c}>{c}</option>)}
+                      </select>
+                      <input
+                        type="number"
+                        value={draft.fee || ''}
+                        onChange={e => updateField('fee', e.target.value === '' ? null : parseFloat(e.target.value))}
+                        className="text-sm font-medium text-gray-900 bg-gray-50 border border-gray-200 rounded-lg px-3 py-1.5 w-24 text-right focus:outline-none focus:border-[#4E769B] focus:ring-1 focus:ring-[#4E769B]"
+                      />
+                    </div>
                   </div>
-                  <div className="flex justify-between py-2 border-b border-gray-100">
-                    <span className="text-sm text-gray-500">Método de pago</span>
-                    <span className="text-sm font-medium text-gray-900">{client.payment_method || '—'}</span>
-                  </div>
-                  <div className="py-2">
-                    <span className="text-sm text-gray-500 block mb-1">Diagnóstico</span>
-                    <span className="text-sm text-gray-900 whitespace-pre-wrap">{client.diagnosis || 'Sin diagnóstico registrado'}</span>
-                  </div>
-                  <div className="py-2">
-                    <span className="text-sm text-gray-500 block mb-1">Notas</span>
-                    <span className="text-sm text-gray-900 whitespace-pre-wrap">{client.notes || 'Sin notas'}</span>
-                  </div>
+                  <InlineField label="Método de pago" field="payment_method" options={PAYMENT_METHODS} />
+                  <InlineField
+                    label="Status"
+                    field="status_override"
+                    options={statuses.map(s => ({ name: s.name, label: s.name }))}
+                  />
+                  <InlineField
+                    label="Diagnóstico"
+                    field="diagnosis"
+                    textarea
+                    placeholder="Sin diagnóstico registrado"
+                  />
+                  <InlineField
+                    label="Notas"
+                    field="notes"
+                    textarea
+                    placeholder="Sin notas"
+                  />
                 </div>
               </div>
             </div>
@@ -451,6 +567,36 @@ export default function ClientProfile() {
           </div>
         )}
       </div>
+
+      {/* Floating save bar */}
+      {hasChanges && (
+        <div className="fixed bottom-0 left-0 right-0 z-40 p-4 bg-white/95 backdrop-blur border-t border-gray-200 shadow-[0_-4px_20px_rgba(0,0,0,0.08)]">
+          <div className="max-w-5xl mx-auto flex items-center justify-between">
+            <div className="flex items-center gap-2 text-sm text-gray-600">
+              <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
+              Tienes cambios sin guardar
+            </div>
+            <div className="flex items-center gap-3">
+              <button
+                type="button"
+                onClick={handleCancel}
+                disabled={saving}
+                className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl border border-gray-200 text-sm font-semibold text-gray-600 hover:bg-gray-50 transition"
+              >
+                <X size={16} /> Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={handleSave}
+                disabled={saving}
+                className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-[#4E769B] text-white text-sm font-semibold hover:bg-[#3d5f7d] transition shadow-lg shadow-[#4E769B]/20"
+              >
+                <Save size={16} /> {saving ? 'Guardando...' : 'Guardar cambios'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </AdminLayout>
   );
 }

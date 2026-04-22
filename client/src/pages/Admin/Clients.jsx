@@ -1278,7 +1278,7 @@ function EditClientModal({ client, recurringSchedule, onClose, onSave, onRecurri
     try {
       const fields = [
         'first_name', 'last_name', 'phone', 'age', 'city', 'country', 'timezone', 'modality', 'frequency',
-        'source', 'referred_by', 'special_fee_enabled', 'fee', 'fee_currency', 'foreign_pricing_key', 'payment_method',
+        'source', 'special_fee_enabled', 'fee', 'fee_currency', 'foreign_pricing_key', 'payment_method',
         'notes', 'diagnosis', 'status_override',
       ];
       for (const f of fields) {
@@ -1343,9 +1343,6 @@ function EditClientModal({ client, recurringSchedule, onClose, onSave, onRecurri
               <select value={form.source || 'Otro'} onChange={e => set('source', e.target.value)} className="input">
                 {sources.map(s => <option key={s} value={s}>{s}</option>)}
               </select>
-            </Field>
-            <Field label="Referido por">
-              <input value={form.referred_by || ''} onChange={e => set('referred_by', e.target.value)} className="input" />
             </Field>
             <Field label="QR Bolivia">
               <select

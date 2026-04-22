@@ -88,7 +88,7 @@ export default function ClientProfile() {
         api.get(`/clients/${id}`),
         api.get(`/appointments?client_id=${id}&limit=100`).catch(() => ({ appointments: [] })),
         api.get(`/payments?client_id=${id}&limit=100`).catch(() => ({ payments: [] })),
-        api.get(`/webhook/conversations?limit=50`).catch(() => ({ conversations: [] })),
+        api.get(`/webhook/conversations?client_id=${id}&limit=50`).catch(() => ({ conversations: [] })),
         api.get('/config').catch(() => ({}))
       ]);
       const c = clientRes.client || clientRes;
@@ -96,7 +96,7 @@ export default function ClientProfile() {
       setDraft({ ...c });
       setAppointments(apptsRes.appointments || []);
       setPayments(paymentsRes.payments || []);
-      setWaMessages((waRes.conversations || []).filter(m => m.client_id == id));
+      setWaMessages(waRes.conversations || []);
 
       if (cfgRes.custom_statuses) {
         const s = typeof cfgRes.custom_statuses === 'string' ? JSON.parse(cfgRes.custom_statuses) : cfgRes.custom_statuses;

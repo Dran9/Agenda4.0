@@ -914,7 +914,7 @@ const { authMiddleware } = require('../middleware/auth');
 
 router.get('/conversations', authMiddleware, async (req, res) => {
   try {
-    const { phone, direction, type, page = 1, limit = 50 } = req.query;
+    const { phone, direction, type, client_id, page = 1, limit = 50 } = req.query;
     let where = 'w.tenant_id = ?';
     const params = [req.tenantId];
 
@@ -924,6 +924,11 @@ router.get('/conversations', authMiddleware, async (req, res) => {
         where += ` AND ${normalizedPhoneSql('w.client_phone')} LIKE ?`;
         params.push(`%${canonicalPhone}%`);
       }
+    }
+    const clientId = parseInt(client_id, 10);
+    if (Number.isFinite(clientId) && clientId > 0) {
+      where += ' AND w.client_id = ?';
+      params.push(clientId);
     }
     if (direction) { where += ' AND w.direction = ?'; params.push(direction); }
     if (type) { where += ' AND w.message_type = ?'; params.push(type); }

@@ -216,10 +216,15 @@ async function getMonthlySummaryData(tenantId, year, month) {
 // GET /api/payments — list payments with filters
 router.get('/', authMiddleware, async (req, res) => {
   try {
-    const { status, from, to, search, page = 1, limit = 50 } = req.query;
+    const { status, from, to, search, client_id, page = 1, limit = 50 } = req.query;
     let where = 'p.tenant_id = ?';
     const params = [req.tenantId];
 
+    const clientId = parseInt(client_id, 10);
+    if (Number.isFinite(clientId) && clientId > 0) {
+      where += ' AND p.client_id = ?';
+      params.push(clientId);
+    }
     if (status) { where += ' AND p.status = ?'; params.push(status); }
     if (from) { where += ' AND a.date_time >= ?'; params.push(from); }
     if (to) { where += ' AND a.date_time <= ?'; params.push(to + ' 23:59:59'); }

@@ -18,6 +18,19 @@ const TABS = [
   { id: 'timeline', label: 'Timeline', icon: Activity },
 ];
 
+function formatFeeDisplay(value, currency) {
+  let amount = Number(value);
+  if (!Number.isFinite(amount)) return '0';
+  const cur = String(currency || 'BOB').toUpperCase();
+  if (cur === 'BOB' && amount >= 1000 && amount % 10 === 0) {
+    const scaled = amount / 10;
+    if (scaled >= 80 && scaled <= 800) amount = scaled;
+  }
+  return cur === 'USD'
+    ? amount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+    : amount.toLocaleString('es-BO', { minimumFractionDigits: 0, maximumFractionDigits: Number.isInteger(amount) ? 0 : 2 });
+}
+
 const DEFAULT_STATUSES = [
   { name: 'Nuevo', color: '#3B82F6' },
   { name: 'Activo', color: '#10B981' },
@@ -343,7 +356,7 @@ export default function ClientProfile() {
         </div>
         <div className="bg-white rounded-xl border border-gray-200 p-4">
           <div className="text-xs text-gray-400 uppercase tracking-wider font-semibold mb-1">Arancel</div>
-          <div className="text-lg font-bold text-gray-900">{draft.fee_currency} {draft.fee}</div>
+          <div className="text-lg font-bold text-gray-900">{draft.fee_currency} {formatFeeDisplay(draft.fee, draft.fee_currency)}</div>
         </div>
         <div className="bg-white rounded-xl border border-gray-200 p-4">
           <div className="text-xs text-gray-400 uppercase tracking-wider font-semibold mb-1">Sesiones</div>

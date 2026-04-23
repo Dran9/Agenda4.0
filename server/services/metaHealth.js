@@ -2758,53 +2758,14 @@ async function runMetaHealthWatchdogForTenant(tenantId, { force = false } = {}) 
     });
   }
 
-  const [silenceRows] = await pool.query(
-    `SELECT
-       MAX(received_at) AS last_webhook_at,
-       SUM(CASE WHEN received_at >= DATE_SUB(NOW(), INTERVAL 24 HOUR) THEN 1 ELSE 0 END) AS events_24h
-     FROM meta_health_events
-     WHERE tenant_id = ?
-       AND source = 'meta_webhook'`,
-    [tenantId]
-  );
-
-  const lastWebhookAt = silenceRows[0]?.last_webhook_at || null;
-  const events24h = Number(silenceRows[0]?.events_24h || 0);
-  const silenceMinutes = minutesSince(lastWebhookAt);
-
-  if (silenceMinutes === null) {
-    checks.push({
-      check_name: 'webhook_silence',
-      status: 'ok',
-      message: 'Sin webhooks iniciales aún; se activa monitoreo de silencio tras el primer evento.',
-      details: { events_24h: events24h, baseline_established: false },
-    });
-  } else if (silenceMinutes > config.silence_critical_minutes) {
-    checks.push({
-      check_name: 'webhook_silence',
-      status: 'critical',
-      message: `Silencio webhook de ${silenceMinutes} min (> ${config.silence_critical_minutes} min).`,
-      details: { last_webhook_at: lastWebhookAt, events_24h: events24h },
-    });
-  } else if (silenceMinutes > config.silence_warning_minutes) {
-    checks.push({
-      check_name: 'webhook_silence',
-      status: 'warning',
-      message: `Silencio webhook de ${silenceMinutes} min (> ${config.silence_warning_minutes} min).`,
-      details: {
-        last_webhook_at: lastWebhookAt,
-        events_24h: events24h,
-        low_activity_hint: events24h <= 2,
-      },
-    });
-  } else {
-    checks.push({
-      check_name: 'webhook_silence',
-      status: 'ok',
-      message: `Último webhook hace ${silenceMinutes} min.`,
-      details: { last_webhook_at: lastWebhookAt, events_24h: events24h },
-    });
-  }
+  // Webhook silence check disabled — produces false positives during low-activity periods.
+  // The endpoint health is verified by successful webhook processing, not by message frequency.
+  checks.push({
+    check_name: 'webhook_silence',
+    status: 'ok',
+    message: 'Monitoreo de silencio desactivado; se verifica salud por procesamiento exitoso.',
+    details: { disabled: true, reason: 'evita falsos positivos en periodos de baja actividad' },
+  });
 
   const [backlogRows] = await pool.query(
     `SELECT COUNT(*) AS pending

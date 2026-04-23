@@ -217,6 +217,7 @@ async function initializeDatabase() {
         retention_rules JSON,
         reminder_time VARCHAR(5) DEFAULT '18:40',
         reminder_enabled BOOLEAN DEFAULT TRUE,
+        last_appointment_reminder_run_at DATETIME DEFAULT NULL,
         payment_reminder_enabled BOOLEAN DEFAULT FALSE,
         payment_reminder_hours INT DEFAULT 2,
         payment_reminder_template VARCHAR(120),
@@ -660,6 +661,7 @@ async function initializeDatabase() {
     await conn.query(`ALTER TABLE config ADD COLUMN IF NOT EXISTS payment_reminder_enabled BOOLEAN DEFAULT FALSE`).catch(() => {});
     await conn.query(`ALTER TABLE config ADD COLUMN IF NOT EXISTS payment_reminder_hours INT DEFAULT 2`).catch(() => {});
     await conn.query(`ALTER TABLE config ADD COLUMN IF NOT EXISTS payment_reminder_template VARCHAR(120)`).catch(() => {});
+    await conn.query(`ALTER TABLE config ADD COLUMN IF NOT EXISTS last_appointment_reminder_run_at DATETIME DEFAULT NULL`).catch(() => {});
     await conn.query(`ALTER TABLE config ADD COLUMN IF NOT EXISTS retention_risk_template VARCHAR(120)`).catch(() => {});
     await conn.query(`ALTER TABLE config ADD COLUMN IF NOT EXISTS retention_lost_template VARCHAR(120)`).catch(() => {});
     await conn.query(`ALTER TABLE config ADD COLUMN IF NOT EXISTS whatsapp_template_language VARCHAR(10) DEFAULT 'es'`).catch(() => {});

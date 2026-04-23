@@ -1,4 +1,4 @@
-const { pool, withTransaction } = require('../db');
+const { pool, withTransaction, withAdvisoryLock } = require('../db');
 const { syncSlotClaimsForStatusTransition } = require('../services/appointmentSlotClaims');
 const { checkAndSendReminders, checkAndSendPaymentReminders } = require('../services/reminder');
 const { syncRecurringFromGCal } = require('../services/recurringSync');
@@ -8,6 +8,9 @@ let autoCompleteTimer = null;
 let paymentReminderTimer = null;
 let recurringSyncTimer = null;
 let metaHealthWatchdogTimer = null;
+
+const LA_PAZ_TIMEZONE = 'America/La_Paz';
+const DEFAULT_REMINDER_TIME = '18:40';
 
 const schedulerState = {
   appointmentReminder: {
@@ -61,6 +64,130 @@ const schedulerState = {
     lastError: null,
   },
 };
+
+function getNowInLaPaz() {
+  return new Date(new Date().toLocaleString('en-US', { timeZone: LA_PAZ_TIMEZONE }));
+}
+
+function getDateKeyInLaPaz(value) {
+  if (!value) return null;
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return null;
+
+  const formatter = new Intl.DateTimeFormat('en-CA', {
+    timeZone: LA_PAZ_TIMEZONE,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  });
+  const parts = formatter.formatToParts(date);
+  const year = parts.find((part) => part.type === 'year')?.value;
+  const month = parts.find((part) => part.type === 'month')?.value;
+  const day = parts.find((part) => part.type === 'day')?.value;
+  if (!year || !month || !day) return null;
+  return `${year}-${month}-${day}`;
+}
+
+function parseReminderTime(reminderTime = DEFAULT_REMINDER_TIME) {
+  const [rawHours, rawMinutes] = String(reminderTime || DEFAULT_REMINDER_TIME).split(':').map(Number);
+  const hours = Number.isInteger(rawHours) && rawHours >= 0 && rawHours <= 23 ? rawHours : 18;
+  const minutes = Number.isInteger(rawMinutes) && rawMinutes >= 0 && rawMinutes <= 59 ? rawMinutes : 40;
+  return { hours, minutes };
+}
+
+function getReminderTargetForToday(nowLP, reminderTime = DEFAULT_REMINDER_TIME) {
+  const target = new Date(nowLP);
+  const { hours, minutes } = parseReminderTime(reminderTime);
+  target.setHours(hours, minutes, 0, 0);
+  return target;
+}
+
+function shouldRunAppointmentReminderNow({
+  nowLP = getNowInLaPaz(),
+  reminderTime = DEFAULT_REMINDER_TIME,
+  lastRunAt = null,
+} = {}) {
+  const todayKey = getDateKeyInLaPaz(nowLP);
+  if (!todayKey) return false;
+
+  const lastRunKey = getDateKeyInLaPaz(lastRunAt);
+  if (lastRunKey === todayKey) return false;
+
+  return nowLP >= getReminderTargetForToday(nowLP, reminderTime);
+}
+
+function getNextReminderDelayMs({
+  nowLP = getNowInLaPaz(),
+  reminderTime = DEFAULT_REMINDER_TIME,
+  lastRunAt = null,
+} = {}) {
+  if (shouldRunAppointmentReminderNow({ nowLP, reminderTime, lastRunAt })) {
+    return 0;
+  }
+
+  const todayTarget = getReminderTargetForToday(nowLP, reminderTime);
+  const lastRunKey = getDateKeyInLaPaz(lastRunAt);
+  const todayKey = getDateKeyInLaPaz(nowLP);
+  const nextTarget = new Date(todayTarget);
+
+  if (nowLP >= todayTarget || (todayKey && lastRunKey === todayKey)) {
+    nextTarget.setDate(nextTarget.getDate() + 1);
+  }
+
+  return Math.max(60 * 1000, nextTarget - nowLP);
+}
+
+async function evaluateAppointmentReminderDueState(tenantId) {
+  const [rows] = await pool.query(
+    `SELECT reminder_time, reminder_enabled, last_appointment_reminder_run_at
+     FROM config
+     WHERE tenant_id = ?
+     LIMIT 1`,
+    [tenantId]
+  );
+
+  const cfg = rows[0] || null;
+  const reminderTime = cfg?.reminder_time || DEFAULT_REMINDER_TIME;
+  const enabled = !!cfg?.reminder_enabled;
+  const lastRunAt = cfg?.last_appointment_reminder_run_at || null;
+  const nowLP = getNowInLaPaz();
+
+  return {
+    cfg,
+    enabled,
+    reminderTime,
+    lastRunAt,
+    nowLP,
+    shouldRunNow: enabled && shouldRunAppointmentReminderNow({
+      nowLP,
+      reminderTime,
+      lastRunAt,
+    }),
+  };
+}
+
+async function runDueAppointmentReminder(tenantId) {
+  return withAdvisoryLock(`appointment-reminder:${tenantId}`, 5, async () => {
+    const state = await evaluateAppointmentReminderDueState(tenantId);
+    if (!state.shouldRunNow) return { executed: false, ...state };
+
+    console.log('[cron] Running reminder check...');
+    const result = await checkAndSendReminders({ date: 'tomorrow', tenantId });
+    await pool.query(
+      'UPDATE config SET last_appointment_reminder_run_at = NOW() WHERE tenant_id = ?',
+      [tenantId]
+    );
+
+    const executedAt = new Date();
+    return {
+      executed: true,
+      ...state,
+      lastRunAt: executedAt,
+      nowLP: getNowInLaPaz(),
+      result,
+    };
+  });
+}
 
 function setNextRun(key, msFromNow) {
   schedulerState[key].nextRunAt = new Date(Date.now() + msFromNow).toISOString();
@@ -146,11 +273,10 @@ function startAutoCompleteCron() {
 function startReminderCron() {
   async function scheduleNext() {
     try {
-      // Get reminder time from config (default 18:40 BOT)
-      const [rows] = await pool.query('SELECT reminder_time, reminder_enabled FROM config WHERE tenant_id = 1');
-      const cfg = rows[0];
+      const runState = await runDueAppointmentReminder(1);
+      const reminderTime = runState.reminderTime || DEFAULT_REMINDER_TIME;
 
-      if (!cfg?.reminder_enabled) {
+      if (!runState.enabled) {
         console.log('[cron] Reminders disabled, checking again in 1 hour');
         const delay = 60 * 60 * 1000;
         schedulerState.appointmentReminder.enabled = false;
@@ -159,37 +285,23 @@ function startReminderCron() {
         return;
       }
 
-      const reminderTime = cfg?.reminder_time || '18:40';
-      const [rH, rM] = reminderTime.split(':').map(Number);
-
-      // Calculate next trigger time in La Paz
-      const nowLP = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/La_Paz' }));
-      const target = new Date(nowLP);
-      target.setHours(rH, rM, 0, 0);
-
-      // If already past today's time, schedule for tomorrow
-      if (nowLP >= target) {
-        target.setDate(target.getDate() + 1);
+      if (runState.executed) {
+        console.log(
+          `[cron] Reminders: sent=${runState.result.sent}, skipped=${runState.result.skipped}, total=${runState.result.total}`
+        );
+        markSuccess('appointmentReminder', runState.result, true);
       }
 
-      const msUntil = target - nowLP;
+      const msUntil = getNextReminderDelayMs({
+        nowLP: getNowInLaPaz(),
+        reminderTime,
+        lastRunAt: runState.lastRunAt,
+      });
+
       console.log(`[cron] Next reminder check at ${reminderTime} BOT (in ${Math.round(msUntil / 60000)} min)`);
       schedulerState.appointmentReminder.enabled = true;
       setNextRun('appointmentReminder', msUntil);
-
-      reminderTimer = setTimeout(async () => {
-        console.log('[cron] Running reminder check...');
-        try {
-          const result = await checkAndSendReminders({ date: 'tomorrow', tenantId: 1 });
-          console.log(`[cron] Reminders: sent=${result.sent}, skipped=${result.skipped}, total=${result.total}`);
-          markSuccess('appointmentReminder', result, true);
-        } catch (err) {
-          console.error('[cron] Reminder error:', err.message);
-          markError('appointmentReminder', err, true);
-        }
-        // Schedule next
-        scheduleNext();
-      }, msUntil);
+      reminderTimer = setTimeout(scheduleNext, msUntil);
     } catch (err) {
       console.error('[cron] Scheduler error:', err.message);
       markError('appointmentReminder', err, schedulerState.appointmentReminder.enabled);
@@ -342,4 +454,8 @@ module.exports = {
   stopMetaHealthWatchdogCron,
   refreshConfigSchedulers,
   getSchedulerRuntime,
+  getDateKeyInLaPaz,
+  parseReminderTime,
+  shouldRunAppointmentReminderNow,
+  getNextReminderDelayMs,
 };

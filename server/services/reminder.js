@@ -53,9 +53,9 @@ function addDaysToDateKey(dateKey, days = 0) {
   return baseDate.toISOString().slice(0, 10);
 }
 
-function getTargetDateKeyForTimezone(date, timeZone) {
+function getTargetDateKeyForTimezone(date, timeZone, now = new Date()) {
   if (date && /^\d{4}-\d{2}-\d{2}$/.test(date)) return date;
-  const todayKey = getDateKeyInTimeZone(new Date(), timeZone);
+  const todayKey = getDateKeyInTimeZone(now, timeZone);
   if (!todayKey) return null;
   if (date === 'today') return todayKey;
   return addDaysToDateKey(todayKey, 1);
@@ -66,6 +66,44 @@ function getEventDateKeyInTimeZone(event, timeZone) {
     || (event.start?.date ? `${event.start.date}T12:00:00Z` : null);
   if (!eventStart) return null;
   return getDateKeyInTimeZone(eventStart, timeZone);
+}
+
+function getTimeKeyInTimeZone(value, timeZone = LA_PAZ_TIMEZONE) {
+  const date = value instanceof Date ? value : new Date(value);
+  if (!date || Number.isNaN(date.getTime())) return null;
+  const formatter = new Intl.DateTimeFormat('en-GB', {
+    timeZone: resolveTimeZone(timeZone),
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  });
+  return formatter.format(date);
+}
+
+function isAtOrAfterTimeKey(currentTime, targetTime) {
+  if (!/^\d{2}:\d{2}$/.test(String(currentTime || ''))) return false;
+  if (!/^\d{2}:\d{2}$/.test(String(targetTime || ''))) return false;
+  return String(currentTime) >= String(targetTime);
+}
+
+function isReminderDueForTimezone({
+  event,
+  timeZone,
+  date = 'tomorrow',
+  reminderTime = null,
+  now = new Date(),
+} = {}) {
+  const safeTimezone = resolveTimeZone(timeZone);
+  const eventDateKey = getEventDateKeyInTimeZone(event, safeTimezone);
+  const targetDateKey = getTargetDateKeyForTimezone(date, safeTimezone, now);
+  if (!eventDateKey || !targetDateKey || eventDateKey !== targetDateKey) return false;
+
+  if (!reminderTime || date === 'today' || /^\d{4}-\d{2}-\d{2}$/.test(String(date || ''))) {
+    return true;
+  }
+
+  const localTime = getTimeKeyInTimeZone(now, safeTimezone);
+  return isAtOrAfterTimeKey(localTime, reminderTime);
 }
 
 function buildEventScanWindow(date) {
@@ -153,7 +191,15 @@ async function sendAppointmentReminder(appt, eventId) {
   );
 }
 
-async function checkAndSendReminders({ date, tenantId, force = false, appointmentId = null, clientId = null, phone = null } = {}) {
+async function checkAndSendReminders({
+  date,
+  tenantId,
+  force = false,
+  appointmentId = null,
+  clientId = null,
+  phone = null,
+  reminderTime = null,
+} = {}) {
   try {
     const calendarId = process.env.CALENDAR_ID || 'danielmacleann@gmail.com';
     const canonicalPhone = phone ? normalizePhone(phone) : null;
@@ -161,15 +207,6 @@ async function checkAndSendReminders({ date, tenantId, force = false, appointmen
     const { timeMin, timeMax, label } = buildEventScanWindow(date);
     const events = await listEvents(calendarId, timeMin, timeMax);
     console.log(`[reminder] Found ${events.length} events for ${label} (scan ${timeMin} -> ${timeMax})`);
-
-    const targetDateByTimezone = new Map();
-    const getTargetDateKey = (timeZone) => {
-      const safeTimezone = resolveTimeZone(timeZone);
-      if (!targetDateByTimezone.has(safeTimezone)) {
-        targetDateByTimezone.set(safeTimezone, getTargetDateKeyForTimezone(date, safeTimezone));
-      }
-      return targetDateByTimezone.get(safeTimezone);
-    };
 
     let sent = 0;
     let skipped = 0;
@@ -292,9 +329,13 @@ async function checkAndSendReminders({ date, tenantId, force = false, appointmen
       }
 
       if (!appointmentId) {
-        const eventDateKey = getEventDateKeyInTimeZone(event, apptTimezone);
-        const targetDateKey = getTargetDateKey(apptTimezone);
-        if (!eventDateKey || !targetDateKey || eventDateKey !== targetDateKey) {
+        const due = force || isReminderDueForTimezone({
+          event,
+          timeZone: apptTimezone,
+          date,
+          reminderTime,
+        });
+        if (!due) {
           continue;
         }
       }
@@ -540,4 +581,12 @@ async function checkAndSendPaymentReminders({
   }
 }
 
-module.exports = { checkAndSendReminders, checkAndSendPaymentReminders };
+module.exports = {
+  checkAndSendReminders,
+  checkAndSendPaymentReminders,
+  getDateKeyInTimeZone,
+  getTimeKeyInTimeZone,
+  getTargetDateKeyForTimezone,
+  getEventDateKeyInTimeZone,
+  isReminderDueForTimezone,
+};

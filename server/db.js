@@ -183,7 +183,31 @@ async function initializeDatabase() {
       )
     `);
 
-    // 6. config (one row per tenant)
+    // 6. recurring_schedule_exceptions (one-off skips/reschedules inside a weekly series)
+    await conn.query(`
+      CREATE TABLE IF NOT EXISTS recurring_schedule_exceptions (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        tenant_id INT NOT NULL,
+        schedule_id INT NOT NULL,
+        client_id INT NOT NULL,
+        original_date DATE NOT NULL,
+        action ENUM('rescheduled','skipped') NOT NULL DEFAULT 'rescheduled',
+        replacement_appointment_id INT DEFAULT NULL,
+        notes TEXT,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        UNIQUE KEY unique_schedule_original_date (tenant_id, schedule_id, original_date),
+        KEY idx_tenant_schedule (tenant_id, schedule_id),
+        KEY idx_client_date (tenant_id, client_id, original_date),
+        KEY idx_replacement (replacement_appointment_id),
+        FOREIGN KEY (tenant_id) REFERENCES tenants(id),
+        FOREIGN KEY (schedule_id) REFERENCES recurring_schedules(id) ON DELETE CASCADE,
+        FOREIGN KEY (client_id) REFERENCES clients(id) ON DELETE CASCADE,
+        FOREIGN KEY (replacement_appointment_id) REFERENCES appointments(id) ON DELETE SET NULL
+      )
+    `);
+
+    // 7. config (one row per tenant)
     await conn.query(`
       CREATE TABLE IF NOT EXISTS config (
         id INT AUTO_INCREMENT PRIMARY KEY,
@@ -232,7 +256,7 @@ async function initializeDatabase() {
       )
     `);
 
-    // 7. payments
+    // 8. payments
     await conn.query(`
       CREATE TABLE IF NOT EXISTS payments (
         id INT AUTO_INCREMENT PRIMARY KEY,

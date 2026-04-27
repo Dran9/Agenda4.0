@@ -6,6 +6,10 @@ const {
   createAppointmentSlotClaims,
   isSlotClaimConflictError,
 } = require('./appointmentSlotClaims');
+const {
+  getDateKeyInLaPaz,
+  recordRecurringOccurrenceReschedule,
+} = require('./recurring');
 const { normalizePhone, normalizedPhoneSql } = require('../utils/phone');
 const { getAutomaticLocalFee, getSpecialFee, isBoliviaCountry } = require('./clientPricing');
 
@@ -326,6 +330,17 @@ async function rescheduleAppointment(clientId, oldAppointmentId, dateTime, tenan
       // Mark new appointment as Reagendada
       if (newApptId) {
         await conn.query(`UPDATE appointments SET status = 'Reagendada', confirmed_at = NULL WHERE id = ? AND tenant_id = ?`, [newApptId, tenantId]);
+      }
+
+      if (newApptId && oldAppt.source_schedule_id) {
+        await recordRecurringOccurrenceReschedule({
+          tenantId,
+          scheduleId: oldAppt.source_schedule_id,
+          clientId,
+          originalDate: getDateKeyInLaPaz(oldAppt.date_time),
+          replacementAppointmentId: newApptId,
+          conn,
+        });
       }
 
       const [oldPayments] = await conn.query(

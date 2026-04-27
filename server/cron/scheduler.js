@@ -16,7 +16,7 @@ const schedulerState = {
   appointmentReminder: {
     label: 'Recordatorios de cita',
     source: 'internal_timer',
-    intervalMinutes: 1440,
+    intervalMinutes: 15,
     enabled: null,
     nextRunAt: null,
     lastRunAt: null,
@@ -95,48 +95,6 @@ function parseReminderTime(reminderTime = DEFAULT_REMINDER_TIME) {
   return { hours, minutes };
 }
 
-function getReminderTargetForToday(nowLP, reminderTime = DEFAULT_REMINDER_TIME) {
-  const target = new Date(nowLP);
-  const { hours, minutes } = parseReminderTime(reminderTime);
-  target.setHours(hours, minutes, 0, 0);
-  return target;
-}
-
-function shouldRunAppointmentReminderNow({
-  nowLP = getNowInLaPaz(),
-  reminderTime = DEFAULT_REMINDER_TIME,
-  lastRunAt = null,
-} = {}) {
-  const todayKey = getDateKeyInLaPaz(nowLP);
-  if (!todayKey) return false;
-
-  const lastRunKey = getDateKeyInLaPaz(lastRunAt);
-  if (lastRunKey === todayKey) return false;
-
-  return nowLP >= getReminderTargetForToday(nowLP, reminderTime);
-}
-
-function getNextReminderDelayMs({
-  nowLP = getNowInLaPaz(),
-  reminderTime = DEFAULT_REMINDER_TIME,
-  lastRunAt = null,
-} = {}) {
-  if (shouldRunAppointmentReminderNow({ nowLP, reminderTime, lastRunAt })) {
-    return 0;
-  }
-
-  const todayTarget = getReminderTargetForToday(nowLP, reminderTime);
-  const lastRunKey = getDateKeyInLaPaz(lastRunAt);
-  const todayKey = getDateKeyInLaPaz(nowLP);
-  const nextTarget = new Date(todayTarget);
-
-  if (nowLP >= todayTarget || (todayKey && lastRunKey === todayKey)) {
-    nextTarget.setDate(nextTarget.getDate() + 1);
-  }
-
-  return Math.max(60 * 1000, nextTarget - nowLP);
-}
-
 async function evaluateAppointmentReminderDueState(tenantId) {
   const [rows] = await pool.query(
     `SELECT reminder_time, reminder_enabled, last_appointment_reminder_run_at
@@ -158,21 +116,20 @@ async function evaluateAppointmentReminderDueState(tenantId) {
     reminderTime,
     lastRunAt,
     nowLP,
-    shouldRunNow: enabled && shouldRunAppointmentReminderNow({
-      nowLP,
-      reminderTime,
-      lastRunAt,
-    }),
   };
 }
 
 async function runDueAppointmentReminder(tenantId) {
   return withAdvisoryLock(`appointment-reminder:${tenantId}`, 5, async () => {
     const state = await evaluateAppointmentReminderDueState(tenantId);
-    if (!state.shouldRunNow) return { executed: false, ...state };
+    if (!state.enabled) return { executed: false, ...state };
 
     console.log('[cron] Running reminder check...');
-    const result = await checkAndSendReminders({ date: 'tomorrow', tenantId });
+    const result = await checkAndSendReminders({
+      date: 'tomorrow',
+      tenantId,
+      reminderTime: state.reminderTime,
+    });
     await pool.query(
       'UPDATE config SET last_appointment_reminder_run_at = NOW() WHERE tenant_id = ?',
       [tenantId]
@@ -285,20 +242,14 @@ function startReminderCron() {
         return;
       }
 
-      if (runState.executed) {
-        console.log(
-          `[cron] Reminders: sent=${runState.result.sent}, skipped=${runState.result.skipped}, total=${runState.result.total}`
-        );
-        markSuccess('appointmentReminder', runState.result, true);
-      }
+      console.log(
+        `[cron] Reminders: sent=${runState.result.sent}, skipped=${runState.result.skipped}, total=${runState.result.total}`
+      );
+      markSuccess('appointmentReminder', runState.result, true);
 
-      const msUntil = getNextReminderDelayMs({
-        nowLP: getNowInLaPaz(),
-        reminderTime,
-        lastRunAt: runState.lastRunAt,
-      });
+      const msUntil = 15 * 60 * 1000;
 
-      console.log(`[cron] Next reminder check at ${reminderTime} BOT (in ${Math.round(msUntil / 60000)} min)`);
+      console.log(`[cron] Next reminder check in ${Math.round(msUntil / 60000)} min (local target ${reminderTime})`);
       schedulerState.appointmentReminder.enabled = true;
       setNextRun('appointmentReminder', msUntil);
       reminderTimer = setTimeout(scheduleNext, msUntil);
@@ -456,6 +407,4 @@ module.exports = {
   getSchedulerRuntime,
   getDateKeyInLaPaz,
   parseReminderTime,
-  shouldRunAppointmentReminderNow,
-  getNextReminderDelayMs,
 };

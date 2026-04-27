@@ -326,6 +326,52 @@ async function findAppointmentByOccurrence(tenantId, clientId, dateKey, time, co
   return rows[0] || null;
 }
 
+async function findRecurringException(tenantId, scheduleId, originalDate, conn = pool) {
+  if (!Number(scheduleId) || !isValidDateKey(originalDate)) return null;
+  const [rows] = await conn.query(
+    `SELECT *
+     FROM recurring_schedule_exceptions
+     WHERE tenant_id = ?
+       AND schedule_id = ?
+       AND original_date = ?
+     LIMIT 1`,
+    [tenantId, scheduleId, originalDate]
+  );
+  return rows[0] || null;
+}
+
+async function recordRecurringOccurrenceReschedule({
+  tenantId,
+  scheduleId,
+  clientId,
+  originalDate,
+  replacementAppointmentId,
+  conn = pool,
+} = {}) {
+  if (!Number(scheduleId) || !Number(clientId) || !Number(replacementAppointmentId)) return null;
+  if (!isValidDateKey(originalDate)) return null;
+
+  await conn.query(
+    `INSERT INTO recurring_schedule_exceptions (
+       tenant_id, schedule_id, client_id, original_date, action, replacement_appointment_id
+     ) VALUES (?, ?, ?, ?, 'rescheduled', ?)
+     ON DUPLICATE KEY UPDATE
+       action = 'rescheduled',
+       replacement_appointment_id = VALUES(replacement_appointment_id),
+       updated_at = CURRENT_TIMESTAMP`,
+    [tenantId, scheduleId, clientId, originalDate, replacementAppointmentId]
+  );
+
+  await conn.query(
+    `UPDATE appointments
+     SET source_schedule_id = ?
+     WHERE tenant_id = ? AND id = ?`,
+    [scheduleId, tenantId, replacementAppointmentId]
+  );
+
+  return findRecurringException(tenantId, scheduleId, originalDate, conn);
+}
+
 async function syncAppointmentArtifacts(appointment, client) {
   try {
     const { syncBookingToSheet } = require('./sheets');
@@ -676,6 +722,16 @@ async function materializeRecurringOccurrence({ tenantId, scheduleId, date, even
   }
 
   return withAdvisoryLock(`recurring:${tenantId}:${scheduleId}:${date}`, 10, async () => {
+    const exception = await findRecurringException(tenantId, scheduleId, date);
+    if (exception) {
+      return {
+        created: false,
+        skipped: true,
+        exception,
+        appointment: null,
+      };
+    }
+
     const existing = await findAppointmentByOccurrence(tenantId, schedule.client_id, date, schedule.time);
     if (existing) {
       if ((!existing.gcal_event_id || !existing.source_schedule_id) && (eventInstance?.id || scheduleId)) {
@@ -845,10 +901,26 @@ async function getUpcomingRecurringSessions(tenantId, from, to) {
   );
 
   const appointmentMap = new Map();
+  const appointmentById = new Map();
   for (const appointment of appointments) {
     const key = `${appointment.client_id}|${getDateKeyInLaPaz(appointment.date_time)}|${getTimeInLaPaz(appointment.date_time)}`;
     appointmentMap.set(key, appointment);
+    appointmentById.set(Number(appointment.id), appointment);
   }
+
+  const [exceptions] = await pool.query(
+    `SELECT *
+     FROM recurring_schedule_exceptions
+     WHERE tenant_id = ?
+       AND original_date >= ?
+       AND original_date <= ?`,
+    [tenantId, from, to]
+  );
+  const exceptionMap = new Map();
+  for (const exception of exceptions) {
+    exceptionMap.set(`${exception.schedule_id}|${toDateKey(exception.original_date)}`, exception);
+  }
+  const pushedReplacementIds = new Set();
 
   const items = [];
   for (const schedule of schedules) {
@@ -858,6 +930,25 @@ async function getUpcomingRecurringSessions(tenantId, from, to) {
         getDayOfWeekFromDateKey(current) === Number(schedule.day_of_week) &&
         isScheduleActiveOnDate(schedule, current)
       ) {
+        const exception = exceptionMap.get(`${schedule.id}|${current}`);
+        if (exception) {
+          const replacement = appointmentById.get(Number(exception.replacement_appointment_id));
+          if (replacement && !pushedReplacementIds.has(Number(replacement.id))) {
+            pushedReplacementIds.add(Number(replacement.id));
+            items.push({
+              ...replacement,
+              type: 'materialized',
+              schedule_id: schedule.id,
+              recurring_exception: {
+                action: exception.action,
+                original_date: toDateKey(exception.original_date),
+              },
+            });
+          }
+          current = addDaysToDateKey(current, 1);
+          continue;
+        }
+
         const key = `${schedule.client_id}|${current}|${schedule.time}`;
         const appointment = appointmentMap.get(key);
         if (appointment) {
@@ -1065,6 +1156,8 @@ module.exports = {
   getUpcomingRecurringSessions,
   materializeRecurringOccurrence,
   findRecurringScheduleForEventInstance,
+  findRecurringException,
+  recordRecurringOccurrenceReschedule,
   getRecurringSchedule,
   syncRecurringFromGCal,
   getTodayDateKeyInLaPaz,

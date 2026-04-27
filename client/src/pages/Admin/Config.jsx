@@ -125,6 +125,93 @@ const SETTINGS_SECTIONS = [
   },
 ];
 
+const AUTOMATED_MESSAGES = [
+  {
+    title: 'Recordatorio de cita',
+    channel: 'WhatsApp template',
+    trigger: 'Día anterior a la cita, a la hora configurada en la zona horaria del cliente.',
+    source: 'recordatorionovum26',
+    preview: 'Template con nombre, fecha, hora y botones: Confirmo, Reagendar, Daniel.',
+  },
+  {
+    title: 'Respuesta al confirmar cita',
+    channel: 'WhatsApp texto',
+    trigger: 'Cuando el cliente pulsa el botón de confirmar del recordatorio.',
+    source: 'CONFIRM_NOW',
+    preview: '👏 Perfecto [nombre], te esperamos para darle un giro a tu vida...',
+  },
+  {
+    title: 'QR de pago automático',
+    channel: 'WhatsApp imagen',
+    trigger: '60 segundos después de confirmar, sólo si la cita corresponde a Bolivia.',
+    source: 'payment_qr_*',
+    preview: 'QR de pago - Bs [monto]. Por favor sube en este mismo chat el comprobante de tu pago.',
+  },
+  {
+    title: 'Link de reagendamiento',
+    channel: 'WhatsApp texto',
+    trigger: 'Cuando el cliente pulsa el botón de reagendar del recordatorio.',
+    source: 'REAGEN_NOW',
+    preview: '[Nombre], vamos a reprogramar tu cita. Haz clic en el enlace...',
+  },
+  {
+    title: 'Confirmación de reagendamiento',
+    channel: 'WhatsApp texto',
+    trigger: 'Cuando el cliente completa un reagendamiento desde el link público.',
+    source: 'public reschedule',
+    preview: '✅ Perfecto [nombre], tu sesión está reprogramada para el [día] a las [hora].',
+  },
+  {
+    title: 'Recordatorio de pago pendiente',
+    channel: 'WhatsApp template',
+    trigger: 'Antes de una sesión próxima con pago pendiente, según las horas configuradas.',
+    source: 'recordatorio_pago',
+    preview: 'Template de pago pendiente. El nombre del template se puede configurar abajo.',
+  },
+  {
+    title: 'Comprobante validado',
+    channel: 'WhatsApp texto',
+    trigger: 'Cuando OCR valida automáticamente el comprobante enviado por el cliente.',
+    source: 'OCR pago ok',
+    preview: '✅ Pago recibido correctamente, ¡Gracias!',
+  },
+  {
+    title: 'Comprobante con problema',
+    channel: 'WhatsApp texto',
+    trigger: 'Cuando OCR detecta monto, fecha o destinatario que no coincide.',
+    source: 'OCR mismatch',
+    preview: 'No pude validarlo automáticamente por este motivo... Por favor, revisa el comprobante.',
+  },
+  {
+    title: 'Doble reagendamiento en recurrencia',
+    channel: 'WhatsApp botones',
+    trigger: 'Cuando un cliente recurrente reprograma 2 veces consecutivas la misma recurrencia.',
+    source: 'recurring_reschedule_prompt',
+    preview: 'Pregunta si los cambios son puntuales o si quiere revisar su día/hora fija.',
+  },
+  {
+    title: 'Mantener recurrencia',
+    channel: 'WhatsApp texto',
+    trigger: 'Cuando el cliente responde Mantengo horario en la pregunta de recurrencia.',
+    source: 'KEEP_RECURRING',
+    preview: 'Perfecto, entonces mantenemos.',
+  },
+  {
+    title: 'Cambiar recurrencia',
+    channel: 'WhatsApp + Telegram',
+    trigger: 'Cuando el cliente responde Voy a cambiar en la pregunta de recurrencia.',
+    source: 'CHANGE_RECURRING',
+    preview: 'Perfecto, te paso con Daniel. Además se corta la recurrencia y llega alerta interna.',
+  },
+  {
+    title: 'Contacto con Daniel',
+    channel: 'WhatsApp texto',
+    trigger: 'Cuando el cliente pulsa el botón para hablar con Daniel y existe respuesta configurada.',
+    source: 'DANIEL_NOW',
+    preview: 'Usa el texto guardado en auto_reply_contact.',
+  },
+];
+
 function timeToMinutes(t) {
   const [h, m] = t.split(':').map(Number);
   return h * 60 + m;
@@ -1391,6 +1478,45 @@ export default function Config() {
                       );
                     })}
                   </div>
+                </div>
+              </div>
+
+              <div className="mt-6 rounded-2xl border border-slate-200 bg-white overflow-hidden">
+                <div className="px-5 py-4 border-b border-slate-100 bg-slate-50/80">
+                  <div className="flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
+                    <div>
+                      <div className="text-xs font-medium text-gray-500 uppercase tracking-wide">Inventario de mensajes</div>
+                      <h4 className="text-base font-semibold text-slate-900">Mensajes automatizados activos en la app</h4>
+                    </div>
+                    <div className="text-xs text-gray-400">{AUTOMATED_MESSAGES.length} automatizaciones documentadas</div>
+                  </div>
+                  <p className="mt-2 text-sm text-gray-500">
+                    Esta lista es descriptiva: sirve para saber qué puede enviar la app, qué lo dispara y qué texto aproximado recibe el cliente.
+                  </p>
+                </div>
+                <div className="divide-y divide-slate-100">
+                  {AUTOMATED_MESSAGES.map((message) => (
+                    <div key={message.title} className="grid gap-3 px-5 py-4 lg:grid-cols-[minmax(0,1fr)_180px]">
+                      <div className="min-w-0">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <div className="font-medium text-sm text-slate-900">{message.title}</div>
+                          <span className="rounded-full bg-[#CFE8E9] px-2 py-0.5 text-[11px] font-medium text-[#365673]">
+                            {message.channel}
+                          </span>
+                        </div>
+                        <div className="mt-1 text-xs text-gray-500">{message.trigger}</div>
+                        <div className="mt-2 rounded-xl bg-slate-50 px-3 py-2 text-xs leading-5 text-slate-600">
+                          {message.preview}
+                        </div>
+                      </div>
+                      <div className="flex items-start lg:justify-end">
+                        <div className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-[11px] text-gray-500">
+                          <div className="mb-0.5 uppercase tracking-wide text-gray-400">Origen</div>
+                          <code className="text-slate-700">{message.source}</code>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
                 </div>
               </div>
             </div>

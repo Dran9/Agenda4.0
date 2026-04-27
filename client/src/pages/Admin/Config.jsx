@@ -132,6 +132,7 @@ const AUTOMATED_MESSAGES = [
     trigger: 'Día anterior a la cita, a la hora configurada en la zona horaria del cliente.',
     source: 'recordatorionovum26',
     preview: 'Template con nombre, fecha, hora y botones: Confirmo, Reagendar, Daniel.',
+    message: 'Hola [nombre], te recordamos tu sesión para el [fecha] a las [hora].',
   },
   {
     title: 'Respuesta al confirmar cita',
@@ -139,6 +140,7 @@ const AUTOMATED_MESSAGES = [
     trigger: 'Cuando el cliente pulsa el botón de confirmar del recordatorio.',
     source: 'CONFIRM_NOW',
     preview: '👏 Perfecto [nombre], te esperamos para darle un giro a tu vida...',
+    message: '👏 Perfecto [nombre], te esperamos para darle un giro a tu vida.\n\nEn un momento te mandamos el *QR* o _enlace_ para pago adelantado por favor.',
   },
   {
     title: 'QR de pago automático',
@@ -146,6 +148,7 @@ const AUTOMATED_MESSAGES = [
     trigger: '60 segundos después de confirmar, sólo si la cita corresponde a Bolivia.',
     source: 'payment_qr_*',
     preview: 'QR de pago - Bs [monto]. Por favor sube en este mismo chat el comprobante de tu pago.',
+    message: 'QR de pago - Bs [monto]\n\n👉 Por favor sube en este mismo chat el comprobante de tu pago.\nGracias.',
   },
   {
     title: 'Link de reagendamiento',
@@ -153,6 +156,7 @@ const AUTOMATED_MESSAGES = [
     trigger: 'Cuando el cliente pulsa el botón de reagendar del recordatorio.',
     source: 'REAGEN_NOW',
     preview: '[Nombre], vamos a reprogramar tu cita. Haz clic en el enlace...',
+    message: '[nombre], vamos a reprogramar tu cita.\n👉 haz clic en el enlace a continuación:\n\n[link_reagendamiento]',
   },
   {
     title: 'Confirmación de reagendamiento',
@@ -160,6 +164,7 @@ const AUTOMATED_MESSAGES = [
     trigger: 'Cuando el cliente completa un reagendamiento desde el link público.',
     source: 'public reschedule',
     preview: '✅ Perfecto [nombre], tu sesión está reprogramada para el [día] a las [hora].',
+    message: '✅ Perfecto [nombre], tu sesión está reprogramada para el *[fecha]* a las *[hora]*.\nHasta pronto.',
   },
   {
     title: 'Recordatorio de pago pendiente',
@@ -167,6 +172,7 @@ const AUTOMATED_MESSAGES = [
     trigger: 'Antes de una sesión próxima con pago pendiente, según las horas configuradas.',
     source: 'recordatorio_pago',
     preview: 'Template de pago pendiente. El nombre del template se puede configurar abajo.',
+    message: 'Template Meta: recordatorio_pago\nVariable enviada: [nombre].',
   },
   {
     title: 'Comprobante validado',
@@ -174,6 +180,7 @@ const AUTOMATED_MESSAGES = [
     trigger: 'Cuando OCR valida automáticamente el comprobante enviado por el cliente.',
     source: 'OCR pago ok',
     preview: '✅ Pago recibido correctamente, ¡Gracias!',
+    message: '✅ Pago recibido correctamente, ¡Gracias!',
   },
   {
     title: 'Comprobante con problema',
@@ -181,6 +188,7 @@ const AUTOMATED_MESSAGES = [
     trigger: 'Cuando OCR detecta monto, fecha o destinatario que no coincide.',
     source: 'OCR mismatch',
     preview: 'No pude validarlo automáticamente por este motivo... Por favor, revisa el comprobante.',
+    message: 'Hola [nombre], gracias por enviar tu comprobante 😊\n\nNo pude validarlo automáticamente por [este motivo/estos motivos]:\n[problemas_detectados]\n\nPor favor, revisa el comprobante y envíalo nuevamente.\n🤑 Si hubo un error de mi parte o consideras que la información sí es correcta, puedes escribirle a Daniel por aquí mismo.',
   },
   {
     title: 'Doble reagendamiento en recurrencia',
@@ -188,6 +196,7 @@ const AUTOMATED_MESSAGES = [
     trigger: 'Cuando un cliente recurrente reprograma 2 veces consecutivas la misma recurrencia.',
     source: 'recurring_reschedule_prompt',
     preview: 'Pregunta si los cambios son puntuales o si quiere revisar su día/hora fija.',
+    message: '[nombre], qué tal. Notamos que tus sesiones están programadas de forma recurrente todos los [día] a las [hora], pero has reprogramado las últimas 2. ¿Estos cambios fueron algo puntual, o te gustaría revisar el día y la hora que tienes fijos?\n\nBotones: Mantengo horario / Voy a cambiar',
   },
   {
     title: 'Mantener recurrencia',
@@ -195,6 +204,7 @@ const AUTOMATED_MESSAGES = [
     trigger: 'Cuando el cliente responde Mantengo horario en la pregunta de recurrencia.',
     source: 'KEEP_RECURRING',
     preview: 'Perfecto, entonces mantenemos.',
+    message: 'Perfecto, entonces mantenemos.',
   },
   {
     title: 'Cambiar recurrencia',
@@ -202,6 +212,7 @@ const AUTOMATED_MESSAGES = [
     trigger: 'Cuando el cliente responde Voy a cambiar en la pregunta de recurrencia.',
     source: 'CHANGE_RECURRING',
     preview: 'Perfecto, te paso con Daniel. Además se corta la recurrencia y llega alerta interna.',
+    message: 'WhatsApp: Perfecto, te paso con Daniel.\n\nTelegram: ⚠️ [nombre] quiere interrumpir recurrencia. Tomar acción [link_whatsapp]',
   },
   {
     title: 'Contacto con Daniel',
@@ -209,6 +220,7 @@ const AUTOMATED_MESSAGES = [
     trigger: 'Cuando el cliente pulsa el botón para hablar con Daniel y existe respuesta configurada.',
     source: 'DANIEL_NOW',
     preview: 'Usa el texto guardado en auto_reply_contact.',
+    message: '[auto_reply_contact configurado en Ajustes]',
   },
 ];
 
@@ -1507,6 +1519,10 @@ export default function Config() {
                         <div className="mt-1 text-xs text-gray-500">{message.trigger}</div>
                         <div className="mt-2 rounded-xl bg-slate-50 px-3 py-2 text-xs leading-5 text-slate-600">
                           {message.preview}
+                        </div>
+                        <div className="mt-2 rounded-xl border border-slate-200 bg-white px-3 py-2">
+                          <div className="mb-1 text-[11px] font-medium uppercase tracking-wide text-gray-400">Mensaje literal</div>
+                          <div className="whitespace-pre-line text-xs leading-5 text-slate-700">{message.message}</div>
                         </div>
                       </div>
                       <div className="flex items-start lg:justify-end">

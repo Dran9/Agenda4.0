@@ -7,6 +7,7 @@ import {
 import AdminLayout from '../../components/AdminLayout';
 import { api } from '../../utils/api';
 import { useToast, Toast } from '../../hooks/useToast';
+import useAdminEvents from '../../hooks/useAdminEvents';
 import { formatDateBolivia, formatTimeBolivia, formatRelativeDay } from '../../utils/dates';
 import { TIMEZONE_OPTIONS } from '../../utils/timezones';
 
@@ -29,6 +30,26 @@ function formatFeeDisplay(value, currency) {
   return cur === 'USD'
     ? amount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
     : amount.toLocaleString('es-BO', { minimumFractionDigits: 0, maximumFractionDigits: Number.isInteger(amount) ? 0 : 2 });
+}
+
+function formatMoney(value, currency) {
+  const amount = Number(value);
+  const cur = String(currency || 'BOB').toUpperCase();
+  if (!Number.isFinite(amount)) return '0';
+  return cur === 'USD'
+    ? amount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+    : amount.toLocaleString('es-BO', { minimumFractionDigits: 0, maximumFractionDigits: Number.isInteger(amount) ? 0 : 2 });
+}
+
+function formatMinorAmount(minorValue, currency) {
+  const minor = Number(minorValue);
+  if (!Number.isFinite(minor)) return null;
+  return formatMoney(minor / 100, currency);
+}
+
+function formatDateTimeBolivia(value) {
+  if (!value) return '—';
+  return `${formatDateBolivia(value)} · ${formatTimeBolivia(value)}`;
 }
 
 const DEFAULT_STATUSES = [
@@ -94,8 +115,8 @@ export default function ClientProfile() {
   const [statuses, setStatuses] = useState(DEFAULT_STATUSES);
   const [sources, setSources] = useState(DEFAULT_SOURCES);
 
-  const loadData = useCallback(async () => {
-    setLoading(true);
+  const loadData = useCallback(async ({ silent = false } = {}) => {
+    if (!silent) setLoading(true);
     try {
       const [clientRes, apptsRes, paymentsRes, waRes, cfgRes] = await Promise.all([
         api.get(`/clients/${id}`),
@@ -122,7 +143,7 @@ export default function ClientProfile() {
     } catch (err) {
       showToast('Error cargando perfil: ' + err.message, 'error');
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   }, [id, showToast]);
 
@@ -130,7 +151,37 @@ export default function ClientProfile() {
     loadData();
   }, [loadData]);
 
+  useEffect(() => {
+    if (activeTab !== 'whatsapp' && activeTab !== 'timeline') return undefined;
+    let dead = false;
+
+    const pullWhatsApp = async () => {
+      try {
+        const waRes = await api.get(`/webhook/conversations?client_id=${id}&limit=50`);
+        if (!dead) setWaMessages(waRes.conversations || []);
+      } catch (_) {
+        // non-fatal: keep previous list
+      }
+    };
+
+    pullWhatsApp();
+    const timer = setInterval(pullWhatsApp, 15000);
+
+    return () => {
+      dead = true;
+      clearInterval(timer);
+    };
+  }, [id, activeTab]);
+
   const hasChanges = draft && client && JSON.stringify(draft) !== JSON.stringify(client);
+
+  useAdminEvents(
+    ['client:change', 'appointment:change', 'payment:change', 'recurring:change'],
+    () => {
+      if (hasChanges) return;
+      loadData({ silent: true });
+    }
+  );
 
   function updateField(field, value) {
     setDraft(prev => ({ ...prev, [field]: value }));
@@ -202,14 +253,25 @@ export default function ClientProfile() {
       status: a.status,
       id: `appt-${a.id}`,
     })),
-    ...payments.map(p => ({
+    ...payments.map(p => {
+      const effectiveAmount = Number(
+        p.status === 'Confirmado' ? (p.settled_amount ?? p.amount) : p.amount
+      );
+      const effectiveCurrency = String(
+        p.status === 'Confirmado'
+          ? (p.settled_currency || p.currency || 'BOB')
+          : (p.currency || 'BOB')
+      ).toUpperCase();
+      const sourceSuffix = p.settled_source ? ` · ${String(p.settled_source).toUpperCase()}` : '';
+      return {
       type: 'payment',
       date: p.created_at,
       title: `Pago ${p.status?.toLowerCase()}`,
-      desc: `${p.currency} ${p.amount}`,
+      desc: `${effectiveCurrency} ${formatMoney(effectiveAmount, effectiveCurrency)}${sourceSuffix}`,
       status: p.status,
       id: `pay-${p.id}`,
-    })),
+      };
+    }),
     ...waMessages.map(m => ({
       type: 'whatsapp',
       date: m.created_at,
@@ -505,8 +567,31 @@ export default function ClientProfile() {
             {payments.length === 0 ? (
               <div className="p-8 text-center text-gray-400">No hay pagos registrados</div>
             ) : (
-              payments.map((payment) => (
-                <div key={payment.id} className="p-4 flex items-center justify-between hover:bg-gray-50">
+              payments.map((payment) => {
+                const source = String(payment.settled_source || '').toUpperCase();
+                const amountCurrency = String(
+                  payment.status === 'Confirmado'
+                    ? (payment.settled_currency || payment.currency || 'BOB')
+                    : (payment.currency || 'BOB')
+                ).toUpperCase();
+                const amountValue = Number(
+                  payment.status === 'Confirmado'
+                    ? (payment.settled_amount ?? payment.amount)
+                    : payment.amount
+                );
+                const hasOcrEvidence = payment.ocr_extracted_amount != null
+                  || payment.ocr_extracted_ref
+                  || payment.ocr_extracted_date
+                  || payment.ocr_extracted_dest_name;
+                const hasStripeEvidence = source === 'STRIPE'
+                  || payment.stripe_event_id
+                  || payment.stripe_session_id
+                  || payment.stripe_payment_intent
+                  || payment.stripe_customer_email;
+                const stripeMinorAmount = formatMinorAmount(payment.stripe_amount_minor, amountCurrency);
+
+                return (
+                <div key={payment.id} className="p-4 hover:bg-gray-50">
                   <div className="flex items-center gap-3">
                     <div className={`w-2 h-2 rounded-full ${
                       payment.status === 'Confirmado' ? 'bg-green-500' :
@@ -514,18 +599,51 @@ export default function ClientProfile() {
                       payment.status === 'Mismatch' ? 'bg-amber-500' :
                       'bg-gray-400'
                     }`} />
-                    <div>
+                    <div className="min-w-0">
                       <div className="text-sm font-medium text-gray-900">
-                        {payment.currency} {payment.amount}
+                        {amountCurrency} {formatMoney(amountValue, amountCurrency)}
                       </div>
                       <div className="text-xs text-gray-500">
                         {payment.status} · {formatDateBolivia(payment.created_at)}
-                        {payment.ocr_extracted_amount && ` · OCR: ${payment.ocr_extracted_amount}`}
+                        {payment.confirmed_at ? ` · Confirmado ${formatDateTimeBolivia(payment.confirmed_at)}` : ''}
+                        {source ? ` · Fuente: ${source}` : ''}
                       </div>
                     </div>
                   </div>
+
+                  {(hasStripeEvidence || hasOcrEvidence || source === 'MANUAL') && (
+                    <div className="mt-3 ml-5 space-y-2">
+                      {hasStripeEvidence && (
+                        <div className="rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-2 text-[11px] text-indigo-900">
+                          <div className="font-semibold uppercase tracking-wide text-indigo-700 mb-1">Evidencia Stripe</div>
+                          {payment.stripe_event_id && <div><span className="font-medium text-indigo-700">Evento:</span> <span className="font-mono break-all">{payment.stripe_event_id}</span></div>}
+                          {payment.stripe_session_id && <div><span className="font-medium text-indigo-700">Session:</span> <span className="font-mono break-all">{payment.stripe_session_id}</span></div>}
+                          {payment.stripe_payment_intent && <div><span className="font-medium text-indigo-700">PaymentIntent:</span> <span className="font-mono break-all">{payment.stripe_payment_intent}</span></div>}
+                          {payment.stripe_customer_email && <div><span className="font-medium text-indigo-700">Email:</span> {payment.stripe_customer_email}</div>}
+                          {stripeMinorAmount && <div><span className="font-medium text-indigo-700">Monto bruto Stripe:</span> {amountCurrency} {stripeMinorAmount}</div>}
+                        </div>
+                      )}
+
+                      {hasOcrEvidence && (
+                        <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-[11px] text-emerald-900">
+                          <div className="font-semibold uppercase tracking-wide text-emerald-700 mb-1">Evidencia OCR</div>
+                          {payment.ocr_extracted_amount != null && <div><span className="font-medium text-emerald-700">Monto:</span> Bs {formatMoney(payment.ocr_extracted_amount, 'BOB')}</div>}
+                          {payment.ocr_extracted_date && <div><span className="font-medium text-emerald-700">Fecha:</span> {payment.ocr_extracted_date}</div>}
+                          {payment.ocr_extracted_dest_name && <div><span className="font-medium text-emerald-700">Destinatario:</span> {payment.ocr_extracted_dest_name}</div>}
+                          {payment.ocr_extracted_ref && <div><span className="font-medium text-emerald-700">Ref:</span> <span className="font-mono break-all">{payment.ocr_extracted_ref}</span></div>}
+                        </div>
+                      )}
+
+                      {source === 'MANUAL' && (
+                        <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-[11px] text-slate-700">
+                          <span className="font-semibold uppercase tracking-wide text-slate-600">Confirmacion manual</span>
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
-              ))
+                );
+              })
             )}
           </div>
         )}

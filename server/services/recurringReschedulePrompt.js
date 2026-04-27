@@ -1,6 +1,7 @@
 const { pool } = require('../db');
 const { sendButtonMessage, sendTextMessage } = require('./whatsapp');
 const { sendTelegramOperationalNotice } = require('./metaHealth');
+const { endRecurringSchedule } = require('./recurring');
 const { normalizePhone } = require('../utils/phone');
 
 const KEEP_RECURRING_PAYLOAD = 'KEEP_RECURRING';
@@ -70,6 +71,21 @@ async function wasPromptRecentlySent(tenantId, clientId, scheduleId) {
   return rows.length > 0;
 }
 
+async function findActiveRecurringScheduleForClient(tenantId, clientId) {
+  const [rows] = await pool.query(
+    `SELECT id
+     FROM recurring_schedules
+     WHERE tenant_id = ?
+       AND client_id = ?
+       AND ended_at IS NULL
+       AND paused_at IS NULL
+     ORDER BY updated_at DESC, id DESC
+     LIMIT 1`,
+    [tenantId, clientId]
+  );
+  return rows[0] || null;
+}
+
 async function maybeSendRecurringReschedulePrompt({ tenantId, clientId, scheduleId, phone, bsuid = null } = {}) {
   if (!tenantId || !clientId || !scheduleId || (!phone && !bsuid)) {
     return { sent: false, skipped: true, reason: 'missing_context' };
@@ -101,7 +117,7 @@ async function maybeSendRecurringReschedulePrompt({ tenantId, clientId, schedule
   const message = buildRecurringReschedulePrompt(row, row);
   const target = phone || { bsuid };
   const result = await sendButtonMessage(target, message, [
-    { id: KEEP_RECURRING_PAYLOAD, title: 'Mantengo programación' },
+    { id: KEEP_RECURRING_PAYLOAD, title: 'Mantengo horario' },
     { id: CHANGE_RECURRING_PAYLOAD, title: 'Voy a cambiar' },
   ]);
 
@@ -166,6 +182,12 @@ async function handleRecurringRescheduleButton({ tenantId, clientId, phone, bsui
       [tenantId, clientId, phone, text, result.messages?.[0]?.id || null, bsuid || null]
     ).catch(() => {});
 
+    const activeSchedule = await findActiveRecurringScheduleForClient(tenantId, clientId);
+    let endedSchedule = null;
+    if (activeSchedule?.id) {
+      endedSchedule = await endRecurringSchedule(tenantId, activeSchedule.id);
+    }
+
     const [clientRows] = await pool.query(
       'SELECT first_name, last_name, phone FROM clients WHERE tenant_id = ? AND id = ? LIMIT 1',
       [tenantId, clientId]
@@ -184,12 +206,31 @@ async function handleRecurringRescheduleButton({ tenantId, clientId, phone, bsui
       payload: {
         source: 'recurring_reschedule_prompt',
         client_id: clientId,
+        schedule_id: endedSchedule?.id || activeSchedule?.id || null,
         client_name: name,
         phone: clientPhone || null,
         wa_link: waLink || null,
       },
     });
-    return { handled: true };
+
+    await pool.query(
+      `INSERT INTO webhooks_log (tenant_id, event, type, payload, status, client_phone, client_id, bsuid)
+       VALUES (?, ?, 'status_change', ?, 'procesado', ?, ?, ?)`,
+      [
+        tenantId,
+        `recurring_change_request_${clientId}`,
+        JSON.stringify({
+          source: 'recurring_reschedule_prompt',
+          action: endedSchedule ? 'ended_recurring_schedule' : 'no_active_recurring_schedule',
+          schedule_id: endedSchedule?.id || activeSchedule?.id || null,
+        }),
+        phone,
+        clientId,
+        bsuid || null,
+      ]
+    ).catch(() => {});
+
+    return { handled: true, endedScheduleId: endedSchedule?.id || null };
   }
 
   return { handled: false };
@@ -201,4 +242,5 @@ module.exports = {
   buildRecurringReschedulePrompt,
   maybeSendRecurringReschedulePrompt,
   handleRecurringRescheduleButton,
+  findActiveRecurringScheduleForClient,
 };

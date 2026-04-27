@@ -364,6 +364,13 @@ router.post('/', async (req, res) => {
             });
 
             if (recurringButton.handled) {
+              if (recurringButton.endedScheduleId) {
+                broadcast('recurring:change', {
+                  action: 'ended',
+                  id: recurringButton.endedScheduleId,
+                  source: 'whatsapp_reschedule_prompt',
+                }, tenantId);
+              }
               continue;
             }
 

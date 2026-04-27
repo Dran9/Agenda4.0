@@ -9,6 +9,7 @@ const { broadcast } = require('../services/adminEvents');
 const { extractIdentity, extractStatusIdentity, resolveIdentity } = require('../services/whatsappIdentity');
 const { ingestMetaWebhookPayload } = require('../services/metaHealth');
 const { resolveQrKey } = require('../services/clientPricing');
+const { handleRecurringRescheduleButton } = require('../services/recurringReschedulePrompt');
 
 const router = Router();
 const CALENDAR_ID = () => process.env.CALENDAR_ID || process.env.GOOGLE_CALENDAR_ID || 'danielmacleann@gmail.com';
@@ -329,10 +330,10 @@ router.post('/', async (req, res) => {
             // Non-fatal — don't block processing
           }
 
-          if (msg.type === 'button') {
+          if (msg.type === 'button' || msg.type === 'interactive') {
             // Button reply from template
-            const payload = msg.button?.payload;
-            const text = msg.button?.text || '';
+            const payload = msg.button?.payload || msg.interactive?.button_reply?.id;
+            const text = msg.button?.text || msg.interactive?.button_reply?.title || '';
             console.log(`[webhook] Button reply from ${phone}: ${payload} (${text})`);
 
             // Log to wa_conversations
@@ -350,6 +351,21 @@ router.post('/', async (req, res) => {
             );
 
             let confirmedAppointmentId = null;
+
+            const recurringButton = await handleRecurringRescheduleButton({
+              tenantId,
+              clientId,
+              phone,
+              bsuid,
+              payload,
+            }).catch((err) => {
+              console.error('[webhook] Recurring reschedule button failed:', err.message);
+              return { handled: false };
+            });
+
+            if (recurringButton.handled) {
+              continue;
+            }
 
             // ─── CONFIRM_NOW: add ✅ to GCal without losing 💰 if already paid ───
             if (payload === 'CONFIRM_NOW') {

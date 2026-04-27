@@ -209,6 +209,58 @@ async function sendTextMessage(phoneOrTarget, text) {
   return data;
 }
 
+async function sendButtonMessage(phoneOrTarget, bodyText, buttons = []) {
+  const token = process.env.WA_TOKEN;
+  const phoneNumberId = process.env.WA_PHONE_ID;
+
+  const target = typeof phoneOrTarget === 'string'
+    ? { phone: phoneOrTarget }
+    : phoneOrTarget;
+
+  const recipientFields = buildRecipientFields(target);
+  const cleanButtons = buttons
+    .filter((button) => button?.id && button?.title)
+    .slice(0, 3)
+    .map((button) => ({
+      type: 'reply',
+      reply: {
+        id: String(button.id).slice(0, 256),
+        title: String(button.title).slice(0, 20),
+      },
+    }));
+
+  if (cleanButtons.length === 0) {
+    throw new Error('Se requiere al menos un botón para enviar mensaje interactivo');
+  }
+
+  const response = await fetch(`${GRAPH_API_URL}/${phoneNumberId}/messages`, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${token}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      messaging_product: 'whatsapp',
+      ...recipientFields,
+      type: 'interactive',
+      interactive: {
+        type: 'button',
+        body: { text: String(bodyText || '').slice(0, 1024) },
+        action: {
+          buttons: cleanButtons,
+        },
+      },
+    }),
+  });
+
+  const data = await response.json();
+  if (!response.ok) {
+    console.error('[whatsapp] Interactive error:', JSON.stringify(data));
+    throw new Error(`WhatsApp API error: ${response.status}`);
+  }
+  return data;
+}
+
 /**
  * Envía una imagen. Acepta phone (string) O target ({ phone?, bsuid? }).
  */
@@ -247,4 +299,12 @@ async function sendImageMessage(phoneOrTarget, imageUrl, caption) {
   return data;
 }
 
-module.exports = { sendConfirmationTemplate, sendRescheduleTemplate, sendPaymentReminderTemplate, sendTextMessage, sendImageMessage, buildRecipientFields };
+module.exports = {
+  sendConfirmationTemplate,
+  sendRescheduleTemplate,
+  sendPaymentReminderTemplate,
+  sendTextMessage,
+  sendButtonMessage,
+  sendImageMessage,
+  buildRecipientFields,
+};

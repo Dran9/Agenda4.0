@@ -340,6 +340,20 @@ async function findRecurringException(tenantId, scheduleId, originalDate, conn =
   return rows[0] || null;
 }
 
+async function findRecurringExceptionByReplacementAppointment(tenantId, replacementAppointmentId, conn = pool) {
+  if (!Number(replacementAppointmentId)) return null;
+  const [rows] = await conn.query(
+    `SELECT *
+     FROM recurring_schedule_exceptions
+     WHERE tenant_id = ?
+       AND replacement_appointment_id = ?
+     ORDER BY updated_at DESC, id DESC
+     LIMIT 1`,
+    [tenantId, replacementAppointmentId]
+  );
+  return rows[0] || null;
+}
+
 async function recordRecurringOccurrenceReschedule({
   tenantId,
   scheduleId,
@@ -1157,6 +1171,7 @@ module.exports = {
   materializeRecurringOccurrence,
   findRecurringScheduleForEventInstance,
   findRecurringException,
+  findRecurringExceptionByReplacementAppointment,
   recordRecurringOccurrenceReschedule,
   getRecurringSchedule,
   syncRecurringFromGCal,

@@ -7,9 +7,11 @@ const {
   isSlotClaimConflictError,
 } = require('./appointmentSlotClaims');
 const {
+  findRecurringExceptionByReplacementAppointment,
   getDateKeyInLaPaz,
   recordRecurringOccurrenceReschedule,
 } = require('./recurring');
+const { maybeSendRecurringReschedulePrompt } = require('./recurringReschedulePrompt');
 const { normalizePhone, normalizedPhoneSql } = require('../utils/phone');
 const { getAutomaticLocalFee, getSpecialFee, isBoliviaCountry } = require('./clientPricing');
 
@@ -311,6 +313,8 @@ async function rescheduleAppointment(clientId, oldAppointmentId, dateTime, tenan
     return { error: 'Cita no encontrada', status: 404 };
   }
   const oldAppt = oldAppts[0];
+  const oldScheduleId = oldAppt.source_schedule_id ? Number(oldAppt.source_schedule_id) : null;
+  let originalRecurringDate = oldScheduleId ? getDateKeyInLaPaz(oldAppt.date_time) : null;
 
   // 2. Get client
   const [clients] = await pool.query('SELECT * FROM clients WHERE id = ? AND tenant_id = ?', [clientId, tenantId]);
@@ -333,11 +337,16 @@ async function rescheduleAppointment(clientId, oldAppointmentId, dateTime, tenan
       }
 
       if (newApptId && oldAppt.source_schedule_id) {
+        const previousException = await findRecurringExceptionByReplacementAppointment(tenantId, oldAppt.id, conn);
+        if (previousException?.original_date) {
+          originalRecurringDate = getDateKeyInLaPaz(previousException.original_date);
+        }
+
         await recordRecurringOccurrenceReschedule({
           tenantId,
           scheduleId: oldAppt.source_schedule_id,
           clientId,
-          originalDate: getDateKeyInLaPaz(oldAppt.date_time),
+          originalDate: originalRecurringDate,
           replacementAppointmentId: newApptId,
           conn,
         });
@@ -367,7 +376,19 @@ async function rescheduleAppointment(clientId, oldAppointmentId, dateTime, tenan
       await conn.query(
         `INSERT INTO webhooks_log (tenant_id, event, type, payload, status, client_phone, client_id, appointment_id)
          VALUES (?, ?, 'reschedule', ?, 'procesado', ?, ?, ?)`,
-        [tenantId, `reschedule_${newApptId}`, JSON.stringify({ old_id: oldAppointmentId, new_date_time: dateTime }), clients[0].phone, clientId, newApptId]
+        [
+          tenantId,
+          `reschedule_${newApptId}`,
+          JSON.stringify({
+            old_id: oldAppointmentId,
+            new_date_time: dateTime,
+            schedule_id: oldScheduleId,
+            original_date: originalRecurringDate,
+          }),
+          clients[0].phone,
+          clientId,
+          newApptId,
+        ]
       );
     });
   } catch (cleanupErr) {
@@ -396,6 +417,17 @@ async function rescheduleAppointment(clientId, oldAppointmentId, dateTime, tenan
   }
 
   console.log(`[reschedule] Old appointment ${oldAppointmentId} deleted, new ${newApptId} created`);
+
+  if (oldScheduleId && newApptId) {
+    maybeSendRecurringReschedulePrompt({
+      tenantId,
+      clientId,
+      scheduleId: oldScheduleId,
+      phone: clients[0].phone,
+    }).catch((promptErr) => {
+      console.error('[reschedule] Recurring reschedule prompt failed:', promptErr.message);
+    });
+  }
 
   return { success: true, status: 'rescheduled', ...result };
 }

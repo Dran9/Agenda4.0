@@ -775,7 +775,7 @@ export default function BookingFlow() {
                         <button key={s.time} type="button" onClick={() => handleSlotClick(s.time)} className="slot-btn">
                           {displayTime(s.time)}
                           {selectedTz?.tz !== 'America/La_Paz' && (
-                            <div style={{ fontSize: 11, fontWeight: 400, color: 'inherit', opacity: 0.7, marginTop: 2, lineHeight: 1.2 }}>{selectedTz.tz}</div>
+                            <div style={{ fontSize: 11, fontWeight: 400, color: '#B34E35', marginTop: 2, lineHeight: 1.2 }}>{selectedTz.tz.split('/').pop().replace(/_/g, ' ')}</div>
                           )}
                         </button>
                       ))}
@@ -792,7 +792,7 @@ export default function BookingFlow() {
                         <button key={s.time} type="button" onClick={() => handleSlotClick(s.time)} className="slot-btn">
                           {displayTime(s.time)}
                           {selectedTz?.tz !== 'America/La_Paz' && (
-                            <div style={{ fontSize: 11, fontWeight: 400, color: 'inherit', opacity: 0.7, marginTop: 2, lineHeight: 1.2 }}>{selectedTz.tz}</div>
+                            <div style={{ fontSize: 11, fontWeight: 400, color: '#B34E35', marginTop: 2, lineHeight: 1.2 }}>{selectedTz.tz.split('/').pop().replace(/_/g, ' ')}</div>
                           )}
                         </button>
                       ))}

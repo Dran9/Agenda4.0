@@ -1,6 +1,8 @@
 const { pool } = require('../db');
 const { listEvents } = require('./calendar');
-const { sendConfirmationTemplate, sendPaymentReminderTemplate } = require('./whatsapp');
+const { sendConfirmationTemplate, sendPaymentReminderTemplate, sendImageMessage } = require('./whatsapp');
+const { resolveQrKey } = require('./clientPricing');
+const { getFile } = require('./storage');
 const { normalizePhone, normalizedPhoneSql } = require('../utils/phone');
 const {
   findRecurringScheduleForEventInstance,
@@ -455,7 +457,10 @@ async function checkAndSendPaymentReminders({
          p.appointment_id,
          a.date_time,
          c.phone,
-         c.first_name
+         c.first_name,
+         c.fee,
+         c.special_fee_enabled,
+         c.country
        FROM payments p
        JOIN appointments a ON a.id = p.appointment_id AND a.tenant_id = p.tenant_id
        JOIN clients c ON c.id = p.client_id AND c.tenant_id = p.tenant_id
@@ -463,6 +468,9 @@ async function checkAndSendPaymentReminders({
        ORDER BY a.date_time ASC`,
       params
     );
+
+    const [tenantRows] = await pool.query('SELECT domain FROM tenants WHERE id = ? LIMIT 1', [tenantId]);
+    const tenantDomain = tenantRows[0]?.domain || '';
 
     let sent = 0;
     let skipped = 0;
@@ -535,6 +543,65 @@ async function checkAndSendPaymentReminders({
             row.appointment_id,
           ]
         );
+
+        // Send QR alongside the payment reminder (Bolivia clients only).
+        // Anti-dup: skip if a QR was already sent for this appointment in the last 24h.
+        try {
+          const normalizedPhone = String(row.phone || '').replace(/\D/g, '');
+          const isBoliviaPhone = normalizedPhone.startsWith('591');
+          if (isBoliviaPhone) {
+            const qrEventKey = `payment_qr_${row.appointment_id}`;
+            const [qrAlready] = await pool.query(
+              `SELECT id FROM webhooks_log
+               WHERE tenant_id = ? AND event = ? AND status = 'enviado'
+                 AND created_at > DATE_SUB(NOW(), INTERVAL 24 HOUR) LIMIT 1`,
+              [tenantId, qrEventKey]
+            );
+            if (qrAlready.length === 0) {
+              const fee = parseInt(row.fee, 10) || parseInt(row.amount, 10);
+              const qrKey = resolveQrKey({
+                client: { fee: row.fee, special_fee_enabled: row.special_fee_enabled, country: row.country },
+                fee,
+                config: cfg,
+              });
+              const qrFile = await getFile(tenantId, qrKey);
+              if (qrFile && tenantDomain) {
+                const qrUrl = `https://${tenantDomain}/api/config/qr/${qrKey}`;
+                const qrCaption = `QR de pago - Bs ${fee}\n\n👉 Por favor sube en este mismo chat el comprobante de tu pago.\nGracias.`;
+                const qrResult = await sendImageMessage(row.phone, qrUrl, qrCaption);
+                await pool.query(
+                  `INSERT INTO wa_conversations (tenant_id, client_id, client_phone, direction, message_type, content, wa_message_id)
+                   VALUES (?, ?, ?, 'outbound', 'auto_reply', ?, ?)`,
+                  [tenantId, row.client_id, row.phone, `QR de pago enviado (${qrKey})`, qrResult.messages?.[0]?.id || null]
+                );
+                await pool.query(
+                  `INSERT INTO webhooks_log (tenant_id, event, type, payload, status, client_phone, client_id, appointment_id)
+                   VALUES (?, ?, 'message_sent', ?, 'enviado', ?, ?, ?)`,
+                  [
+                    tenantId,
+                    qrEventKey,
+                    JSON.stringify({
+                      action: 'payment_qr_sent',
+                      source: 'payment_reminder',
+                      qr_key: qrKey,
+                      fee,
+                      qr_url: qrUrl,
+                      wa_message_id: qrResult.messages?.[0]?.id || null,
+                    }),
+                    row.phone,
+                    row.client_id,
+                    row.appointment_id,
+                  ]
+                );
+                console.log(`[payment-reminder] QR sent to ${row.phone}: ${qrKey}`);
+              } else {
+                console.log(`[payment-reminder] QR skipped for ${row.phone}: missing ${!qrFile ? 'qr_file' : 'tenant_domain'}`);
+              }
+            }
+          }
+        } catch (qrErr) {
+          console.error(`[payment-reminder] QR send failed for ${row.phone} (non-fatal):`, qrErr.message);
+        }
 
         sent++;
       } catch (waErr) {

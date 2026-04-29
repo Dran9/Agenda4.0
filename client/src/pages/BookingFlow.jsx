@@ -774,6 +774,9 @@ export default function BookingFlow() {
                       {morningSlots.map(s => (
                         <button key={s.time} type="button" onClick={() => handleSlotClick(s.time)} className="slot-btn">
                           {displayTime(s.time)}
+                          {selectedTz?.tz !== 'America/La_Paz' && (
+                            <div style={{ fontSize: 11, fontWeight: 400, color: 'inherit', opacity: 0.7, marginTop: 2, lineHeight: 1.2 }}>{selectedTz.tz}</div>
+                          )}
                         </button>
                       ))}
                     </div>
@@ -788,6 +791,9 @@ export default function BookingFlow() {
                       {afternoonSlots.map(s => (
                         <button key={s.time} type="button" onClick={() => handleSlotClick(s.time)} className="slot-btn">
                           {displayTime(s.time)}
+                          {selectedTz?.tz !== 'America/La_Paz' && (
+                            <div style={{ fontSize: 11, fontWeight: 400, color: 'inherit', opacity: 0.7, marginTop: 2, lineHeight: 1.2 }}>{selectedTz.tz}</div>
+                          )}
                         </button>
                       ))}
                     </div>

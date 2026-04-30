@@ -19,6 +19,63 @@ const TABS = [
   { id: 'timeline', label: 'Timeline', icon: Activity },
 ];
 
+function InlineField({ label, field, value, onChange, type = 'text', options = null, textarea = false, placeholder = '', calculatedStatus = '' }) {
+  if (textarea) {
+    return (
+      <div className="py-2">
+        <span className="text-xs text-gray-400 block mb-1.5 uppercase tracking-wider font-semibold">{label}</span>
+        <textarea
+          value={value || ''}
+          onChange={e => onChange(field, e.target.value || null)}
+          placeholder={placeholder}
+          rows={3}
+          className="w-full text-sm text-gray-900 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:border-[#4E769B] focus:ring-1 focus:ring-[#4E769B] resize-none"
+        />
+      </div>
+    );
+  }
+
+  if (options) {
+    return (
+      <div className="flex justify-between items-center py-2 border-b border-gray-100">
+        <span className="text-sm text-gray-500">{label}</span>
+        <select
+          value={value || ''}
+          onChange={e => onChange(field, e.target.value || null)}
+          className="text-sm font-medium text-gray-900 bg-gray-50 border border-gray-200 rounded-lg px-3 py-1.5 focus:outline-none focus:border-[#4E769B] focus:ring-1 focus:ring-[#4E769B]"
+        >
+          {field === 'status_override' && <option value="">Auto ({calculatedStatus})</option>}
+          {options.map(opt => (
+            typeof opt === 'string'
+              ? <option key={opt} value={opt}>{opt}</option>
+              : <option key={opt.value || opt.name} value={opt.value || opt.name}>{opt.label || opt.name}</option>
+          ))}
+        </select>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex justify-between items-center py-2 border-b border-gray-100">
+      <span className="text-sm text-gray-500">{label}</span>
+      <input
+        type={type}
+        value={value || ''}
+        onChange={e => {
+          const raw = e.target.value;
+          if (type === 'number') {
+            onChange(field, raw === '' ? null : parseFloat(raw));
+          } else {
+            onChange(field, raw || null);
+          }
+        }}
+        placeholder={placeholder}
+        className="text-sm font-medium text-gray-900 bg-gray-50 border border-gray-200 rounded-lg px-3 py-1.5 w-40 text-right focus:outline-none focus:border-[#4E769B] focus:ring-1 focus:ring-[#4E769B]"
+      />
+    </div>
+  );
+}
+
 function formatFeeDisplay(value, currency) {
   let amount = Number(value);
   if (!Number.isFinite(amount)) return '0';
@@ -283,64 +340,6 @@ export default function ClientProfile() {
   ].sort((a, b) => new Date(b.date) - new Date(a.date));
 
   // Reusable inline field component
-  function InlineField({ label, field, type = 'text', options = null, textarea = false, placeholder = '' }) {
-    const value = draft[field];
-
-    if (textarea) {
-      return (
-        <div className="py-2">
-          <span className="text-xs text-gray-400 block mb-1.5 uppercase tracking-wider font-semibold">{label}</span>
-          <textarea
-            value={value || ''}
-            onChange={e => updateField(field, e.target.value || null)}
-            placeholder={placeholder}
-            rows={3}
-            className="w-full text-sm text-gray-900 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:border-[#4E769B] focus:ring-1 focus:ring-[#4E769B] resize-none"
-          />
-        </div>
-      );
-    }
-
-    if (options) {
-      return (
-        <div className="flex justify-between items-center py-2 border-b border-gray-100">
-          <span className="text-sm text-gray-500">{label}</span>
-          <select
-            value={value || ''}
-            onChange={e => updateField(field, e.target.value || null)}
-            className="text-sm font-medium text-gray-900 bg-gray-50 border border-gray-200 rounded-lg px-3 py-1.5 focus:outline-none focus:border-[#4E769B] focus:ring-1 focus:ring-[#4E769B]"
-          >
-            {field === 'status_override' && <option value="">Auto ({client.calculated_status})</option>}
-            {options.map(opt => (
-              typeof opt === 'string'
-                ? <option key={opt} value={opt}>{opt}</option>
-                : <option key={opt.value || opt.name} value={opt.value || opt.name}>{opt.label || opt.name}</option>
-            ))}
-          </select>
-        </div>
-      );
-    }
-
-    return (
-      <div className="flex justify-between items-center py-2 border-b border-gray-100">
-        <span className="text-sm text-gray-500">{label}</span>
-        <input
-          type={type}
-          value={value || ''}
-          onChange={e => {
-            const raw = e.target.value;
-            if (type === 'number') {
-              updateField(field, raw === '' ? null : parseFloat(raw));
-            } else {
-              updateField(field, raw || null);
-            }
-          }}
-          placeholder={placeholder}
-          className="text-sm font-medium text-gray-900 bg-gray-50 border border-gray-200 rounded-lg px-3 py-1.5 w-40 text-right focus:outline-none focus:border-[#4E769B] focus:ring-1 focus:ring-[#4E769B]"
-        />
-      </div>
-    );
-  }
 
   return (
     <AdminLayout title={fullName || 'Perfil de cliente'}>
@@ -464,15 +463,17 @@ export default function ClientProfile() {
                   <User size={16} /> Información personal
                 </h3>
                 <div className="space-y-0">
-                  <InlineField label="Nombre" field="first_name" />
-                  <InlineField label="Apellido" field="last_name" />
-                  <InlineField label="Teléfono" field="phone" />
-                  <InlineField label="Edad" field="age" type="number" />
-                  <InlineField label="Ciudad" field="city" />
-                  <InlineField label="País" field="country" />
+                  <InlineField label="Nombre" field="first_name" value={draft.first_name} onChange={updateField} />
+                  <InlineField label="Apellido" field="last_name" value={draft.last_name} onChange={updateField} />
+                  <InlineField label="Teléfono" field="phone" value={draft.phone} onChange={updateField} />
+                  <InlineField label="Edad" field="age" type="number" value={draft.age} onChange={updateField} />
+                  <InlineField label="Ciudad" field="city" value={draft.city} onChange={updateField} />
+                  <InlineField label="País" field="country" value={draft.country} onChange={updateField} />
                   <InlineField
                     label="Zona horaria"
                     field="timezone"
+                    value={draft.timezone}
+                    onChange={updateField}
                     options={getTimezoneOptions(draft.timezone)}
                   />
                 </div>
@@ -483,9 +484,9 @@ export default function ClientProfile() {
                   <FileText size={16} /> Detalles clínicos y administrativos
                 </h3>
                 <div className="space-y-0">
-                  <InlineField label="Modalidad" field="modality" options={MODALITIES} />
-                  <InlineField label="Frecuencia" field="frequency" options={FREQUENCIES} />
-                  <InlineField label="Fuente" field="source" options={sources} />
+                  <InlineField label="Modalidad" field="modality" value={draft.modality} onChange={updateField} options={MODALITIES} />
+                  <InlineField label="Frecuencia" field="frequency" value={draft.frequency} onChange={updateField} options={FREQUENCIES} />
+                  <InlineField label="Fuente" field="source" value={draft.source} onChange={updateField} options={sources} />
                   <div className="flex justify-between items-center py-2 border-b border-gray-100">
                     <span className="text-sm text-gray-500">Arancel</span>
                     <div className="flex items-center gap-2">
@@ -504,21 +505,28 @@ export default function ClientProfile() {
                       />
                     </div>
                   </div>
-                  <InlineField label="Método de pago" field="payment_method" options={PAYMENT_METHODS} />
+                  <InlineField label="Método de pago" field="payment_method" value={draft.payment_method} onChange={updateField} options={PAYMENT_METHODS} />
                   <InlineField
                     label="Status"
                     field="status_override"
+                    value={draft.status_override}
+                    onChange={updateField}
+                    calculatedStatus={client.calculated_status}
                     options={statuses.map(s => ({ name: s.name, label: s.name }))}
                   />
                   <InlineField
                     label="Diagnóstico"
                     field="diagnosis"
+                    value={draft.diagnosis}
+                    onChange={updateField}
                     textarea
                     placeholder="Sin diagnóstico registrado"
                   />
                   <InlineField
                     label="Notas"
                     field="notes"
+                    value={draft.notes}
+                    onChange={updateField}
                     textarea
                     placeholder="Sin notas"
                   />

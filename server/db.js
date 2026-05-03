@@ -368,6 +368,7 @@ async function initializeDatabase() {
         original_name VARCHAR(255),
         size_bytes INT,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
         UNIQUE KEY unique_key_tenant (file_key, tenant_id),
         KEY idx_tenant (tenant_id),
         FOREIGN KEY (tenant_id) REFERENCES tenants(id)
@@ -692,6 +693,8 @@ async function initializeDatabase() {
     await conn.query(`ALTER TABLE config ADD COLUMN IF NOT EXISTS foreign_pricing_profiles JSON`).catch(() => {});
     await conn.query(`ALTER TABLE config ADD COLUMN IF NOT EXISTS stripe_webhook_url VARCHAR(500)`).catch(() => {});
     await conn.query(`ALTER TABLE config ADD COLUMN IF NOT EXISTS stripe_webhook_secret VARCHAR(255)`).catch(() => {});
+    // files.updated_at — used as cache buster for QR URLs sent to WhatsApp (Meta caches by URL)
+    await conn.query(`ALTER TABLE files ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP`).catch(() => {});
     await conn.query(`ALTER TABLE appointments MODIFY COLUMN status ENUM('Agendada','Confirmada','Reagendada','Cancelada','Completada','No-show') DEFAULT 'Agendada'`).catch(() => {});
     await conn.query(`ALTER TABLE appointments ADD COLUMN IF NOT EXISTS booking_context JSON DEFAULT NULL`).catch(() => {});
     await conn.query(`ALTER TABLE appointments ADD COLUMN IF NOT EXISTS source_schedule_id INT DEFAULT NULL`).catch(() => {});

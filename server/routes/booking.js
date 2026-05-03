@@ -58,7 +58,7 @@ async function sendPublicRescheduleConfirmation({ tenantId, clientId, phone, dat
     dateTime,
     client.timezone || 'America/La_Paz'
   );
-  const message = `✅ Perfecto ${client.first_name || 'hola'}, tu sesión está reprogramada para el *${dateLabel}* a las *${timeLabel}*.\nHasta pronto.`;
+  const message = `✔ Perfecto ${client.first_name || 'hola'}, tu sesión está reprogramada para el *${dateLabel}* a las *${timeLabel}*.\nHasta pronto.`;
   const result = await sendTextMessage(phone, message);
 
   await pool.query(

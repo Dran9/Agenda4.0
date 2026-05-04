@@ -30,6 +30,7 @@ const recurringRoutes = require('./routes/recurring');
 const quickActionsRoutes = require('./routes/quickActions');
 const metaHealthRoutes = require('./routes/metaHealth');
 const stripeWebhookRoutes = require('./routes/stripeWebhook');
+const telegramAuthRoutes = require('./routes/telegramAuth');
 
 const app = express();
 app.set('trust proxy', 1);
@@ -74,6 +75,7 @@ app.use('/api/recurring', recurringRoutes);
 app.use('/api/quick-actions', quickActionsRoutes);
 app.use('/api/meta-health', metaHealthRoutes);
 app.use('/api/stripe', stripeWebhookRoutes);
+app.use('/api/auth', telegramAuthRoutes);
 
 // ─── Admin SSE stream (protected) ───────────────────────────────
 app.get('/api/admin/events', authMiddleware, sseHandler);
@@ -162,6 +164,24 @@ if (fs.existsSync(distPath)) {
   });
   app.use('/assets', express.static(path.join(distPath, 'assets'), { maxAge: 0, etag: false }));
   app.use(express.static(distPath, { maxAge: 0, etag: false }));
+}
+
+// ─── Serve Telegram Mini App ─────────────────────────────────────
+const telegramDistPath = path.join(__dirname, '..', 'telegram-mini-app', 'dist');
+if (fs.existsSync(telegramDistPath)) {
+  app.use('/telegram', express.static(telegramDistPath, { maxAge: 0, etag: false }));
+  app.get('/telegram/*', (req, res) => {
+    const indexPath = path.join(telegramDistPath, 'index.html');
+    if (fs.existsSync(indexPath)) {
+      const html = fs.readFileSync(indexPath, 'utf-8');
+      res.set('Content-Type', 'text/html; charset=UTF-8');
+      res.set('Cache-Control', 'no-store, no-cache, must-revalidate');
+      res.set('X-LiteSpeed-Cache-Control', 'no-cache');
+      res.send(html);
+    } else {
+      res.status(404).send('Telegram Mini App build pending.');
+    }
+  });
 }
 
 

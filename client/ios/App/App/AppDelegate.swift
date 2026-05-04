@@ -4,12 +4,13 @@ import LocalAuthentication
 import WebKit
 
 @UIApplicationMain
-class AppDelegate: UIResponder, UIApplicationDelegate {
+class AppDelegate: UIResponder, UIApplicationDelegate, WKNavigationDelegate {
 
     var window: UIWindow?
     private var lockView: UIView?
     private var privacyView: UIView?
     private var refreshControl: UIRefreshControl?
+    private var isRefreshing = false
 
     func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
         DispatchQueue.main.async { [weak self] in
@@ -23,19 +24,57 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
         return true
     }
 
-    private func setupPullToRefresh() {
-        guard let bridgeVC = window?.rootViewController as? CAPBridgeViewController,
-              let webView = bridgeVC.bridge?.webView else { return }
+    // Finds WKWebView anywhere in the view hierarchy
+    private func findWebView(in view: UIView) -> WKWebView? {
+        if let wk = view as? WKWebView { return wk }
+        for sub in view.subviews {
+            if let found = findWebView(in: sub) { return found }
+        }
+        return nil
+    }
+
+    private func setupPullToRefresh(attempt: Int = 0) {
+        guard attempt < 20 else { return } // max 10s of retries
+        guard let rootView = window?.rootViewController?.view,
+              let webView = findWebView(in: rootView) else {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+                self?.setupPullToRefresh(attempt: attempt + 1)
+            }
+            return
+        }
+        // Already set up
+        guard refreshControl == nil else { return }
+        webView.scrollView.bounces = true
+        webView.scrollView.alwaysBounceVertical = true
+        webView.navigationDelegate = self
         let rc = UIRefreshControl()
+        rc.tintColor = UIColor.white.withAlphaComponent(0.8)
         rc.addTarget(self, action: #selector(handleRefresh), for: .valueChanged)
-        webView.scrollView.addSubview(rc)
+        webView.scrollView.refreshControl = rc
         refreshControl = rc
     }
 
     @objc private func handleRefresh() {
-        guard let bridgeVC = window?.rootViewController as? CAPBridgeViewController,
-              let webView = bridgeVC.bridge?.webView else { return }
+        guard let rootView = window?.rootViewController?.view,
+              let webView = findWebView(in: rootView) else {
+            refreshControl?.endRefreshing()
+            return
+        }
+        isRefreshing = true
         webView.reload()
+    }
+
+    // WKNavigationDelegate — stop spinner when page finishes loading
+    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        guard isRefreshing else { return }
+        isRefreshing = false
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
+            self?.refreshControl?.endRefreshing()
+        }
+    }
+
+    func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
+        isRefreshing = false
         refreshControl?.endRefreshing()
     }
 

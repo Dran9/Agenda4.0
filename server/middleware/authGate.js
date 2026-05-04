@@ -11,6 +11,7 @@ const PUBLIC_ROUTES = [
   { method: 'POST', pattern: /^\/api\/auth\/login$/ },
   { method: 'POST', pattern: /^\/api\/auth\/voice-login$/ },
   { method: 'POST', pattern: /^\/api\/auth\/admin-login$/ },
+  { method: 'POST', pattern: /^\/api\/auth\/telegram$/ },
 
   // Booking público (rate-limited en el handler)
   { method: 'POST', pattern: /^\/api\/book$/ },

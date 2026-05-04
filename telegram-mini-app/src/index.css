@@ -1,16 +1,46 @@
+@import url('https://fonts.googleapis.com/css2?family=Work+Sans:wght@400;500;600;700&display=swap');
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
+:root {
+  --negro: #3C3939;
+  --azul-acero: #4E769B;
+  --hueso: #FAF8F1;
+  --blanco: #FFFFFF;
+  --gris-medio: #A4A4A6;
+  --gris-claro: #C5C2C0;
+  --border: #E6E6E6;
+}
+
 body {
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
-  background-color: var(--tg-theme-bg-color, #ffffff);
-  color: var(--tg-theme-text-color, #000000);
+  font-family: 'Work Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+  background-color: var(--hueso);
+  color: var(--negro);
   margin: 0;
   padding: 0;
   overscroll-behavior: none;
+  -webkit-font-smoothing: antialiased;
 }
 
 button {
   touch-action: manipulation;
+  font-family: inherit;
+}
+
+input, select, textarea {
+  font-family: inherit;
+}
+
+/* Scrollbar minimalista */
+::-webkit-scrollbar {
+  width: 4px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--gris-claro);
+  border-radius: 4px;
 }

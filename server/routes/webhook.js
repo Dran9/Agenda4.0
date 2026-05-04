@@ -736,7 +736,7 @@ router.post('/', async (req, res) => {
                     ocrResult = await extractReceiptData(buffer, mimeType);
 
                     if (ocrResult && ocrResult.amount) {
-                      console.log(`[webhook] OCR: ${ocrResult.name}, Bs ${ocrResult.amount}, ${ocrResult.date}, ref: ${ocrResult.reference}, destVerified: ${ocrResult.destVerified}`);
+                      console.log(`[webhook] OCR: ${ocrResult.name}, Bs ${ocrResult.amount}, ${ocrResult.date}, ref: ${ocrResult.reference}, destVerified: ${ocrResult.destVerified}, destLevel: ${ocrResult.destVerificationLevel || 'n/a'}`);
 
                       // Find unresolved payment for this client.
                       // Keep mismatch retryable so a second valid receipt can fix the same appointment.
@@ -774,8 +774,8 @@ router.post('/', async (req, res) => {
                         // ─── 3 validations: destinatario, monto, fecha ───
                         const problems = [];
 
-                        // 1. Destinatario: destination account must match one of Daniel's valid accounts
-                        const recipientMismatch = ocrResult.destAccountVerified !== true;
+                        // 1. Destinatario: exact account, or masked account plus trusted recipient name.
+                        const recipientMismatch = ocrResult.destVerified !== true;
                         if (recipientMismatch) {
                           problems.push({ type: 'destinatario' });
                         }
@@ -910,8 +910,11 @@ router.post('/', async (req, res) => {
               ocr_reference: ocrResult.reference || null,
               ocr_dest_name: ocrResult.destName || null,
               ocr_dest_account: ocrResult.destAccount || null,
+              ocr_dest_account_masked: ocrResult.destAccountMasked || null,
               ocr_dest_account_verified: ocrResult.destAccountVerified || false,
+              ocr_dest_name_verified: ocrResult.destNameVerified || false,
               ocr_dest_verified: ocrResult.destVerified || false,
+              ocr_dest_verification_level: ocrResult.destVerificationLevel || null,
               ocr_bank: ocrResult.bank || null,
               ocr_raw_text: ocrResult.raw_text || null,
             } : {});

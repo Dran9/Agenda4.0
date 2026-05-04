@@ -117,6 +117,39 @@ function parseBolivianReceipt(text) {
     return String(value || '').replace(/\D/g, '');
   }
 
+  function normalizeTextForMatch(value) {
+    return String(value || '')
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, ' ')
+      .trim()
+      .replace(/\s+/g, ' ');
+  }
+
+  function isTrustedDestinationName(value) {
+    const normalized = normalizeTextForMatch(value);
+    if (!normalized) return false;
+
+    const tokens = new Set(normalized.split(' ').filter(Boolean));
+    const compact = normalized.replace(/\s+/g, '');
+    const hasMacLean = compact.includes('maclean') || (tokens.has('mac') && tokens.has('lean'));
+    const hasDaniel = tokens.has('daniel');
+    const hasOscar = tokens.has('oscar');
+    const hasEstrada = tokens.has('estrada');
+
+    // Oscar appears on many bank receipts as part of the legal name, but it is
+    // only accepted together with stronger identity signals.
+    if (hasMacLean && (hasDaniel || hasOscar)) return true;
+    if (hasOscar && hasDaniel && hasEstrada) return true;
+
+    const configuredNames = (process.env.VALID_DESTINATION_NAMES || '')
+      .split(',')
+      .map(normalizeTextForMatch)
+      .filter(name => name.length >= 8);
+    return normalized.length >= 8 && configuredNames.some(name => normalized.includes(name) || name.includes(normalized));
+  }
+
   function findWhitelistedAccountInText() {
     const candidates = new Set();
 
@@ -134,6 +167,38 @@ function parseBolivianReceipt(text) {
     for (const candidate of candidates) {
       if (VALID_DESTINATION_ACCOUNTS.has(candidate)) {
         return candidate;
+      }
+    }
+
+    return null;
+  }
+
+  function findMaskedWhitelistedAccountInText() {
+    const maskedAccountPattern = /\d[\d\s.*xX•●·∙-]{4,}\d/g;
+    const maskPattern = /[*xX•●·∙]/;
+
+    for (const line of lines) {
+      const matches = line.match(maskedAccountPattern) || [];
+      for (const match of matches) {
+        if (!maskPattern.test(match)) continue;
+
+        const compact = match.replace(/[\s.-]/g, '');
+        const maskedMatch = compact.match(/^(\d{3,})([*xX•●·∙]+)(\d{3,})$/);
+        if (!maskedMatch) continue;
+
+        const [, prefix, , suffix] = maskedMatch;
+        const matchingAccounts = [...VALID_DESTINATION_ACCOUNTS].filter(account =>
+          account.startsWith(prefix) && account.endsWith(suffix)
+        );
+
+        if (matchingAccounts.length === 1) {
+          return {
+            account: matchingAccounts[0],
+            maskedAccount: compact,
+            prefix,
+            suffix,
+          };
+        }
       }
     }
 
@@ -375,8 +440,8 @@ function parseBolivianReceipt(text) {
   if (!destAccount) {
     const creditedLine = lines.find(l => /se\s+acredit[oó]\s+a\s+la\s+cuenta/i.test(l));
     if (creditedLine) {
-      const accountMatch = creditedLine.match(/se\s+acredit[oó]\s+a\s+la\s+cuenta[:\s]*([\d\s.-]{6,})/i);
-      if (accountMatch) {
+      const accountMatch = creditedLine.match(/se\s+acredit[oó]\s+a\s+la\s+cuenta[:\s]*([\d\s.*xX•●·∙-]{6,})/i);
+      if (accountMatch && !/[*xX•●·∙]/.test(accountMatch[1])) {
         destAccount = normalizeAccount(accountMatch[1]);
       }
     }
@@ -385,22 +450,41 @@ function parseBolivianReceipt(text) {
   // Pattern 4: explicit account labels like "N° de cuenta"
   if (!destAccount) {
     const accountMatch = fullText.match(
-      /(?:n[°º]\s*de\s*cuenta|n[uú]mero\s*de\s*cuenta|cuenta\s*(?:de\s+)?destino|a\s+la\s+cuenta|se\s+acredit[oó]\s+a\s+la\s+cuenta)[:\s]*([\d\s.-]{6,})/i
+      /(?:n[°º]\s*de\s*cuenta|n[uú]mero\s*de\s*cuenta|cuenta\s*(?:de\s+)?destino|a\s+la\s+cuenta|se\s+acredit[oó]\s+a\s+la\s+cuenta)[:\s]*([\d\s.*xX•●·∙-]{6,})/i
     );
-    if (accountMatch) {
+    if (accountMatch && !/[*xX•●·∙]/.test(accountMatch[1])) {
       destAccount = normalizeAccount(accountMatch[1]);
     }
   }
 
   // ─── Destination verification ───
-  // Destination is valid only when the extracted destination account matches
-  // one of the whitelisted bank accounts. Recipient names are informational only.
+  // Destination is valid when the extracted account is exact, or when a masked
+  // account uniquely matches a whitelisted account and the recipient name matches.
   const matchedWhitelistedAccount = findWhitelistedAccountInText();
+  const maskedWhitelistedAccount = findMaskedWhitelistedAccountInText();
   if (!destAccount && matchedWhitelistedAccount) {
     destAccount = matchedWhitelistedAccount;
   }
-  const destAccountVerified = VALID_DESTINATION_ACCOUNTS.has(destAccount || '') || !!matchedWhitelistedAccount;
+  const exactVerifiedAccount = VALID_DESTINATION_ACCOUNTS.has(destAccount || '')
+    ? destAccount
+    : matchedWhitelistedAccount;
+  const destNameVerified = isTrustedDestinationName(destName);
+  const maskedAccountVerified = !!maskedWhitelistedAccount && destNameVerified;
+  const destAccountVerified = !!exactVerifiedAccount || maskedAccountVerified;
   const destVerified = destAccountVerified;
+  const destVerificationLevel = exactVerifiedAccount
+    ? 'exact_account'
+    : maskedAccountVerified
+      ? 'masked_account_with_name'
+      : maskedWhitelistedAccount
+        ? 'masked_account_untrusted_name'
+        : destNameVerified
+          ? 'name_only'
+          : 'none';
+  const destAccountForDisplay = exactVerifiedAccount
+    || maskedWhitelistedAccount?.maskedAccount
+    || destAccount
+    || null;
 
   // ─── Reference / transaction code ───
   let reference = null;
@@ -455,7 +539,7 @@ function parseBolivianReceipt(text) {
     else if (/sol/i.test(fullText)) bank = 'BancoSol';
   }
 
-  console.log(`[ocr] Extracted — name: ${name}, amount: ${amount}, date: ${date}, ref: ${reference}, bank: ${bank}, dest: ${destName}, destAccount: ${destAccount}, destVerified: ${destVerified}`);
+  console.log(`[ocr] Extracted — name: ${name}, amount: ${amount}, date: ${date}, ref: ${reference}, bank: ${bank}, dest: ${destName}, destAccount: ${destAccountForDisplay}, destVerified: ${destVerified}, destLevel: ${destVerificationLevel}`);
 
   return {
     name: name ? toTitleCase(name) : null,
@@ -464,9 +548,12 @@ function parseBolivianReceipt(text) {
     reference,
     bank,
     destName: destName || null,
-    destAccount: destAccount || matchedWhitelistedAccount || null,
+    destAccount: destAccountForDisplay,
+    destAccountMasked: maskedWhitelistedAccount?.maskedAccount || null,
     destAccountVerified,
+    destNameVerified,
     destVerified,
+    destVerificationLevel,
     raw_text: fullText,
   };
 }

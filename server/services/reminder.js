@@ -1,7 +1,7 @@
 const { pool } = require('../db');
 const { listEvents } = require('./calendar');
 const { sendConfirmationTemplate, sendPaymentReminderTemplate, sendImageMessage } = require('./whatsapp');
-const { resolveQrKey } = require('./clientPricing');
+const { isBoliviaCountry, resolveQrKey } = require('./clientPricing');
 const { getFile } = require('./storage');
 const { normalizePhone, normalizedPhoneSql } = require('../utils/phone');
 const {
@@ -549,7 +549,9 @@ async function checkAndSendPaymentReminders({
         try {
           const normalizedPhone = String(row.phone || '').replace(/\D/g, '');
           const isBoliviaPhone = normalizedPhone.startsWith('591');
-          if (isBoliviaPhone) {
+          const rawClientCountry = String(row.country || '').trim();
+          const hasBoliviaCountrySignal = !!rawClientCountry && isBoliviaCountry(rawClientCountry);
+          if (isBoliviaPhone || hasBoliviaCountrySignal) {
             const qrEventKey = `payment_qr_${row.appointment_id}`;
             const [qrAlready] = await pool.query(
               `SELECT id FROM webhooks_log

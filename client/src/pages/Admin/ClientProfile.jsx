@@ -125,6 +125,31 @@ const FREQUENCIES = ['Semanal', 'Quincenal', 'Mensual', 'Irregular'];
 const PAYMENT_METHODS = ['QR', 'Efectivo', 'Transferencia'];
 const CURRENCIES = ['BOB', 'USD'];
 
+function parseForeignPricingProfiles(rawProfiles) {
+  let parsed = rawProfiles;
+  if (typeof parsed === 'string') {
+    try {
+      parsed = JSON.parse(parsed);
+    } catch {
+      parsed = [];
+    }
+  }
+  if (!Array.isArray(parsed)) return [];
+  return parsed
+    .map((profile) => {
+      const key = String(profile?.key || '').trim();
+      if (!key) return null;
+      const amount = Number(profile?.amount);
+      return {
+        key,
+        name: String(profile?.name || key).trim() || key,
+        amount: Number.isFinite(amount) ? amount : 0,
+        currency: String(profile?.currency || 'USD').toUpperCase() === 'BOB' ? 'BOB' : 'USD',
+      };
+    })
+    .filter(Boolean);
+}
+
 function statusColor(status) {
   const colors = {
     'Nuevo': { bg: '#dbeafe', text: '#1e40af' },
@@ -171,6 +196,7 @@ export default function ClientProfile() {
   const [activeTab, setActiveTab] = useState('info');
   const [statuses, setStatuses] = useState(DEFAULT_STATUSES);
   const [sources, setSources] = useState(DEFAULT_SOURCES);
+  const [foreignPricingProfiles, setForeignPricingProfiles] = useState([]);
 
   const loadData = useCallback(async ({ silent = false } = {}) => {
     if (!silent) setLoading(true);
@@ -197,6 +223,7 @@ export default function ClientProfile() {
         const s = typeof cfgRes.custom_sources === 'string' ? JSON.parse(cfgRes.custom_sources) : cfgRes.custom_sources;
         if (s.length > 0) setSources(s);
       }
+      setForeignPricingProfiles(parseForeignPricingProfiles(cfgRes.foreign_pricing_profiles));
     } catch (err) {
       showToast('Error cargando perfil: ' + err.message, 'error');
     } finally {
@@ -250,7 +277,7 @@ export default function ClientProfile() {
     try {
       const fields = [
         'first_name', 'last_name', 'phone', 'age', 'city', 'country', 'timezone',
-        'modality', 'frequency', 'source', 'fee', 'fee_currency', 'payment_method',
+        'modality', 'frequency', 'source', 'fee', 'fee_currency', 'foreign_pricing_key', 'special_fee_enabled', 'payment_method',
         'notes', 'diagnosis', 'status_override'
       ];
       for (const f of fields) {
@@ -505,7 +532,31 @@ export default function ClientProfile() {
                       />
                     </div>
                   </div>
-                  <InlineField label="Método de pago" field="payment_method" value={draft.payment_method} onChange={updateField} options={PAYMENT_METHODS} />
+                  <div className="flex justify-between items-center py-2 border-b border-gray-100">
+                    <span className="text-sm text-gray-500">Perfil Stripe</span>
+                    <select
+                      value={draft.foreign_pricing_key || ''}
+                      onChange={e => {
+                        const nextKey = e.target.value || null;
+                        const selectedProfile = foreignPricingProfiles.find((profile) => profile.key === nextKey);
+                        updateField('foreign_pricing_key', nextKey);
+                        if (selectedProfile) {
+                          updateField('fee', Number(selectedProfile.amount || 0));
+                          updateField('fee_currency', selectedProfile.currency || 'USD');
+                        }
+                      }}
+                      disabled={!!draft.special_fee_enabled}
+                      className="text-sm font-medium text-gray-900 bg-gray-50 border border-gray-200 rounded-lg px-3 py-1.5 focus:outline-none focus:border-[#4E769B] focus:ring-1 focus:ring-[#4E769B] disabled:bg-gray-100 disabled:text-gray-400"
+                    >
+                      <option value="">Sin perfil</option>
+                      {foreignPricingProfiles.map((profile) => (
+                        <option key={profile.key} value={profile.key}>
+                          {profile.key} · {profile.currency} {profile.amount}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <InlineField label="Método local" field="payment_method" value={draft.payment_method} onChange={updateField} options={PAYMENT_METHODS} />
                   <InlineField
                     label="Status"
                     field="status_override"

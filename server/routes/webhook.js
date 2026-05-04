@@ -8,7 +8,7 @@ const { verifyWebhookSignatureFromReq } = require('../utils/webhookSignature');
 const { broadcast } = require('../services/adminEvents');
 const { extractIdentity, extractStatusIdentity, resolveIdentity } = require('../services/whatsappIdentity');
 const { ingestMetaWebhookPayload } = require('../services/metaHealth');
-const { resolveQrKey } = require('../services/clientPricing');
+const { isBoliviaCountry, resolveQrKey } = require('../services/clientPricing');
 const { handleRecurringRescheduleButton } = require('../services/recurringReschedulePrompt');
 
 const router = Router();
@@ -524,13 +524,16 @@ router.post('/', async (req, res) => {
                         const isBoliviaPhone = normalizedPhone.startsWith('591');
                         const ipCountryCode = String(bookingContext?.ip_country_code || '').toUpperCase();
                         const locationCountryCode = String(bookingContext?.location_country_code || '').toUpperCase();
-                        const clientCountry = String(appointment.client_country || '').trim().toUpperCase();
+                        const rawClientCountry = String(appointment.client_country || '').trim();
+                        const clientCountry = rawClientCountry.toUpperCase();
+                        const hasClientCountrySignal = !!rawClientCountry && isBoliviaCountry(rawClientCountry);
                         const locationConfirmedManually = !!bookingContext?.location_confirmed_manually;
                         const hasBoliviaSignal =
                           locationCountryCode === 'BO'
                           || ipCountryCode === 'BO'
                           || clientCountry === 'BO'
-                          || clientCountry === 'BOLIVIA';
+                          || clientCountry === 'BOLIVIA'
+                          || hasClientCountrySignal;
                         const hasAnyLocationSignal = !!(
                           locationCountryCode
                           || ipCountryCode
@@ -540,7 +543,7 @@ router.post('/', async (req, res) => {
                         // Older/manual bookings may have no booking_context at all.
                         // In that case, a Bolivian phone is the best available signal and should not block the QR.
                         const shouldFallbackToPhoneOnly = isBoliviaPhone && !hasAnyLocationSignal;
-                        const shouldSendBoliviaQr = isBoliviaPhone && (hasBoliviaSignal || shouldFallbackToPhoneOnly);
+                        const shouldSendBoliviaQr = hasBoliviaSignal || shouldFallbackToPhoneOnly;
 
                         if (!shouldSendBoliviaQr) {
                           console.log(

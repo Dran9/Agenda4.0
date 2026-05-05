@@ -32,6 +32,43 @@ async function getNextAppointment(clientId, tenantId) {
   return rows[0] || null;
 }
 
+async function sendQuickRescheduleLink(req, res) {
+  const { client_id } = req.body;
+  if (!client_id) return res.status(400).json({ error: 'Selecciona un cliente antes de enviar el link de reagendamiento.' });
+
+  const [clients] = await pool.query(
+    'SELECT id, phone, first_name FROM clients WHERE id = ? AND tenant_id = ? AND deleted_at IS NULL',
+    [client_id, req.tenantId]
+  );
+  if (clients.length === 0) return res.status(404).json({ error: 'Cliente no encontrado.' });
+
+  const appt = await getNextAppointment(client_id, req.tenantId);
+  if (!appt) {
+    return res.status(409).json({
+      error: 'No se puede enviar link de reagendamiento porque este cliente no tiene una cita futura agendada.',
+      code: 'NO_UPCOMING_APPOINTMENT',
+      suggestion: 'Primero crea una cita nueva o activa/materializa su recurrencia.',
+    });
+  }
+
+  const client = clients[0];
+  const domain = await getTenantDomain(req.tenantId);
+  if (!domain) return res.status(500).json({ error: 'Dominio del tenant no configurado.' });
+
+  const phone = normalizePhone(client.phone);
+  const link = `https://${domain}/?r=${phone}`;
+  const result = await sendRescheduleTemplate(phone, client.first_name, link);
+
+  // Log in webhooks_log
+  await pool.query(
+    `INSERT INTO webhooks_log (tenant_id, event, type, payload, status, client_phone, client_id, appointment_id)
+     VALUES (?, 'reschedule_link_sent', 'message_sent', ?, 'enviado', ?, ?, ?)`,
+    [req.tenantId, JSON.stringify({ wa_message_id: result.messages?.[0]?.id, link }), phone, client_id, appt.id]
+  );
+
+  return res.json({ success: true, message_id: result.messages?.[0]?.id, link, appointment_id: appt.id });
+}
+
 // ─── Helper: get active recurring schedule ──────────────────────
 async function getActiveRecurring(clientId, tenantId) {
   const [rows] = await pool.query(
@@ -222,35 +259,23 @@ router.get('/clients/:id', authMiddleware, async (req, res) => {
 // ─── POST /api/quick-actions/send-reschedule-link ───────────────
 router.post('/send-reschedule-link', authMiddleware, async (req, res) => {
   try {
-    const { client_id } = req.body;
-    if (!client_id) return res.status(400).json({ error: 'client_id requerido' });
-
-    const [clients] = await pool.query(
-      'SELECT id, phone, first_name FROM clients WHERE id = ? AND tenant_id = ? AND deleted_at IS NULL',
-      [client_id, req.tenantId]
-    );
-    if (clients.length === 0) return res.status(404).json({ error: 'Cliente no encontrado' });
-
-    const client = clients[0];
-    const domain = await getTenantDomain(req.tenantId);
-    if (!domain) return res.status(500).json({ error: 'Dominio del tenant no configurado' });
-
-    const phone = normalizePhone(client.phone);
-    const link = `https://${domain}/?r=${phone}`;
-    const result = await sendRescheduleTemplate(phone, client.first_name, link);
-
-    // Log in webhooks_log
-    await pool.query(
-      `INSERT INTO webhooks_log (tenant_id, event, type, payload, status, client_phone, client_id)
-       VALUES (?, 'reschedule_link_sent', 'message_sent', ?, 'enviado', ?, ?)`,
-      [req.tenantId, JSON.stringify({ wa_message_id: result.messages?.[0]?.id, link }), phone, client_id]
-    );
-
-    res.json({ success: true, message_id: result.messages?.[0]?.id, link });
+    return await sendQuickRescheduleLink(req, res);
   } catch (err) {
     sendServerError(res, req, err, {
       message: 'No se pudo enviar el link de reagendamiento',
       logLabel: 'quick-actions reschedule-link',
+    });
+  }
+});
+
+// Backward-compatible alias for older deployed clients.
+router.post('/reschedule', authMiddleware, async (req, res) => {
+  try {
+    return await sendQuickRescheduleLink(req, res);
+  } catch (err) {
+    sendServerError(res, req, err, {
+      message: 'No se pudo enviar el link de reagendamiento',
+      logLabel: 'quick-actions reschedule-link-alias',
     });
   }
 });

@@ -31,7 +31,12 @@ async function request(path, options = {}) {
     data = await response.json();
   } else {
     const text = await response.text();
-    data = { error: text.slice(0, 200) || `HTTP ${response.status}` };
+    const looksLikeHtml = /<!doctype html|<html|<pre>/i.test(text);
+    data = {
+      error: looksLikeHtml
+        ? `La acción no está disponible en el servidor (HTTP ${response.status}). Recarga la app e intenta de nuevo.`
+        : text.slice(0, 200) || `HTTP ${response.status}`,
+    };
   }
 
   if (!response.ok) {

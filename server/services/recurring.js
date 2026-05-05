@@ -278,6 +278,49 @@ async function ensureNoActiveScheduleForClient(tenantId, clientId, ignoreSchedul
   }
 }
 
+async function cleanupEndedDuplicateGoogleSeries({ tenantId, clientId, dayOfWeek, time, duration }) {
+  const [rows] = await pool.query(
+    `SELECT id, gcal_recurring_event_id
+     FROM recurring_schedules
+     WHERE tenant_id = ?
+       AND client_id = ?
+       AND day_of_week = ?
+       AND time = ?
+       AND duration = ?
+       AND ended_at IS NOT NULL
+       AND gcal_recurring_event_id IS NOT NULL`,
+    [tenantId, clientId, dayOfWeek, time, duration || 60]
+  );
+
+  for (const row of rows) {
+    try {
+      await deleteEvent(CALENDAR_ID(), row.gcal_recurring_event_id);
+      await pool.query(
+        `UPDATE recurring_schedules
+         SET gcal_recurring_event_id = NULL
+         WHERE tenant_id = ? AND id = ?`,
+        [tenantId, row.id]
+      );
+      console.log(`[recurring] Cleaned ended duplicate GCal series ${row.gcal_recurring_event_id} for schedule ${row.id}`);
+    } catch (gcalErr) {
+      if ([404, 410].includes(gcalErr.code || gcalErr.status)) {
+        await pool.query(
+          `UPDATE recurring_schedules
+           SET gcal_recurring_event_id = NULL
+           WHERE tenant_id = ? AND id = ?`,
+          [tenantId, row.id]
+        );
+        continue;
+      }
+      console.error(`[recurring] Failed to clean ended duplicate GCal series ${row.gcal_recurring_event_id}:`, gcalErr.message);
+      throw recurringError(
+        409,
+        'No se pudo cerrar una recurrencia antigua igual en Google Calendar. Revisa GCal antes de crear otra serie para evitar duplicados.'
+      );
+    }
+  }
+}
+
 async function getRecurringSchedule(tenantId, scheduleId, conn = pool) {
   const [rows] = await conn.query(
     `SELECT rs.*,
@@ -553,6 +596,14 @@ async function createRecurringSchedule(tenantId, data = {}) {
     ? Number(sourceAppointment.id)
     : null;
 
+  await cleanupEndedDuplicateGoogleSeries({
+    tenantId,
+    clientId,
+    dayOfWeek,
+    time,
+    duration: duration || 60,
+  });
+
   const created = await withTransaction(async (conn) => {
     const [result] = await conn.query(
       `INSERT INTO recurring_schedules (
@@ -702,10 +753,22 @@ async function endRecurringSchedule(tenantId, scheduleId) {
   if (schedule.gcal_recurring_event_id) {
     try {
       await deleteEvent(CALENDAR_ID(), schedule.gcal_recurring_event_id);
+      await pool.query(
+        `UPDATE recurring_schedules
+         SET gcal_recurring_event_id = NULL
+         WHERE tenant_id = ? AND id = ?`,
+        [tenantId, scheduleId]
+      );
       console.log(`[recurring] Deleted GCal recurring series ${schedule.gcal_recurring_event_id} for schedule ${scheduleId}`);
     } catch (gcalErr) {
       // 404/410 = already gone, that's fine
       if ([404, 410].includes(gcalErr.code || gcalErr.status)) {
+        await pool.query(
+          `UPDATE recurring_schedules
+           SET gcal_recurring_event_id = NULL
+           WHERE tenant_id = ? AND id = ?`,
+          [tenantId, scheduleId]
+        );
         console.log(`[recurring] GCal series already gone for schedule ${scheduleId}`);
       } else {
         console.error(`[recurring] Failed to delete GCal series for schedule ${scheduleId}:`, gcalErr.message);

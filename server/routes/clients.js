@@ -463,12 +463,52 @@ router.delete('/:id/purge', authMiddleware, async (req, res) => {
 router.get('/:id', authMiddleware, async (req, res) => {
   try {
     const [clients] = await pool.query(
-      'SELECT * FROM clients WHERE id = ? AND tenant_id = ?',
-      [req.params.id, req.tenantId]
+      `SELECT c.*,
+        (SELECT COUNT(*) FROM appointments WHERE client_id = c.id AND tenant_id = ? AND status = 'Completada') as completed_sessions,
+        (SELECT MAX(date_time) FROM appointments WHERE client_id = c.id AND tenant_id = ? AND status = 'Completada') as last_session,
+        (SELECT MIN(date_time) FROM appointments WHERE client_id = c.id AND tenant_id = ? AND status = 'Completada') as first_session,
+        (SELECT MIN(date_time) FROM appointments WHERE client_id = c.id AND tenant_id = ? AND status IN ('Agendada','Confirmada','Reagendada') AND date_time > NOW()) as next_session,
+        (SELECT COUNT(*) FROM appointments WHERE client_id = c.id AND tenant_id = ?) as total_appointments,
+        (SELECT COUNT(*) FROM appointments WHERE client_id = c.id AND tenant_id = ? AND status = 'Reagendada') as reschedule_count,
+        (SELECT COUNT(*) FROM recurring_schedules WHERE client_id = c.id AND tenant_id = ? AND ended_at IS NULL AND paused_at IS NULL) as has_active_recurring,
+        (SELECT COUNT(*) FROM recurring_schedules WHERE client_id = c.id AND tenant_id = ? AND ended_at IS NULL AND paused_at IS NOT NULL) as has_paused_recurring
+       FROM clients c
+       WHERE c.id = ? AND c.tenant_id = ?`,
+      [
+        req.tenantId,
+        req.tenantId,
+        req.tenantId,
+        req.tenantId,
+        req.tenantId,
+        req.tenantId,
+        req.tenantId,
+        req.tenantId,
+        req.params.id,
+        req.tenantId,
+      ]
     );
     if (clients.length === 0) return res.status(404).json({ error: 'Cliente no encontrado' });
 
     const client = clients[0];
+    const [cfgRows] = await pool.query('SELECT retention_rules FROM config WHERE tenant_id = ? LIMIT 1', [req.tenantId]);
+    const retentionRules = cfgRows[0]?.retention_rules || null;
+    const futureAppt = client.next_session ? { date_time: client.next_session } : null;
+    const lastAppt = client.last_session ? { date_time: client.last_session } : null;
+    client.calculated_status = calculateStatus(client, lastAppt, futureAppt, client.completed_sessions);
+    client.next_appointment = futureAppt || null;
+
+    const retention = calculateRetentionStatus({
+      frequency: client.frequency,
+      completedSessions: client.completed_sessions,
+      lastSession: client.last_session,
+      nextAppointment: client.next_session,
+      rules: retentionRules,
+      hasActiveRecurring: client.has_active_recurring > 0,
+      hasPausedRecurring: client.has_paused_recurring > 0,
+    });
+    client.retention_status = retention.status;
+    client.days_since_last_session = retention.days_since_last_session;
+    client.retention_thresholds = retention.thresholds;
 
     // Appointments history
     const [appointments] = await pool.query(

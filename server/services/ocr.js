@@ -127,27 +127,57 @@ function parseBolivianReceipt(text) {
       .replace(/\s+/g, ' ');
   }
 
+  function identitySignalFromTokens({ tokens, compact }) {
+    const hasMacLean = compact.includes('maclean') || (tokens.has('mac') && tokens.has('lean'));
+    const hasDaniel = tokens.has('daniel');
+    const hasOscar = tokens.has('oscar');
+    const hasEstrada = tokens.has('estrada');
+
+    // Oscar/Daniel/Estrada are common Bolivian names — only trust when at least
+    // two strong signals appear together. "Mac Lean" alone is uncommon enough
+    // that pairing it with any of the given names (or the surname Estrada) is safe.
+    if (hasMacLean && (hasDaniel || hasOscar || hasEstrada)) return true;
+    if (hasOscar && hasDaniel && hasEstrada) return true;
+    return false;
+  }
+
   function isTrustedDestinationName(value) {
     const normalized = normalizeTextForMatch(value);
     if (!normalized) return false;
 
     const tokens = new Set(normalized.split(' ').filter(Boolean));
     const compact = normalized.replace(/\s+/g, '');
-    const hasMacLean = compact.includes('maclean') || (tokens.has('mac') && tokens.has('lean'));
-    const hasDaniel = tokens.has('daniel');
-    const hasOscar = tokens.has('oscar');
-    const hasEstrada = tokens.has('estrada');
 
-    // Oscar appears on many bank receipts as part of the legal name, but it is
-    // only accepted together with stronger identity signals.
-    if (hasMacLean && (hasDaniel || hasOscar)) return true;
-    if (hasOscar && hasDaniel && hasEstrada) return true;
+    if (identitySignalFromTokens({ tokens, compact })) return true;
 
     const configuredNames = (process.env.VALID_DESTINATION_NAMES || '')
       .split(',')
       .map(normalizeTextForMatch)
       .filter(name => name.length >= 8);
     return normalized.length >= 8 && configuredNames.some(name => normalized.includes(name) || name.includes(normalized));
+  }
+
+  function findUserIdentityInText(text, senderName) {
+    let normalized = normalizeTextForMatch(text);
+    if (!normalized) return false;
+
+    // Strip the sender's name first so common given names (Daniel, Oscar) coming
+    // from the originante/De field don't leak into the destination check.
+    const senderNorm = normalizeTextForMatch(senderName || '');
+    if (senderNorm && senderNorm.length >= 4 && normalized.includes(senderNorm)) {
+      normalized = normalized.split(senderNorm).join(' ').replace(/\s+/g, ' ').trim();
+    }
+
+    const tokens = new Set(normalized.split(' ').filter(Boolean));
+    const compact = normalized.replace(/\s+/g, '');
+
+    if (identitySignalFromTokens({ tokens, compact })) return true;
+
+    const configuredNames = (process.env.VALID_DESTINATION_NAMES || '')
+      .split(',')
+      .map(normalizeTextForMatch)
+      .filter(name => name.length >= 8);
+    return configuredNames.some(name => normalized.includes(name));
   }
 
   function findWhitelistedAccountInText() {
@@ -395,54 +425,75 @@ function parseBolivianReceipt(text) {
     }
   }
 
-  // Pattern 3.5: BNB "Nombre del destinatario" on the same line or wrapped to the next one
+  // Pattern 3.5: BNB "Nombre del destinatario" — handles three layouts produced
+  // by Vision OCR for the same template:
+  //   a) "Nombre del destinatario: VALUE"        (single-line label)
+  //   b) "Nombre del destinatario:" / "VALUE"    (label on one line, value below)
+  //   c) "Nombre del" / "destinatario:" / "VALUE" / "VALUE2"  (column-wrapped label)
+  // In every case the value can also be wrapped across two lines.
   if (!destName) {
-    const destNameLineIdx = lines.findIndex(l => /nombre\s+del\s+destinatario/i.test(l));
-    if (destNameLineIdx >= 0) {
-      const sameLineMatch = lines[destNameLineIdx].match(/nombre\s+del\s+destinatario[:\s]*([^\n]+)/i);
-      const inlineCandidate = sameLineMatch?.[1]?.replace(/^[:\s.-]+/, '').trim();
-      if (inlineCandidate && /[A-ZÁÉÍÓÚÑa-záéíóúñ]/.test(inlineCandidate)) {
-        destName = inlineCandidate;
-        if (destNameLineIdx + 1 < lines.length) {
-          const continuation = lines[destNameLineIdx + 1];
-          if (
-            /^[A-ZÁÉÍÓÚÑa-záéíóúñ\s.-]{3,}$/.test(continuation)
-            && !/banco|cuenta|monto|fecha|hora|referencia/i.test(continuation)
-            && !/^\d/.test(continuation)
-          ) {
-            destName = `${destName} ${continuation}`.replace(/\s+/g, ' ').trim();
-          }
+    const NAME_VALUE_RE = /^[A-ZÁÉÍÓÚÑa-záéíóúñ][A-ZÁÉÍÓÚÑa-záéíóúñ\s.-]{2,}$/;
+    const NAME_STOP_RE = /banco|cuenta|monto|fecha|hora|referencia|originante|importe|suma|bancarizaci|nro\b|n[uú]mero|debit|acredit|destino|origen|tarjeta|caja|de\s+ahorro/i;
+
+    let valueStartIdx = -1;
+    let inlineCandidate = null;
+
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+      const inlineMatch = line.match(/nombre\s+del\s+destinatario[:\s]*([^\n]*)$/i);
+      if (inlineMatch) {
+        const tail = inlineMatch[1].replace(/^[:\s.-]+/, '').trim();
+        if (tail && /[A-ZÁÉÍÓÚÑa-záéíóúñ]/.test(tail) && !NAME_STOP_RE.test(tail)) {
+          inlineCandidate = tail;
         }
-      } else if (destNameLineIdx + 1 < lines.length) {
-        const candidate = lines[destNameLineIdx + 1];
-        if (
-          /^[A-ZÁÉÍÓÚÑa-záéíóúñ\s.-]{3,}$/.test(candidate)
-          && !/banco|cuenta|monto|fecha|hora|referencia/i.test(candidate)
-          && !/^\d/.test(candidate)
-        ) {
-          destName = candidate.trim();
-          if (destNameLineIdx + 2 < lines.length) {
-            const continuation = lines[destNameLineIdx + 2];
-            if (
-              /^[A-ZÁÉÍÓÚÑa-záéíóúñ\s.-]{3,}$/.test(continuation)
-              && !/banco|cuenta|monto|fecha|hora|referencia/i.test(continuation)
-              && !/^\d/.test(continuation)
-            ) {
-              destName = `${destName} ${continuation}`.replace(/\s+/g, ' ').trim();
-            }
-          }
-        }
+        valueStartIdx = i + 1;
+        break;
       }
+      // Column-split label: "Nombre del" on one line, "destinatario..." on the next
+      if (/^nombre\s+del\s*$/i.test(line) && i + 1 < lines.length && /^destinatario[:\s]*$/i.test(lines[i + 1])) {
+        valueStartIdx = i + 2;
+        break;
+      }
+    }
+
+    if (valueStartIdx >= 0) {
+      const collected = inlineCandidate ? [inlineCandidate] : [];
+      for (let j = valueStartIdx; j < Math.min(valueStartIdx + 3, lines.length); j++) {
+        const candidate = lines[j];
+        if (!candidate) break;
+        if (NAME_STOP_RE.test(candidate)) break;
+        if (/^\d/.test(candidate)) break;
+        if (!NAME_VALUE_RE.test(candidate)) break;
+        collected.push(candidate.trim());
+      }
+      const merged = collected.join(' ').replace(/\s+/g, ' ').trim();
+      if (merged) destName = merged;
     }
   }
 
-  // Pattern 3.6: BNB "Se acreditó a la cuenta" destination line
+  // Pattern 3.6: BNB "Se acreditó a la cuenta" destination — accept inline,
+  // value-on-next-line, and column-split ("Se acreditó a la" / "cuenta:" / VALUE).
   if (!destAccount) {
-    const creditedLine = lines.find(l => /se\s+acredit[oó]\s+a\s+la\s+cuenta/i.test(l));
-    if (creditedLine) {
-      const accountMatch = creditedLine.match(/se\s+acredit[oó]\s+a\s+la\s+cuenta[:\s]*([\d\s.*xX•●·∙-]{6,})/i);
-      if (accountMatch && !/[*xX•●·∙]/.test(accountMatch[1])) {
-        destAccount = normalizeAccount(accountMatch[1]);
+    const flatNumber = (raw) => raw && !/[*xX•●·∙]/.test(raw) ? normalizeAccount(raw) : null;
+
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+      const inlineMatch = line.match(/se\s+acredit[oó]\s+a\s+la\s+cuenta[:\s]*([\d\s.*xX•●·∙-]{6,})/i);
+      if (inlineMatch) {
+        const account = flatNumber(inlineMatch[1]);
+        if (account) destAccount = account;
+        break;
+      }
+      if (/^se\s+acredit[oó]\s+a\s+la\s+cuenta[:\s]*$/i.test(line) && i + 1 < lines.length) {
+        const account = flatNumber(lines[i + 1]);
+        if (account) destAccount = account;
+        break;
+      }
+      // Column-split: "Se acreditó a la" / "cuenta:" / VALUE
+      if (/^se\s+acredit[oó]\s+a\s+la\s*$/i.test(line) && i + 2 < lines.length && /^cuenta[:\s]*$/i.test(lines[i + 1])) {
+        const account = flatNumber(lines[i + 2]);
+        if (account) destAccount = account;
+        break;
       }
     }
   }
@@ -468,14 +519,22 @@ function parseBolivianReceipt(text) {
   const exactVerifiedAccount = VALID_DESTINATION_ACCOUNTS.has(destAccount || '')
     ? destAccount
     : matchedWhitelistedAccount;
-  const destNameVerified = isTrustedDestinationName(destName);
+  const destNameVerifiedFromField = isTrustedDestinationName(destName);
+  // Free-text fallback: when the dest name field can't be cleanly extracted
+  // (BNB column-wrap layouts in particular), look for the user identity anywhere
+  // in the receipt — minus the originator's name, so common given names from
+  // the sender don't leak in.
+  const destNameVerifiedFromText = !destNameVerifiedFromField && findUserIdentityInText(fullText, name);
+  const destNameVerified = destNameVerifiedFromField || destNameVerifiedFromText;
   const maskedAccountVerified = !!maskedWhitelistedAccount && destNameVerified;
   const destAccountVerified = !!exactVerifiedAccount || maskedAccountVerified;
   const destVerified = destAccountVerified;
   const destVerificationLevel = exactVerifiedAccount
     ? 'exact_account'
     : maskedAccountVerified
-      ? 'masked_account_with_name'
+      ? destNameVerifiedFromField
+        ? 'masked_account_with_name'
+        : 'masked_account_with_text_name'
       : maskedWhitelistedAccount
         ? 'masked_account_untrusted_name'
         : destNameVerified

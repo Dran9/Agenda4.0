@@ -101,12 +101,43 @@ test('parseBolivianReceipt: BNB column-split layout with label and value wrapped
   assert.equal(result.destVerificationLevel, 'masked_account_with_name');
 });
 
+test('parseBolivianReceipt: BNB trusted destination name verifies even when account is unreadable', () => {
+  const text = buildBnbReceiptColumnSplit(['Mac Lean Estrada', 'Oscar Daniel'])
+    .replace('301********355', 'cuenta cubierta');
+
+  const result = parseBolivianReceipt(text);
+
+  assert.equal(result.destAccount, null);
+  assert.match(result.destName || '', /Mac Lean Estrada Oscar Daniel/i);
+  assert.equal(result.destNameVerified, true);
+  assert.equal(result.destVerified, true);
+  assert.equal(result.destVerificationLevel, 'trusted_destination_name');
+});
+
 test('parseBolivianReceipt: BNB column-split layout with name in reverse order', () => {
   // Some receipts print "Apellido Nombre" while others print "Nombre Apellido".
   const result = parseBolivianReceipt(buildBnbReceiptColumnSplit(['Oscar Daniel', 'Mac Lean Estrada']));
 
   assert.equal(result.destNameVerified, true);
   assert.equal(result.destVerified, true);
+});
+
+test('parseBolivianReceipt: free-text destination name alone is not enough without account signal', () => {
+  const text = [
+    'BNB',
+    'Comprobante Electronico',
+    'Pago a Mac Lean Estrada Oscar Daniel',
+    'Referencia: 250',
+    'Fecha de la transaccion: 05/05/2026',
+    'Nombre del originante: NAVA CLAUDIA M.',
+    'La suma de Bs.: 250',
+  ].join('\n');
+
+  const result = parseBolivianReceipt(text);
+
+  assert.equal(result.destNameVerified, true);
+  assert.equal(result.destVerified, false);
+  assert.equal(result.destVerificationLevel, 'name_only');
 });
 
 test('parseBolivianReceipt: free-text identity fallback when destName cannot be extracted', () => {

@@ -207,8 +207,10 @@ function parseBolivianReceipt(text) {
     const maskedAccountPattern = /\d[\d\s.*xX•●·∙-]{4,}\d/g;
     const maskPattern = /[*xX•●·∙]/;
 
-    for (const line of lines) {
-      const matches = line.match(maskedAccountPattern) || [];
+    const candidates = [...lines, fullText];
+
+    for (const candidateText of candidates) {
+      const matches = candidateText.match(maskedAccountPattern) || [];
       for (const match of matches) {
         if (!maskPattern.test(match)) continue;
 
@@ -528,13 +530,19 @@ function parseBolivianReceipt(text) {
   const destNameVerified = destNameVerifiedFromField || destNameVerifiedFromText;
   const maskedAccountVerified = !!maskedWhitelistedAccount && destNameVerified;
   const destAccountVerified = !!exactVerifiedAccount || maskedAccountVerified;
-  const destVerified = destAccountVerified;
+  // If the bank hides or OCR mangles the destination account, a trusted name
+  // extracted from the explicit destination-recipient field is still a strong
+  // destination signal. Do not apply this to free-text identity fallback.
+  const trustedDestinationNameFieldVerified = destNameVerifiedFromField;
+  const destVerified = destAccountVerified || trustedDestinationNameFieldVerified;
   const destVerificationLevel = exactVerifiedAccount
     ? 'exact_account'
     : maskedAccountVerified
       ? destNameVerifiedFromField
         ? 'masked_account_with_name'
         : 'masked_account_with_text_name'
+      : trustedDestinationNameFieldVerified
+        ? 'trusted_destination_name'
       : maskedWhitelistedAccount
         ? 'masked_account_untrusted_name'
         : destNameVerified

@@ -3,6 +3,7 @@ const { pool } = require('../db');
 const { getOAuthClient, updateEventSummary } = require('./calendar');
 const { buildCalendarSummary } = require('./calendarSummary');
 const { broadcast } = require('./adminEvents');
+const { sendTextMessage } = require('./whatsapp');
 
 const DEFAULT_LABEL_NAME = 'QRterapia';
 const DEFAULT_LOOKBACK_DAYS = 7;
@@ -11,6 +12,7 @@ const DEFAULT_EMAIL_DELAY_MINUTES = 5;
 const DEFAULT_QR_MATCH_WINDOW_HOURS = 12;
 const DEFAULT_PAYMENT_LOOKBACK_DAYS = 14;
 const BOLIVIA_OFFSET_MINUTES = -4 * 60;
+const PAYMENT_OK_MESSAGE = '✅ Pago recibido correctamente, ¡Gracias!';
 
 function getValidDestinationAccounts() {
   return new Set(
@@ -242,6 +244,15 @@ async function updateGCalPaymentPrefix(payment) {
   }
 }
 
+async function sendPaymentConfirmationMessage(payment) {
+  try {
+    if (!payment?.phone) return;
+    await sendTextMessage(payment.phone, PAYMENT_OK_MESSAGE);
+  } catch (err) {
+    console.error('[bank-email] WhatsApp payment reply failed (non-fatal):', err.message);
+  }
+}
+
 async function upsertNotificationRecord({
   tenantId,
   message,
@@ -419,6 +430,7 @@ async function processBankEmailMessage({ tenantId, gmail, messageId, labelName }
   });
 
   await updateGCalPaymentPrefix(payment);
+  await sendPaymentConfirmationMessage(payment);
   broadcast('payment:change', { id: Number(payment.id), action: 'confirmed', source: 'bank_email' }, tenantId);
   console.log(`[bank-email] Payment ${payment.id} confirmed from Gmail message ${message.id}`);
 

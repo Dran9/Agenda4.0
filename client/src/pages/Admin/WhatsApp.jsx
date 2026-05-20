@@ -222,17 +222,17 @@ export default function WhatsApp() {
                     </div>
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 flex-wrap">
-                        <span className="text-sm font-medium text-gray-900">
+                        <span className="min-w-0 break-words text-sm font-medium text-gray-900">
                           {msg.first_name ? `${msg.first_name} ${msg.last_name || ''}`.trim() : msg.client_phone}
                         </span>
                         {msg.first_name && (
-                          <span className="text-xs text-gray-400">{msg.client_phone}</span>
+                          <span className="break-all text-xs text-gray-400">{msg.client_phone}</span>
                         )}
                         <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${TYPE_COLORS[msg.message_type] || 'bg-gray-100 text-gray-600'}`}>
                           {TYPE_LABELS[msg.message_type] || msg.message_type}
                         </span>
                         {msg.button_payload && (
-                          <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700 font-mono">
+                          <span className="max-w-full break-all rounded-full bg-amber-100 px-1.5 py-0.5 font-mono text-[10px] text-amber-700">
                             {msg.button_payload}
                           </span>
                         )}
@@ -251,21 +251,21 @@ export default function WhatsApp() {
                             if (!meta || (!meta.ocr_amount && !meta.ocr_raw_text && !meta.ocr_dest_name && !meta.ocr_dest_account)) return null;
                             return (
                               <>
-                                <div className="mt-2 bg-gray-50 rounded-lg px-3 py-2 text-xs space-y-0.5 border border-gray-200 max-w-[320px]">
+                                <div className="mt-2 max-w-[320px] overflow-hidden rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-xs space-y-0.5">
                                   <div className="text-[10px] font-medium text-gray-400 uppercase mb-1">Datos reconocidos (OCR)</div>
-                                  {meta.ocr_name && <div><span className="text-gray-400">Remitente:</span> <span className="text-gray-700 font-medium">{meta.ocr_name}</span></div>}
+                                  {meta.ocr_name && <div className="break-words"><span className="text-gray-400">Remitente:</span> <span className="text-gray-700 font-medium">{meta.ocr_name}</span></div>}
                                   {meta.ocr_amount && <div><span className="text-gray-400">Monto:</span> <span className="text-gray-700 font-medium">Bs {meta.ocr_amount}</span></div>}
                                   {meta.ocr_date && <div><span className="text-gray-400">Fecha:</span> <span className="text-gray-700">{meta.ocr_date}</span></div>}
-                                  {meta.ocr_dest_name && <div><span className="text-gray-400">Destinatario:</span> <span className={`font-medium ${meta.ocr_dest_verified ? 'text-green-700' : 'text-red-600'}`}>{meta.ocr_dest_name} {meta.ocr_dest_verified ? '' : '(NO verificado)'}</span></div>}
+                                  {meta.ocr_dest_name && <div className="break-words"><span className="text-gray-400">Destinatario:</span> <span className={`font-medium ${meta.ocr_dest_verified ? 'text-green-700' : 'text-red-600'}`}>{meta.ocr_dest_name} {meta.ocr_dest_verified ? '' : '(NO verificado)'}</span></div>}
                                   {!meta.ocr_dest_name && meta.ocr_dest_verified !== undefined && <div><span className="text-gray-400">Destinatario:</span> <span className={meta.ocr_dest_verified ? 'text-green-700' : 'text-red-600'}>{meta.ocr_dest_verified ? 'Verificado' : 'No encontrado'}</span></div>}
-                                  {meta.ocr_dest_account && <div><span className="text-gray-400">Cuenta destino:</span> <span className={`font-mono ${meta.ocr_dest_account_verified ? 'text-green-700' : 'text-red-600'}`}>{meta.ocr_dest_account}</span></div>}
-                                  {meta.ocr_bank && <div><span className="text-gray-400">Banco:</span> <span className="text-gray-700">{meta.ocr_bank}</span></div>}
-                                  {meta.ocr_reference && <div><span className="text-gray-400">Ref:</span> <span className="text-gray-700 font-mono">{meta.ocr_reference}</span></div>}
+                                  {meta.ocr_dest_account && <div className="break-words"><span className="text-gray-400">Cuenta destino:</span> <span className={`break-all font-mono ${meta.ocr_dest_account_verified ? 'text-green-700' : 'text-red-600'}`}>{meta.ocr_dest_account}</span></div>}
+                                  {meta.ocr_bank && <div className="break-words"><span className="text-gray-400">Banco:</span> <span className="text-gray-700">{meta.ocr_bank}</span></div>}
+                                  {meta.ocr_reference && <div className="break-words"><span className="text-gray-400">Ref:</span> <span className="break-all font-mono text-gray-700">{meta.ocr_reference}</span></div>}
                                 </div>
                                 {meta.ocr_raw_text && (
-                                  <div className="mt-2 bg-slate-50 rounded-lg px-3 py-2 text-xs border border-slate-200 max-w-[420px]">
+                                  <div className="mt-2 max-w-[420px] overflow-hidden rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs">
                                     <div className="text-[10px] font-medium text-slate-400 uppercase mb-1">OCR bruto</div>
-                                    <pre className="whitespace-pre-wrap break-words text-slate-700 font-mono text-[11px] leading-5 m-0">{meta.ocr_raw_text}</pre>
+                                    <pre className="m-0 max-h-64 overflow-auto whitespace-pre-wrap break-words font-mono text-[11px] leading-5 text-slate-700">{meta.ocr_raw_text}</pre>
                                   </div>
                                 )}
                               </>

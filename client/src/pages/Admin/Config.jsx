@@ -253,14 +253,48 @@ function formatSchedulerLabel(runtimeKey, runtime) {
     paymentReminder: 'Recordatorios de pago',
     autoComplete: 'Auto completar sesiones',
     recurringSync: 'Sync de recurrencia',
+    metaHealthWatchdog: 'Meta health watchdog',
+    bankEmail: 'Emails bancarios QR',
+    bankEmailWatch: 'Gmail push watch',
   };
   return labels[runtimeKey] || runtimeKey;
+}
+
+function summarizeRuntimeValue(value) {
+  if (value == null || value === '') return '—';
+  if (Array.isArray(value)) return `${value.length} items`;
+  if (typeof value === 'object') return '{...}';
+  const text = String(value);
+  return text.length > 60 ? `${text.slice(0, 57)}...` : text;
 }
 
 function formatRuntimeResult(result) {
   if (!result || typeof result !== 'object') return null;
   if (result.processed != null || result.unmatched != null || result.ambiguous != null || result.errors != null) {
     return `${result.processed ?? 0} confirmados, ${result.unmatched ?? 0} sin match, ${result.ambiguous ?? 0} ambiguos, ${result.errors ?? 0} errores`;
+  }
+  if (result.watched != null || result.expirationAt || result.historyId) {
+    const status = result.watched ? 'Watch activo' : 'Watch inactivo';
+    const pieces = [status];
+    if (result.expirationAt) pieces.push(`vence ${formatRuntimeDate(result.expirationAt)}`);
+    if (result.historyId) pieces.push(`history ${result.historyId}`);
+    if (result.labelName) pieces.push(`label ${result.labelName}`);
+    return pieces.join(' · ');
+  }
+  if (result.checked_at || result.tenants_total != null || Array.isArray(result.results)) {
+    const rows = Array.isArray(result.results) ? result.results : [];
+    const critical = rows.filter(row => ['critical', 'error'].includes(String(row?.status || '').toLowerCase())).length;
+    const warning = rows.filter(row => ['warning', 'warn'].includes(String(row?.status || '').toLowerCase())).length;
+    const ok = rows.filter(row => ['ok', 'healthy'].includes(String(row?.status || '').toLowerCase())).length;
+    const firstIssue = rows.find(row => ['critical', 'error', 'warning', 'warn'].includes(String(row?.status || '').toLowerCase()));
+    const issueText = firstIssue?.message || firstIssue?.error || firstIssue?.reason || firstIssue?.details?.message;
+    const pieces = [`${result.tenants_total ?? rows.length} tenants revisados`];
+    if (critical) pieces.push(`${critical} críticos`);
+    if (warning) pieces.push(`${warning} warnings`);
+    if (ok && !critical && !warning) pieces.push(`${ok} OK`);
+    if (!critical && !warning && !ok && rows.length) pieces.push(`${rows.length} resultados`);
+    if (issueText) pieces.push(summarizeRuntimeValue(issueText));
+    return pieces.join(' · ');
   }
   if (result.sent != null || result.skipped != null || result.failed != null) {
     return `${result.sent ?? 0} enviados, ${result.skipped ?? 0} omitidos, ${result.failed ?? 0} fallidos`;
@@ -271,7 +305,11 @@ function formatRuntimeResult(result) {
   if (result.created != null || result.already_exists != null || result.no_client_match != null) {
     return `${result.created ?? 0} creados, ${result.already_exists ?? 0} ya existentes, ${result.no_client_match ?? 0} sin match`;
   }
-  return JSON.stringify(result);
+  const summary = Object.entries(result)
+    .slice(0, 4)
+    .map(([key, value]) => `${key}: ${summarizeRuntimeValue(value)}`)
+    .join(' · ');
+  return summary || 'Sin detalle';
 }
 
 function formatBankEmailStatus(status) {
@@ -1524,25 +1562,34 @@ export default function Config() {
                           ? 'bg-[#CFE8E9] text-[#4E769B]'
                           : 'bg-[#D9E48B] text-slate-900';
                       return (
-                        <div key={runtimeKey} className="rounded-xl border border-gray-200 p-4 bg-white">
+                        <div key={runtimeKey} className="min-w-0 overflow-hidden rounded-xl border border-gray-200 bg-white p-4">
                           <div className="flex items-center justify-between gap-2 mb-2">
-                            <div className="font-medium text-sm">{formatSchedulerLabel(runtimeKey, runtime)}</div>
-                            <span className={`text-[11px] px-2 py-1 rounded-full ${statusClass}`}>
+                            <div className="min-w-0 break-words text-sm font-medium leading-snug">
+                              {formatSchedulerLabel(runtimeKey, runtime)}
+                            </div>
+                            <span className={`shrink-0 text-[11px] px-2 py-1 rounded-full ${statusClass}`}>
                               {statusLabel}
                             </span>
                           </div>
-                          <div className="text-[11px] uppercase tracking-[0.08em] text-gray-400">
+                          <div className="break-words text-[11px] uppercase tracking-[0.08em] text-gray-400">
                             Cada {runtime?.intervalMinutes || '—'} min
                           </div>
-                          <div className="text-xs text-gray-500">Próxima corrida: {formatRuntimeDate(runtime?.nextRunAt)}</div>
-                          <div className="text-xs text-gray-500 mt-1">Última corrida: {formatRuntimeDate(runtime?.lastRunAt)}</div>
+                          <div className="break-words text-xs text-gray-500">Próxima corrida: {formatRuntimeDate(runtime?.nextRunAt)}</div>
+                          <div className="mt-1 break-words text-xs text-gray-500">Última corrida: {formatRuntimeDate(runtime?.lastRunAt)}</div>
                           {runtime?.lastResult ? (
-                            <div className="text-xs text-gray-500 mt-2">
-                              Último resultado: {formatRuntimeResult(runtime.lastResult)}
+                            <div className="mt-3 rounded-lg border border-slate-100 bg-slate-50 px-3 py-2">
+                              <div className="text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-400">
+                                Último resultado
+                              </div>
+                              <div className="mt-1 max-h-24 overflow-auto break-words text-xs leading-5 text-gray-500">
+                                {formatRuntimeResult(runtime.lastResult)}
+                              </div>
                             </div>
                           ) : null}
                           {runtime?.lastError ? (
-                            <div className="text-xs text-red-500 mt-2 line-clamp-2">{runtime.lastError}</div>
+                            <div className="mt-2 max-h-20 overflow-auto break-words rounded-lg bg-red-50 px-3 py-2 text-xs leading-5 text-red-600">
+                              {runtime.lastError}
+                            </div>
                           ) : null}
                         </div>
                       );
@@ -1615,16 +1662,16 @@ export default function Config() {
                               <div className="mt-2 grid gap-1 text-xs text-slate-500 md:grid-cols-2 xl:grid-cols-3">
                                 <div><span className="text-slate-400">Transacción:</span> {formatRuntimeDate(email.transaction_at)}</div>
                                 <div><span className="text-slate-400">Email recibido:</span> {formatRuntimeDate(email.email_received_at)}</div>
-                                <div><span className="text-slate-400">Cuenta destino:</span> <span className="font-mono">{email.destination_account || '—'}</span></div>
-                                <div><span className="text-slate-400">Cuenta origen:</span> <span className="font-mono">{email.origin_account || '—'}</span></div>
-                                <div><span className="text-slate-400">Pagador:</span> {email.payer_name || '—'}</div>
-                                <div><span className="text-slate-400">Banco origen:</span> {email.origin_bank || '—'}</div>
-                                <div><span className="text-slate-400">Concepto:</span> {email.concept || '—'}</div>
-                                <div><span className="text-slate-400">Notificación:</span> <span className="font-mono">{email.notification_number || '—'}</span></div>
-                                <div><span className="text-slate-400">Fecha leída:</span> {payload.transactionDateText || '—'} {payload.transactionTimeText || ''}</div>
+                                <div className="min-w-0 break-words"><span className="text-slate-400">Cuenta destino:</span> <span className="font-mono break-all">{email.destination_account || '—'}</span></div>
+                                <div className="min-w-0 break-words"><span className="text-slate-400">Cuenta origen:</span> <span className="font-mono break-all">{email.origin_account || '—'}</span></div>
+                                <div className="min-w-0 break-words"><span className="text-slate-400">Pagador:</span> {email.payer_name || '—'}</div>
+                                <div className="min-w-0 break-words"><span className="text-slate-400">Banco origen:</span> {email.origin_bank || '—'}</div>
+                                <div className="min-w-0 break-words"><span className="text-slate-400">Concepto:</span> {email.concept || '—'}</div>
+                                <div className="min-w-0 break-words"><span className="text-slate-400">Notificación:</span> <span className="font-mono break-all">{email.notification_number || '—'}</span></div>
+                                <div className="min-w-0 break-words"><span className="text-slate-400">Fecha leída:</span> {payload.transactionDateText || '—'} {payload.transactionTimeText || ''}</div>
                               </div>
                               {email.notes ? (
-                                <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
+                                <div className="mt-3 break-words rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
                                   {email.notes}
                                 </div>
                               ) : null}
@@ -1639,9 +1686,9 @@ export default function Config() {
                                 </details>
                               ) : null}
                             </div>
-                            <div className="shrink-0 text-xs text-slate-400 xl:text-right">
+                            <div className="min-w-0 shrink-0 text-xs text-slate-400 xl:max-w-[220px] xl:text-right">
                               <div>Procesado: {formatRuntimeDate(email.created_at)}</div>
-                              <div className="mt-1 font-mono">{email.gmail_message_id}</div>
+                              <div className="mt-1 break-all font-mono">{email.gmail_message_id}</div>
                             </div>
                           </div>
                         </div>
@@ -1669,24 +1716,24 @@ export default function Config() {
                     <div key={message.title} className="grid gap-3 px-5 py-4 lg:grid-cols-[minmax(0,1fr)_180px]">
                       <div className="min-w-0">
                         <div className="flex flex-wrap items-center gap-2">
-                          <div className="font-medium text-sm text-slate-900">{message.title}</div>
+                          <div className="min-w-0 break-words text-sm font-medium text-slate-900">{message.title}</div>
                           <span className="rounded-full bg-[#CFE8E9] px-2 py-0.5 text-[11px] font-medium text-[#365673]">
                             {message.channel}
                           </span>
                         </div>
-                        <div className="mt-1 text-xs text-gray-500">{message.trigger}</div>
-                        <div className="mt-2 rounded-xl bg-slate-50 px-3 py-2 text-xs leading-5 text-slate-600">
+                        <div className="mt-1 break-words text-xs text-gray-500">{message.trigger}</div>
+                        <div className="mt-2 break-words rounded-xl bg-slate-50 px-3 py-2 text-xs leading-5 text-slate-600">
                           {message.preview}
                         </div>
                         <div className="mt-2 rounded-xl border border-slate-200 bg-white px-3 py-2">
                           <div className="mb-1 text-[11px] font-medium uppercase tracking-wide text-gray-400">Mensaje literal</div>
-                          <div className="whitespace-pre-line text-xs leading-5 text-slate-700">{message.message}</div>
+                          <div className="whitespace-pre-line break-words text-xs leading-5 text-slate-700">{message.message}</div>
                         </div>
                       </div>
                       <div className="flex items-start lg:justify-end">
-                        <div className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-[11px] text-gray-500">
+                        <div className="min-w-0 rounded-xl border border-slate-200 bg-white px-3 py-2 text-[11px] text-gray-500">
                           <div className="mb-0.5 uppercase tracking-wide text-gray-400">Origen</div>
-                          <code className="text-slate-700">{message.source}</code>
+                          <code className="break-all text-slate-700">{message.source}</code>
                         </div>
                       </div>
                     </div>

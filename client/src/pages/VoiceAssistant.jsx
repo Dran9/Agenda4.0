@@ -142,20 +142,20 @@ export default function VoiceAssistant() {
           intentValue: 'mt-2 text-[1.28rem] font-semibold leading-8 text-white',
           transcriptCard: 'rounded-[1.5rem] border border-white/10 bg-[rgba(255,255,255,0.04)] px-5 py-4',
           transcriptLabel: 'text-[12px] font-semibold uppercase tracking-[0.22em] text-slate-400',
-          transcriptValue: 'mt-3 whitespace-pre-line text-[1.08rem] leading-8 text-slate-200',
+          transcriptValue: 'mt-3 whitespace-pre-line break-words text-[1.08rem] leading-8 text-slate-200',
           replyCard: 'rounded-[1.5rem] border border-[#d6b16b]/16 bg-[linear-gradient(180deg,rgba(17,24,30,0.92),rgba(9,13,19,0.98))] px-5 py-4 shadow-[0_18px_40px_rgba(0,0,0,0.28)]',
           replyLabel: 'text-[12px] font-semibold uppercase tracking-[0.22em] text-[#f2d39a]',
-          replyValue: 'mt-3 whitespace-pre-line text-[1.14rem] leading-8 text-white',
+          replyValue: 'mt-3 whitespace-pre-line break-words text-[1.14rem] leading-8 text-white',
           historyShell: 'mt-8 rounded-[2rem] border border-white/10 bg-[linear-gradient(180deg,rgba(13,20,28,0.94),rgba(8,13,18,0.98))] p-5 shadow-[0_24px_60px_rgba(0,0,0,0.3)] backdrop-blur-xl sm:p-6',
           historyTitleOver: 'text-[12px] font-semibold uppercase tracking-[0.22em] text-slate-400',
           historyTitle: 'mt-1 text-[1.7rem] font-semibold tracking-[-0.03em] text-white',
           refreshButton: 'rounded-full border border-white/10 bg-white/6 px-4 py-2 text-[0.95rem] font-semibold text-slate-200 transition hover:border-[#7fb5d6]/40 hover:bg-white/10 hover:text-white',
           emptyCard: 'rounded-[1.25rem] border border-white/10 bg-white/5 px-4 py-5 text-[1rem] text-slate-300',
-          historyItem: 'rounded-[1.35rem] border border-white/8 bg-[rgba(255,255,255,0.04)] px-4 py-4 shadow-[0_16px_32px_rgba(0,0,0,0.22)]',
-          historyText: 'text-[1rem] font-semibold leading-7 text-white',
-          historyMeta: 'mt-1 text-[11px] uppercase tracking-[0.16em] text-slate-400',
-          historyDate: 'text-[11px] text-slate-400',
-          historyResponse: 'mt-3 rounded-[1.1rem] bg-[#0e1821] px-3 py-3 text-[0.98rem] leading-7 text-slate-200',
+          historyItem: 'min-w-0 overflow-hidden rounded-[1.35rem] border border-white/8 bg-[rgba(255,255,255,0.04)] px-4 py-4 shadow-[0_16px_32px_rgba(0,0,0,0.22)]',
+          historyText: 'break-words text-[1rem] font-semibold leading-7 text-white',
+          historyMeta: 'mt-1 break-words text-[11px] uppercase tracking-[0.16em] text-slate-400',
+          historyDate: 'shrink-0 break-words text-right text-[11px] text-slate-400',
+          historyResponse: 'mt-3 break-words rounded-[1.1rem] bg-[#0e1821] px-3 py-3 text-[0.98rem] leading-7 text-slate-200',
           dock: 'pointer-events-auto mx-auto flex w-full max-w-md items-center justify-center gap-3 rounded-[2rem] border border-white/10 bg-[rgba(10,16,22,0.9)] px-4 py-3 shadow-[0_24px_50px_rgba(0,0,0,0.42)] backdrop-blur-xl',
           voiceButton: 'inline-flex h-12 w-12 items-center justify-center rounded-full border border-white/10 bg-white/6 text-[#f2d39a] transition hover:bg-white/12 hover:text-white',
           prompt: 'text-[0.98rem] font-semibold text-white',
@@ -185,20 +185,20 @@ export default function VoiceAssistant() {
           intentValue: 'mt-2 text-[1.28rem] font-semibold leading-8 text-slate-950',
           transcriptCard: 'rounded-[1.5rem] border border-[#d8d1c7] bg-white px-5 py-4',
           transcriptLabel: 'text-[12px] font-semibold uppercase tracking-[0.22em] text-slate-700',
-          transcriptValue: 'mt-3 whitespace-pre-line text-[1.08rem] leading-8 text-slate-800',
+          transcriptValue: 'mt-3 whitespace-pre-line break-words text-[1.08rem] leading-8 text-slate-800',
           replyCard: 'rounded-[1.5rem] border border-[#d8d1c7] bg-white px-5 py-4 shadow-[0_14px_34px_rgba(15,23,42,0.06)]',
           replyLabel: 'text-[12px] font-semibold uppercase tracking-[0.22em] text-slate-700',
-          replyValue: 'mt-3 whitespace-pre-line text-[1.14rem] leading-8 text-slate-900',
+          replyValue: 'mt-3 whitespace-pre-line break-words text-[1.14rem] leading-8 text-slate-900',
           historyShell: 'mt-8 rounded-[2rem] border border-white/75 bg-[linear-gradient(180deg,rgba(255,255,255,0.94),rgba(247,241,231,0.94))] p-5 shadow-[0_24px_60px_rgba(15,23,42,0.08)] sm:p-6',
           historyTitleOver: 'text-[12px] font-semibold uppercase tracking-[0.22em] text-slate-700',
           historyTitle: 'mt-1 text-[1.7rem] font-semibold tracking-[-0.03em] text-slate-950',
           refreshButton: 'rounded-full border border-[#cfc5b9] bg-white px-4 py-2 text-[0.95rem] font-semibold text-slate-800 transition hover:border-slate-500 hover:text-slate-950',
           emptyCard: 'rounded-[1.25rem] border border-[#d8d1c7] bg-white px-4 py-5 text-[1rem] text-slate-700',
-          historyItem: 'rounded-[1.35rem] border border-white/80 bg-white px-4 py-4 shadow-[0_16px_32px_rgba(15,23,42,0.05)]',
-          historyText: 'text-[1rem] font-semibold leading-7 text-slate-900',
-          historyMeta: 'mt-1 text-[11px] uppercase tracking-[0.16em] text-slate-700',
-          historyDate: 'text-[11px] text-slate-700',
-          historyResponse: 'mt-3 rounded-[1.1rem] bg-[#f6efe6] px-3 py-3 text-[0.98rem] leading-7 text-slate-800',
+          historyItem: 'min-w-0 overflow-hidden rounded-[1.35rem] border border-white/80 bg-white px-4 py-4 shadow-[0_16px_32px_rgba(15,23,42,0.05)]',
+          historyText: 'break-words text-[1rem] font-semibold leading-7 text-slate-900',
+          historyMeta: 'mt-1 break-words text-[11px] uppercase tracking-[0.16em] text-slate-700',
+          historyDate: 'shrink-0 break-words text-right text-[11px] text-slate-700',
+          historyResponse: 'mt-3 break-words rounded-[1.1rem] bg-[#f6efe6] px-3 py-3 text-[0.98rem] leading-7 text-slate-800',
           dock: 'pointer-events-auto mx-auto flex w-full max-w-md items-center justify-center gap-3 rounded-[2rem] border border-white/80 bg-[rgba(20,28,36,0.84)] px-4 py-3 shadow-[0_24px_50px_rgba(15,23,42,0.32)] backdrop-blur-xl',
           voiceButton: 'inline-flex h-12 w-12 items-center justify-center rounded-full border border-white/20 bg-white/10 text-white transition hover:bg-white/16',
           prompt: 'text-[0.98rem] font-semibold text-white',
@@ -532,8 +532,8 @@ export default function VoiceAssistant() {
 
               {history.map((item) => (
                 <div key={item.id} className={themeClasses.historyItem}>
-                  <div className="flex items-start justify-between gap-4">
-                    <div>
+                  <div className="flex min-w-0 items-start justify-between gap-4">
+                    <div className="min-w-0">
                       <div className={themeClasses.historyText}>
                         {item.transcript || item.raw_text || 'Audio sin texto visible'}
                       </div>

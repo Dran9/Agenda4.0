@@ -2,12 +2,14 @@ const { pool, withTransaction, withAdvisoryLock } = require('../db');
 const { syncSlotClaimsForStatusTransition } = require('../services/appointmentSlotClaims');
 const { checkAndSendReminders, checkAndSendPaymentReminders } = require('../services/reminder');
 const { syncRecurringFromGCal } = require('../services/recurringSync');
+const { pollBankPaymentEmails } = require('../services/bankEmail');
 
 let reminderTimer = null;
 let autoCompleteTimer = null;
 let paymentReminderTimer = null;
 let recurringSyncTimer = null;
 let metaHealthWatchdogTimer = null;
+let bankEmailTimer = null;
 
 const LA_PAZ_TIMEZONE = 'America/La_Paz';
 const DEFAULT_REMINDER_TIME = '18:40';
@@ -57,6 +59,16 @@ const schedulerState = {
     label: 'Meta health watchdog',
     source: 'internal_timer',
     intervalMinutes: 60,
+    enabled: null,
+    nextRunAt: null,
+    lastRunAt: null,
+    lastResult: null,
+    lastError: null,
+  },
+  bankEmail: {
+    label: 'Emails bancarios QR',
+    source: 'gmail_poll',
+    intervalMinutes: 1,
     enabled: null,
     nextRunAt: null,
     lastRunAt: null,
@@ -347,6 +359,33 @@ function startMetaHealthWatchdogCron() {
   metaHealthWatchdogTimer = setTimeout(run, initialDelay);
 }
 
+function startBankEmailCron() {
+  async function run() {
+    try {
+      const result = await pollBankPaymentEmails({ tenantId: 1 });
+      markSuccess('bankEmail', result, !!result.enabled);
+      if (result.enabled) {
+        console.log(
+          `[cron] Bank emails: processed=${result.processed}, unmatched=${result.unmatched}, ambiguous=${result.ambiguous}, ignored=${result.ignored}, errors=${result.errors}`
+        );
+      }
+    } catch (err) {
+      console.error('[cron] Bank email error:', err.message);
+      markError('bankEmail', err, schedulerState.bankEmail.enabled);
+    }
+
+    const intervalMinutes = Math.max(1, Number(process.env.GMAIL_QR_POLL_INTERVAL_MINUTES || 1));
+    const delay = intervalMinutes * 60 * 1000;
+    schedulerState.bankEmail.intervalMinutes = intervalMinutes;
+    setNextRun('bankEmail', delay);
+    bankEmailTimer = setTimeout(run, delay);
+  }
+
+  const initialDelay = 30 * 1000;
+  setNextRun('bankEmail', initialDelay);
+  bankEmailTimer = setTimeout(run, initialDelay);
+}
+
 function stopReminderCron() {
   if (reminderTimer) clearTimeout(reminderTimer);
   reminderTimer = null;
@@ -377,6 +416,12 @@ function stopMetaHealthWatchdogCron() {
   schedulerState.metaHealthWatchdog.nextRunAt = null;
 }
 
+function stopBankEmailCron() {
+  if (bankEmailTimer) clearTimeout(bankEmailTimer);
+  bankEmailTimer = null;
+  schedulerState.bankEmail.nextRunAt = null;
+}
+
 function refreshConfigSchedulers() {
   stopReminderCron();
   stopPaymentReminderCron();
@@ -403,6 +448,8 @@ module.exports = {
   stopRecurringSyncCron,
   startMetaHealthWatchdogCron,
   stopMetaHealthWatchdogCron,
+  startBankEmailCron,
+  stopBankEmailCron,
   refreshConfigSchedulers,
   getSchedulerRuntime,
   getDateKeyInLaPaz,

@@ -12,6 +12,7 @@ const {
   startPaymentReminderCron,
   startRecurringSyncCron,
   startMetaHealthWatchdogCron,
+  startBankEmailCron,
 } = require('./cron/scheduler');
 const { sendServerError } = require('./utils/httpErrors');
 
@@ -49,6 +50,7 @@ app.use(express.json({
 
 // ─── Reminder trigger (admin) ────────────────────────────────────
 const { checkAndSendReminders, checkAndSendPaymentReminders } = require('./services/reminder');
+const { pollBankPaymentEmails } = require('./services/bankEmail');
 const { authMiddleware } = require('./middleware/auth');
 const { authGate } = require('./middleware/authGate');
 const { sseHandler, connectedCount } = require('./services/adminEvents');
@@ -114,6 +116,18 @@ app.get('/api/admin/test-payment-reminder', authMiddleware, async (req, res) => 
     sendServerError(res, req, err, {
       message: 'No se pudieron procesar los recordatorios de pago',
       logLabel: 'admin test-payment-reminder',
+    });
+  }
+});
+
+app.get('/api/admin/test-bank-email', authMiddleware, async (req, res) => {
+  try {
+    const result = await pollBankPaymentEmails({ tenantId: req.tenantId, force: true });
+    res.json(result);
+  } catch (err) {
+    sendServerError(res, req, err, {
+      message: 'No se pudieron procesar los emails bancarios',
+      logLabel: 'admin test-bank-email',
     });
   }
 });
@@ -217,6 +231,7 @@ async function start() {
     startAutoCompleteCron();
     startRecurringSyncCron();
     startMetaHealthWatchdogCron();
+    startBankEmailCron();
     app.listen(PORT, () => {
       console.log(`Agenda Daniel MacLean running on port ${PORT}`);
     });

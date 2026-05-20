@@ -4,7 +4,7 @@ const cors = require('cors');
 const path = require('path');
 const fs = require('fs');
 
-const { initializeDatabase } = require('./db');
+const { initializeDatabase, pool } = require('./db');
 const { runMigrations } = require('./migrations');
 const {
   startReminderCron,
@@ -119,6 +119,53 @@ app.get('/api/admin/test-payment-reminder', authMiddleware, async (req, res) => 
     sendServerError(res, req, err, {
       message: 'No se pudieron procesar los recordatorios de pago',
       logLabel: 'admin test-payment-reminder',
+    });
+  }
+});
+
+app.get('/api/admin/bank-email-log', authMiddleware, async (req, res) => {
+  try {
+    const { status, page = 1, limit = 25 } = req.query;
+    const safeLimit = Math.min(100, Math.max(1, Number(limit) || 25));
+    const safePage = Math.max(1, Number(page) || 1);
+    const offset = (safePage - 1) * safeLimit;
+    let where = 'tenant_id = ?';
+    const params = [req.tenantId];
+
+    if (status) {
+      where += ' AND processed_status = ?';
+      params.push(status);
+    }
+
+    const [rows] = await pool.query(
+      `SELECT
+         id, gmail_message_id, gmail_thread_id, label_name, email_from, email_subject,
+         email_received_at, transaction_at, amount, currency, destination_account,
+         origin_account, payer_name, origin_bank, concept, notification_number,
+         matched_payment_id, processed_status, notes, raw_text, payload,
+         created_at, updated_at
+       FROM bank_email_notifications
+       WHERE ${where}
+       ORDER BY created_at DESC
+       LIMIT ? OFFSET ?`,
+      [...params, safeLimit, offset]
+    );
+
+    const [countRows] = await pool.query(
+      `SELECT COUNT(*) AS total FROM bank_email_notifications WHERE ${where}`,
+      params
+    );
+
+    res.json({
+      emails: rows,
+      total: countRows[0]?.total || 0,
+      page: safePage,
+      limit: safeLimit,
+    });
+  } catch (err) {
+    sendServerError(res, req, err, {
+      message: 'No se pudo cargar el log de emails bancarios',
+      logLabel: 'admin bank-email-log',
     });
   }
 });

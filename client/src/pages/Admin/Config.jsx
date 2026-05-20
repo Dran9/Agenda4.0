@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Copy, ExternalLink, Plus, Trash2, X } from 'lucide-react';
+import { Copy, ExternalLink, Plus, RefreshCw, Trash2, X } from 'lucide-react';
 import { useSearchParams } from 'react-router-dom';
 import AdminLayout from '../../components/AdminLayout';
 import { api } from '../../utils/api';
@@ -259,6 +259,9 @@ function formatSchedulerLabel(runtimeKey, runtime) {
 
 function formatRuntimeResult(result) {
   if (!result || typeof result !== 'object') return null;
+  if (result.processed != null || result.unmatched != null || result.ambiguous != null || result.errors != null) {
+    return `${result.processed ?? 0} confirmados, ${result.unmatched ?? 0} sin match, ${result.ambiguous ?? 0} ambiguos, ${result.errors ?? 0} errores`;
+  }
   if (result.sent != null || result.skipped != null || result.failed != null) {
     return `${result.sent ?? 0} enviados, ${result.skipped ?? 0} omitidos, ${result.failed ?? 0} fallidos`;
   }
@@ -269,6 +272,38 @@ function formatRuntimeResult(result) {
     return `${result.created ?? 0} creados, ${result.already_exists ?? 0} ya existentes, ${result.no_client_match ?? 0} sin match`;
   }
   return JSON.stringify(result);
+}
+
+function formatBankEmailStatus(status) {
+  const labels = {
+    processed: 'Confirmado',
+    ignored: 'Ignorado',
+    unmatched: 'Sin match',
+    ambiguous: 'Ambiguo',
+    error: 'Error',
+  };
+  return labels[status] || status || '—';
+}
+
+function bankEmailStatusClass(status) {
+  const classes = {
+    processed: 'bg-green-100 text-green-700',
+    ignored: 'bg-slate-100 text-slate-600',
+    unmatched: 'bg-amber-100 text-amber-700',
+    ambiguous: 'bg-orange-100 text-orange-700',
+    error: 'bg-red-100 text-red-700',
+  };
+  return classes[status] || 'bg-gray-100 text-gray-600';
+}
+
+function parseBankEmailPayload(payload) {
+  if (!payload) return {};
+  if (typeof payload === 'object') return payload;
+  try {
+    return JSON.parse(payload);
+  } catch {
+    return {};
+  }
 }
 
 function normalizeRetentionRules(rawRules) {
@@ -367,6 +402,10 @@ export default function Config() {
     qr_generico: Date.now(),
   }));
   const [qrAssetStatus, setQrAssetStatus] = useState({});
+  const [bankEmailLog, setBankEmailLog] = useState([]);
+  const [bankEmailLogTotal, setBankEmailLogTotal] = useState(0);
+  const [bankEmailLogStatus, setBankEmailLogStatus] = useState('');
+  const [bankEmailLogLoading, setBankEmailLogLoading] = useState(false);
 
   useEffect(() => {
     api.get('/config')
@@ -389,6 +428,25 @@ export default function Config() {
       .catch(err => console.error(err))
       .finally(() => setLoading(false));
   }, []);
+
+  async function loadBankEmailLog(status = bankEmailLogStatus) {
+    setBankEmailLogLoading(true);
+    try {
+      const params = new URLSearchParams({ limit: '20' });
+      if (status) params.set('status', status);
+      const data = await api.get(`/admin/bank-email-log?${params}`);
+      setBankEmailLog(data.emails || []);
+      setBankEmailLogTotal(data.total || 0);
+    } catch (err) {
+      showToast(`No se pudo cargar el log de emails: ${err.message}`, 'error');
+    } finally {
+      setBankEmailLogLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    loadBankEmailLog(bankEmailLogStatus);
+  }, [bankEmailLogStatus]);
 
   useEffect(() => {
     if (!copyPopoverDay) return;
@@ -1491,6 +1549,106 @@ export default function Config() {
                     })}
                   </div>
                 </div>
+              </div>
+
+              <div className="mt-6 rounded-2xl border border-slate-200 bg-white overflow-hidden">
+                <div className="px-5 py-4 border-b border-slate-100 bg-slate-50/80">
+                  <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+                    <div>
+                      <div className="text-xs font-medium text-gray-500 uppercase tracking-wide">Emails bancarios</div>
+                      <h4 className="text-base font-semibold text-slate-900">Lectura de pagos QR por Gmail</h4>
+                      <p className="mt-1 text-sm text-gray-500">
+                        Registro de correos con etiqueta QRterapia, datos extraídos y resultado de match contra pagos pendientes.
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <select
+                        value={bankEmailLogStatus}
+                        onChange={e => setBankEmailLogStatus(e.target.value)}
+                        className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700"
+                      >
+                        <option value="">Todos</option>
+                        <option value="processed">Confirmados</option>
+                        <option value="unmatched">Sin match</option>
+                        <option value="ambiguous">Ambiguos</option>
+                        <option value="ignored">Ignorados</option>
+                        <option value="error">Errores</option>
+                      </select>
+                      <button
+                        type="button"
+                        onClick={() => loadBankEmailLog()}
+                        className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50"
+                      >
+                        <RefreshCw size={15} className={bankEmailLogLoading ? 'animate-spin' : ''} />
+                        Refrescar
+                      </button>
+                    </div>
+                  </div>
+                  <div className="mt-2 text-xs text-gray-400">{bankEmailLogTotal} registros guardados</div>
+                </div>
+
+                {bankEmailLogLoading ? (
+                  <div className="p-6 text-sm text-gray-400">Cargando emails bancarios...</div>
+                ) : bankEmailLog.length === 0 ? (
+                  <div className="p-6 text-sm text-gray-400">Todavía no hay correos bancarios registrados.</div>
+                ) : (
+                  <div className="divide-y divide-slate-100">
+                    {bankEmailLog.map(email => {
+                      const payload = parseBankEmailPayload(email.payload);
+                      return (
+                        <div key={email.id} className="px-5 py-4">
+                          <div className="flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
+                            <div className="min-w-0">
+                              <div className="flex flex-wrap items-center gap-2">
+                                <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${bankEmailStatusClass(email.processed_status)}`}>
+                                  {formatBankEmailStatus(email.processed_status)}
+                                </span>
+                                <span className="text-sm font-semibold text-slate-900">
+                                  {email.currency || 'BOB'} {Number(email.amount || 0).toLocaleString('es-BO', { maximumFractionDigits: 2 })}
+                                </span>
+                                {email.matched_payment_id ? (
+                                  <span className="rounded-full bg-green-50 px-2 py-0.5 text-[11px] font-medium text-green-700">
+                                    Pago #{email.matched_payment_id}
+                                  </span>
+                                ) : null}
+                              </div>
+                              <div className="mt-2 grid gap-1 text-xs text-slate-500 md:grid-cols-2 xl:grid-cols-3">
+                                <div><span className="text-slate-400">Transacción:</span> {formatRuntimeDate(email.transaction_at)}</div>
+                                <div><span className="text-slate-400">Email recibido:</span> {formatRuntimeDate(email.email_received_at)}</div>
+                                <div><span className="text-slate-400">Cuenta destino:</span> <span className="font-mono">{email.destination_account || '—'}</span></div>
+                                <div><span className="text-slate-400">Cuenta origen:</span> <span className="font-mono">{email.origin_account || '—'}</span></div>
+                                <div><span className="text-slate-400">Pagador:</span> {email.payer_name || '—'}</div>
+                                <div><span className="text-slate-400">Banco origen:</span> {email.origin_bank || '—'}</div>
+                                <div><span className="text-slate-400">Concepto:</span> {email.concept || '—'}</div>
+                                <div><span className="text-slate-400">Notificación:</span> <span className="font-mono">{email.notification_number || '—'}</span></div>
+                                <div><span className="text-slate-400">Fecha leída:</span> {payload.transactionDateText || '—'} {payload.transactionTimeText || ''}</div>
+                              </div>
+                              {email.notes ? (
+                                <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
+                                  {email.notes}
+                                </div>
+                              ) : null}
+                              {email.raw_text ? (
+                                <details className="mt-3 rounded-xl border border-slate-200 bg-white px-3 py-2">
+                                  <summary className="cursor-pointer text-xs font-semibold uppercase tracking-wide text-slate-500">
+                                    Ver texto bruto del email
+                                  </summary>
+                                  <pre className="mt-2 max-h-64 overflow-auto whitespace-pre-wrap break-words text-[11px] leading-5 text-slate-700">
+                                    {email.raw_text}
+                                  </pre>
+                                </details>
+                              ) : null}
+                            </div>
+                            <div className="shrink-0 text-xs text-slate-400 xl:text-right">
+                              <div>Procesado: {formatRuntimeDate(email.created_at)}</div>
+                              <div className="mt-1 font-mono">{email.gmail_message_id}</div>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
 
               <div className="mt-6 rounded-2xl border border-slate-200 bg-white overflow-hidden">

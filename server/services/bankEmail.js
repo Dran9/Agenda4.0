@@ -1,5 +1,5 @@
 const { google } = require('googleapis');
-const { pool } = require('../db');
+const { pool, withAdvisoryLock } = require('../db');
 const { getOAuthClient, updateEventSummary } = require('./calendar');
 const { buildCalendarSummary } = require('./calendarSummary');
 const { broadcast } = require('./adminEvents');
@@ -13,6 +13,14 @@ const DEFAULT_QR_MATCH_WINDOW_HOURS = 12;
 const DEFAULT_PAYMENT_LOOKBACK_DAYS = 14;
 const BOLIVIA_OFFSET_MINUTES = -4 * 60;
 const PAYMENT_OK_MESSAGE = '✅ Pago recibido correctamente, ¡Gracias!';
+
+function isGmailPubSubEnabled() {
+  return process.env.GMAIL_PUBSUB_ENABLED === '1';
+}
+
+function getGmailPubSubTopicName() {
+  return String(process.env.GMAIL_PUBSUB_TOPIC || process.env.GMAIL_PUBSUB_TOPIC_NAME || '').trim();
+}
 
 function getValidDestinationAccounts() {
   return new Set(
@@ -167,6 +175,85 @@ async function findLabelId(gmail, labelName) {
   const labels = await gmail.users.labels.list({ userId: 'me' });
   const wanted = String(labelName || DEFAULT_LABEL_NAME).trim().toLowerCase();
   return labels.data.labels?.find((label) => String(label.name || '').toLowerCase() === wanted)?.id || null;
+}
+
+function parseWatchExpiration(value) {
+  const ms = Number(value);
+  if (!Number.isFinite(ms) || ms <= 0) return null;
+  const date = new Date(ms);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function decodePubSubData(data) {
+  if (!data) return null;
+  const normalized = String(data).replace(/-/g, '+').replace(/_/g, '/');
+  const padded = normalized.padEnd(Math.ceil(normalized.length / 4) * 4, '=');
+  return JSON.parse(Buffer.from(padded, 'base64').toString('utf8'));
+}
+
+function parsePubSubNotification(body) {
+  const message = body?.message || {};
+  const data = decodePubSubData(message.data);
+  return {
+    messageId: message.messageId || message.message_id || null,
+    publishTime: message.publishTime || null,
+    subscription: body?.subscription || null,
+    emailAddress: data?.emailAddress || null,
+    historyId: data?.historyId ? String(data.historyId) : null,
+    raw: data,
+  };
+}
+
+async function getWatchState(tenantId) {
+  const [rows] = await pool.query(
+    'SELECT * FROM bank_email_watch_state WHERE tenant_id = ? LIMIT 1',
+    [tenantId]
+  );
+  return rows[0] || null;
+}
+
+async function upsertWatchState({
+  tenantId,
+  emailAddress = null,
+  labelName = null,
+  labelId = null,
+  pubsubTopic = null,
+  lastHistoryId = null,
+  watchExpirationAt = null,
+  lastWatchAt = null,
+  lastNotificationAt = null,
+  lastError = null,
+}) {
+  await pool.query(
+    `INSERT INTO bank_email_watch_state (
+       tenant_id, email_address, label_name, label_id, pubsub_topic,
+       last_history_id, watch_expiration_at, last_watch_at, last_notification_at, last_error
+     )
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+     ON DUPLICATE KEY UPDATE
+       email_address = COALESCE(VALUES(email_address), email_address),
+       label_name = COALESCE(VALUES(label_name), label_name),
+       label_id = COALESCE(VALUES(label_id), label_id),
+       pubsub_topic = COALESCE(VALUES(pubsub_topic), pubsub_topic),
+       last_history_id = COALESCE(VALUES(last_history_id), last_history_id),
+       watch_expiration_at = COALESCE(VALUES(watch_expiration_at), watch_expiration_at),
+       last_watch_at = COALESCE(VALUES(last_watch_at), last_watch_at),
+       last_notification_at = COALESCE(VALUES(last_notification_at), last_notification_at),
+       last_error = VALUES(last_error),
+       updated_at = NOW()`,
+    [
+      tenantId,
+      emailAddress,
+      labelName,
+      labelId,
+      pubsubTopic,
+      lastHistoryId,
+      formatMysqlDateTime(watchExpirationAt),
+      formatMysqlDateTime(lastWatchAt),
+      formatMysqlDateTime(lastNotificationAt),
+      lastError,
+    ]
+  );
 }
 
 async function findCandidatePayments({ tenantId, amount, transactionAt }) {
@@ -476,10 +563,192 @@ async function pollBankPaymentEmails({ tenantId = 1, force = false } = {}) {
   return result;
 }
 
+async function watchBankPaymentEmails({ tenantId = 1, force = false } = {}) {
+  if (!isGmailPubSubEnabled() && !force) {
+    return { enabled: false, watched: false, reason: 'GMAIL_PUBSUB_ENABLED no está activo' };
+  }
+
+  const topicName = getGmailPubSubTopicName();
+  if (!topicName) {
+    throw new Error('GMAIL_PUBSUB_TOPIC no configurado');
+  }
+
+  const labelName = process.env.GMAIL_QR_LABEL || DEFAULT_LABEL_NAME;
+  const gmail = await getGmailService();
+  const labelId = await findLabelId(gmail, labelName);
+  if (!labelId) throw new Error(`No encontré la etiqueta Gmail "${labelName}"`);
+
+  const res = await gmail.users.watch({
+    userId: 'me',
+    requestBody: {
+      topicName,
+      labelIds: [labelId],
+      labelFilterBehavior: 'INCLUDE',
+    },
+  });
+
+  const expirationAt = parseWatchExpiration(res.data.expiration);
+  await upsertWatchState({
+    tenantId,
+    emailAddress: res.data.emailAddress || null,
+    labelName,
+    labelId,
+    pubsubTopic: topicName,
+    lastHistoryId: res.data.historyId ? String(res.data.historyId) : null,
+    watchExpirationAt: expirationAt,
+    lastWatchAt: new Date(),
+    lastError: null,
+  });
+
+  return {
+    enabled: true,
+    watched: true,
+    labelName,
+    labelId,
+    topicName,
+    historyId: res.data.historyId || null,
+    expirationAt: expirationAt ? expirationAt.toISOString() : null,
+  };
+}
+
+function collectHistoryMessageIds(historyItems = []) {
+  const ids = new Set();
+  for (const item of historyItems || []) {
+    for (const added of item.messagesAdded || []) {
+      if (added.message?.id) ids.add(added.message.id);
+    }
+    for (const labeled of item.labelsAdded || []) {
+      if (labeled.message?.id) ids.add(labeled.message.id);
+    }
+    for (const message of item.messages || []) {
+      if (message.id) ids.add(message.id);
+    }
+  }
+  return [...ids];
+}
+
+async function listHistoryMessageIds({ gmail, startHistoryId, labelId }) {
+  const messageIds = new Set();
+  let pageToken = null;
+
+  do {
+    const res = await gmail.users.history.list({
+      userId: 'me',
+      startHistoryId,
+      labelId,
+      historyTypes: ['messageAdded', 'labelAdded'],
+      pageToken,
+    });
+    for (const id of collectHistoryMessageIds(res.data.history || [])) {
+      messageIds.add(id);
+    }
+    pageToken = res.data.nextPageToken || null;
+  } while (pageToken);
+
+  return [...messageIds];
+}
+
+async function processBankEmailPubSubNotification({ tenantId = 1, body }) {
+  if (!isGmailPubSubEnabled()) {
+    return { enabled: false, processed: 0, ignored: 0, unmatched: 0, ambiguous: 0, errors: 0, skipped: 0 };
+  }
+
+  const notification = parsePubSubNotification(body);
+  if (!notification.historyId) {
+    throw new Error('Notificación Pub/Sub sin historyId');
+  }
+
+  return withAdvisoryLock(`bank_email_pubsub_${tenantId}`, 10, async () => {
+    const labelName = process.env.GMAIL_QR_LABEL || DEFAULT_LABEL_NAME;
+    const gmail = await getGmailService();
+    const labelId = await findLabelId(gmail, labelName);
+    if (!labelId) throw new Error(`No encontré la etiqueta Gmail "${labelName}"`);
+
+    const state = await getWatchState(tenantId);
+    const startHistoryId = state?.last_history_id ? String(state.last_history_id) : null;
+
+    if (!startHistoryId) {
+      const fallback = await pollBankPaymentEmails({ tenantId, force: true });
+      await upsertWatchState({
+        tenantId,
+        emailAddress: notification.emailAddress,
+        labelName,
+        labelId,
+        lastHistoryId: notification.historyId,
+        lastNotificationAt: new Date(),
+        lastError: null,
+      });
+      return { ...fallback, source: 'pubsub_bootstrap_poll', historyId: notification.historyId };
+    }
+
+    let messageIds = [];
+    try {
+      messageIds = await listHistoryMessageIds({ gmail, startHistoryId, labelId });
+    } catch (err) {
+      if (err.code !== 404) throw err;
+      const fallback = await pollBankPaymentEmails({ tenantId, force: true });
+      await upsertWatchState({
+        tenantId,
+        emailAddress: notification.emailAddress,
+        labelName,
+        labelId,
+        lastHistoryId: notification.historyId,
+        lastNotificationAt: new Date(),
+        lastError: 'history_expired_fallback_poll',
+      });
+      return { ...fallback, source: 'pubsub_history_expired_poll', historyId: notification.historyId };
+    }
+
+    const result = {
+      enabled: true,
+      source: 'pubsub',
+      historyId: notification.historyId,
+      total: messageIds.length,
+      processed: 0,
+      ignored: 0,
+      unmatched: 0,
+      ambiguous: 0,
+      errors: 0,
+      skipped: 0,
+    };
+
+    for (const messageId of messageIds) {
+      try {
+        const itemResult = await processBankEmailMessage({ tenantId, gmail, messageId, labelName });
+        if (itemResult.status === 'processed') result.processed++;
+        else if (itemResult.status === 'ignored') result.ignored++;
+        else if (itemResult.status === 'unmatched') result.unmatched++;
+        else if (itemResult.status === 'ambiguous') result.ambiguous++;
+        else result.skipped++;
+      } catch (err) {
+        result.errors++;
+        console.error(`[bank-email] Pub/Sub message ${messageId} failed:`, err.message);
+      }
+    }
+
+    await upsertWatchState({
+      tenantId,
+      emailAddress: notification.emailAddress,
+      labelName,
+      labelId,
+      lastHistoryId: notification.historyId,
+      lastNotificationAt: new Date(),
+      lastError: result.errors ? `Errores en ${result.errors} mensajes` : null,
+    });
+
+    return result;
+  });
+}
+
 module.exports = {
   collectMessageBody,
+  collectHistoryMessageIds,
+  decodePubSubData,
   formatMysqlDateTime,
   parseMercantilQrEmail,
+  parsePubSubNotification,
   pollBankPaymentEmails,
   processBankEmailMessage,
+  processBankEmailPubSubNotification,
+  watchBankPaymentEmails,
 };

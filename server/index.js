@@ -13,6 +13,7 @@ const {
   startRecurringSyncCron,
   startMetaHealthWatchdogCron,
   startBankEmailCron,
+  startBankEmailWatchCron,
 } = require('./cron/scheduler');
 const { sendServerError } = require('./utils/httpErrors');
 
@@ -32,6 +33,7 @@ const quickActionsRoutes = require('./routes/quickActions');
 const metaHealthRoutes = require('./routes/metaHealth');
 const stripeWebhookRoutes = require('./routes/stripeWebhook');
 const telegramAuthRoutes = require('./routes/telegramAuth');
+const gmailBankWebhookRoutes = require('./routes/gmailBankWebhook');
 
 const app = express();
 app.set('trust proxy', 1);
@@ -50,7 +52,7 @@ app.use(express.json({
 
 // ─── Reminder trigger (admin) ────────────────────────────────────
 const { checkAndSendReminders, checkAndSendPaymentReminders } = require('./services/reminder');
-const { pollBankPaymentEmails } = require('./services/bankEmail');
+const { pollBankPaymentEmails, watchBankPaymentEmails } = require('./services/bankEmail');
 const { authMiddleware } = require('./middleware/auth');
 const { authGate } = require('./middleware/authGate');
 const { sseHandler, connectedCount } = require('./services/adminEvents');
@@ -70,6 +72,7 @@ app.use('/api/client', clientsRoutes); // public /api/client/check — rate limi
 app.use('/api/appointments', appointmentsRoutes);
 app.use('/api/auth', authRoutes);
 app.use('/api/webhook', webhookRoutes);
+app.use('/api/webhooks', gmailBankWebhookRoutes);
 app.use('/api/analytics', analyticsRoutes);
 app.use('/api/payments', paymentsRoutes);
 app.use('/api/voice', voiceRoutes);
@@ -128,6 +131,18 @@ app.get('/api/admin/test-bank-email', authMiddleware, async (req, res) => {
     sendServerError(res, req, err, {
       message: 'No se pudieron procesar los emails bancarios',
       logLabel: 'admin test-bank-email',
+    });
+  }
+});
+
+app.post('/api/admin/test-bank-email-watch', authMiddleware, async (req, res) => {
+  try {
+    const result = await watchBankPaymentEmails({ tenantId: req.tenantId, force: true });
+    res.json(result);
+  } catch (err) {
+    sendServerError(res, req, err, {
+      message: 'No se pudo activar Gmail watch',
+      logLabel: 'admin test-bank-email-watch',
     });
   }
 });
@@ -232,6 +247,7 @@ async function start() {
     startRecurringSyncCron();
     startMetaHealthWatchdogCron();
     startBankEmailCron();
+    startBankEmailWatchCron();
     app.listen(PORT, () => {
       console.log(`Agenda Daniel MacLean running on port ${PORT}`);
     });

@@ -2,7 +2,7 @@ const { pool, withTransaction, withAdvisoryLock } = require('../db');
 const { syncSlotClaimsForStatusTransition } = require('../services/appointmentSlotClaims');
 const { checkAndSendReminders, checkAndSendPaymentReminders } = require('../services/reminder');
 const { syncRecurringFromGCal } = require('../services/recurringSync');
-const { pollBankPaymentEmails } = require('../services/bankEmail');
+const { pollBankPaymentEmails, watchBankPaymentEmails } = require('../services/bankEmail');
 
 let reminderTimer = null;
 let autoCompleteTimer = null;
@@ -10,6 +10,7 @@ let paymentReminderTimer = null;
 let recurringSyncTimer = null;
 let metaHealthWatchdogTimer = null;
 let bankEmailTimer = null;
+let bankEmailWatchTimer = null;
 
 const LA_PAZ_TIMEZONE = 'America/La_Paz';
 const DEFAULT_REMINDER_TIME = '18:40';
@@ -67,8 +68,18 @@ const schedulerState = {
   },
   bankEmail: {
     label: 'Emails bancarios QR',
-    source: 'gmail_poll',
-    intervalMinutes: 1,
+    source: 'gmail_poll_fallback',
+    intervalMinutes: 60,
+    enabled: null,
+    nextRunAt: null,
+    lastRunAt: null,
+    lastResult: null,
+    lastError: null,
+  },
+  bankEmailWatch: {
+    label: 'Gmail push watch',
+    source: 'gmail_pubsub_watch',
+    intervalMinutes: 1440,
     enabled: null,
     nextRunAt: null,
     lastRunAt: null,
@@ -374,7 +385,11 @@ function startBankEmailCron() {
       markError('bankEmail', err, schedulerState.bankEmail.enabled);
     }
 
-    const intervalMinutes = Math.max(1, Number(process.env.GMAIL_QR_POLL_INTERVAL_MINUTES || 1));
+    const defaultInterval = process.env.GMAIL_PUBSUB_ENABLED === '1' ? 60 : 1;
+    const configuredInterval = process.env.GMAIL_PUBSUB_ENABLED === '1'
+      ? (process.env.GMAIL_QR_FALLBACK_POLL_INTERVAL_MINUTES || defaultInterval)
+      : (process.env.GMAIL_QR_POLL_INTERVAL_MINUTES || defaultInterval);
+    const intervalMinutes = Math.max(1, Number(configuredInterval));
     const delay = intervalMinutes * 60 * 1000;
     schedulerState.bankEmail.intervalMinutes = intervalMinutes;
     setNextRun('bankEmail', delay);
@@ -384,6 +399,31 @@ function startBankEmailCron() {
   const initialDelay = 30 * 1000;
   setNextRun('bankEmail', initialDelay);
   bankEmailTimer = setTimeout(run, initialDelay);
+}
+
+function startBankEmailWatchCron() {
+  async function run() {
+    try {
+      const result = await watchBankPaymentEmails({ tenantId: 1 });
+      markSuccess('bankEmailWatch', result, !!result.enabled);
+      if (result.enabled) {
+        console.log(`[cron] Gmail watch renewed: expirationAt=${result.expirationAt || 'unknown'}`);
+      }
+    } catch (err) {
+      console.error('[cron] Gmail watch error:', err.message);
+      markError('bankEmailWatch', err, schedulerState.bankEmailWatch.enabled);
+    }
+
+    const intervalMinutes = Math.max(60, Number(process.env.GMAIL_WATCH_RENEW_INTERVAL_MINUTES || 1440));
+    const delay = intervalMinutes * 60 * 1000;
+    schedulerState.bankEmailWatch.intervalMinutes = intervalMinutes;
+    setNextRun('bankEmailWatch', delay);
+    bankEmailWatchTimer = setTimeout(run, delay);
+  }
+
+  const initialDelay = 60 * 1000;
+  setNextRun('bankEmailWatch', initialDelay);
+  bankEmailWatchTimer = setTimeout(run, initialDelay);
 }
 
 function stopReminderCron() {
@@ -422,6 +462,12 @@ function stopBankEmailCron() {
   schedulerState.bankEmail.nextRunAt = null;
 }
 
+function stopBankEmailWatchCron() {
+  if (bankEmailWatchTimer) clearTimeout(bankEmailWatchTimer);
+  bankEmailWatchTimer = null;
+  schedulerState.bankEmailWatch.nextRunAt = null;
+}
+
 function refreshConfigSchedulers() {
   stopReminderCron();
   stopPaymentReminderCron();
@@ -450,6 +496,8 @@ module.exports = {
   stopMetaHealthWatchdogCron,
   startBankEmailCron,
   stopBankEmailCron,
+  startBankEmailWatchCron,
+  stopBankEmailWatchCron,
   refreshConfigSchedulers,
   getSchedulerRuntime,
   getDateKeyInLaPaz,

@@ -1,6 +1,10 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const { parseMercantilQrEmail } = require('../server/services/bankEmail');
+const {
+  collectHistoryMessageIds,
+  parseMercantilQrEmail,
+  parsePubSubNotification,
+} = require('../server/services/bankEmail');
 
 const sampleEmail = `
 Notificaciones
@@ -30,4 +34,36 @@ test('parseMercantilQrEmail: extracts QR bank notification fields', () => {
 
 test('parseMercantilQrEmail: returns null for unrelated email body', () => {
   assert.equal(parseMercantilQrEmail('hola mundo'), null);
+});
+
+test('parsePubSubNotification: decodes Gmail history notification', () => {
+  const data = Buffer.from(JSON.stringify({
+    emailAddress: 'danielmacleann@gmail.com',
+    historyId: '9876543210',
+  })).toString('base64url');
+
+  const result = parsePubSubNotification({
+    subscription: 'projects/agenda40/subscriptions/gmail-qr-payments-push',
+    message: {
+      messageId: 'pubsub-1',
+      publishTime: '2026-05-20T12:00:00Z',
+      data,
+    },
+  });
+
+  assert.equal(result.emailAddress, 'danielmacleann@gmail.com');
+  assert.equal(result.historyId, '9876543210');
+  assert.equal(result.messageId, 'pubsub-1');
+});
+
+test('collectHistoryMessageIds: collects unique message ids from Gmail history', () => {
+  const result = collectHistoryMessageIds([
+    {
+      messagesAdded: [{ message: { id: 'a' } }],
+      labelsAdded: [{ message: { id: 'b' } }],
+      messages: [{ id: 'a' }, { id: 'c' }],
+    },
+  ]);
+
+  assert.deepEqual(result.sort(), ['a', 'b', 'c']);
 });

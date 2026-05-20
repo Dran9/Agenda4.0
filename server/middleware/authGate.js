@@ -32,6 +32,7 @@ const PUBLIC_ROUTES = [
   // Webhooks Meta/Telegram (HMAC y token propios se verifican dentro del handler)
   { method: 'GET', pattern: /^\/api\/webhook\/?$/ },
   { method: 'POST', pattern: /^\/api\/webhook\/?$/ },
+  { method: 'POST', pattern: /^\/api\/webhooks\/gmail-bank-email\/?$/ },
   { method: 'POST', pattern: /^\/api\/stripe\/webhook\/?$/ },
 
   // Voice shortcut (usa su propia auth tipo assertShortcutAuth)

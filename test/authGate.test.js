@@ -26,6 +26,12 @@ test('authGate: webhook Meta público (verifica HMAC internamente)', () => {
   assert.equal(isPublicRoute(mockReq('POST', '/api/webhook/')), true);
 });
 
+test('authGate: webhook Gmail Pub/Sub público con token propio', () => {
+  assert.equal(isPublicRoute(mockReq('POST', '/api/webhooks/gmail-bank-email')), true);
+  assert.equal(isPublicRoute(mockReq('POST', '/api/webhooks/gmail-bank-email/')), true);
+  assert.equal(isPublicRoute(mockReq('GET', '/api/webhooks/gmail-bank-email')), false);
+});
+
 test('authGate: slots y config públicos GET', () => {
   assert.equal(isPublicRoute(mockReq('GET', '/api/slots')), true);
   assert.equal(isPublicRoute(mockReq('GET', '/api/slots/batch')), true);

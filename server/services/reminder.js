@@ -2,7 +2,7 @@ const { pool } = require('../db');
 const { listEvents } = require('./calendar');
 const { sendConfirmationTemplate, sendPaymentReminderTemplate, sendImageMessage } = require('./whatsapp');
 const { isBoliviaCountry, resolveQrKey } = require('./clientPricing');
-const { getFile } = require('./storage');
+const { getFile, buildFileCacheBuster } = require('./storage');
 const { normalizePhone, normalizedPhoneSql } = require('../utils/phone');
 const {
   findRecurringScheduleForEventInstance,
@@ -568,12 +568,10 @@ async function checkAndSendPaymentReminders({
               });
               const qrFile = await getFile(tenantId, qrKey);
               if (qrFile && tenantDomain) {
-                // Cache-buster: WhatsApp Cloud API caches media by URL.
-                // Use updated_at so the URL changes when the admin replaces the QR in Settings.
-                const qrTs = qrFile.updated_at instanceof Date
-                  ? Math.floor(qrFile.updated_at.getTime() / 1000)
-                  : Math.floor(new Date(qrFile.updated_at || Date.now()).getTime() / 1000);
-                const qrUrl = `https://${tenantDomain}/api/config/qr/${qrKey}?v=${qrTs}`;
+                // WhatsApp Cloud API caches media by URL. Version by content hash
+                // so replacing a QR always changes the URL Meta fetches.
+                const qrVersion = buildFileCacheBuster(qrFile);
+                const qrUrl = `https://${tenantDomain}/api/config/qr/${qrKey}?v=${qrVersion}`;
                 const qrCaption = `QR de pago - Bs ${fee}\n\n👉 Por favor sube en este mismo chat el comprobante de tu pago.\nGracias.`;
                 const qrResult = await sendImageMessage(row.phone, qrUrl, qrCaption);
                 await pool.query(

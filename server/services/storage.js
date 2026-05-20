@@ -1,3 +1,4 @@
+const crypto = require('crypto');
 const { pool } = require('../db');
 
 // Save file as MySQL BLOB (survives deploys)
@@ -59,4 +60,18 @@ async function getFileCacheBuster(tenantId, fileKey) {
   return Number.isFinite(ts) ? Math.floor(ts / 1000) : null;
 }
 
-module.exports = { saveFile, getFile, getFileMeta, deleteFile, listFiles, getFileCacheBuster };
+function buildFileCacheBuster(file) {
+  if (file?.data) {
+    const data = Buffer.isBuffer(file.data) ? file.data : Buffer.from(file.data);
+    return crypto.createHash('sha256').update(data).digest('hex').slice(0, 16);
+  }
+  if (file?.updated_at) {
+    const ts = file.updated_at instanceof Date
+      ? file.updated_at.getTime()
+      : new Date(file.updated_at).getTime();
+    if (Number.isFinite(ts)) return String(Math.floor(ts / 1000));
+  }
+  return String(Date.now());
+}
+
+module.exports = { saveFile, getFile, getFileMeta, deleteFile, listFiles, getFileCacheBuster, buildFileCacheBuster };

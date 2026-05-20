@@ -8,6 +8,7 @@
     "dev": "concurrently \"node --watch server/index.js\" \"cd client && npx vite\"",
     "build": "echo 'client/dist is pre-built and committed — skipping build'",
     "build:telegram": "cd telegram-mini-app && npm install && npm run build",
+    "google:refresh-token": "node tools/google-refresh-token.js",
     "test": "node --test \"test/**/*.test.js\""
   },
   "dependencies": {

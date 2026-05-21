@@ -1,7 +1,7 @@
 const { pool } = require('../db');
 const { listEvents } = require('./calendar');
-const { sendConfirmationTemplate, sendPaymentReminderTemplate, sendImageMessage } = require('./whatsapp');
-const { isBoliviaCountry, resolveQrKey } = require('./clientPricing');
+const { sendConfirmationTemplate, sendPaymentReminderTemplate, sendImageMessage, sendTextMessage } = require('./whatsapp');
+const { isBoliviaCountry, resolveForeignPricingProfile, resolveQrKey } = require('./clientPricing');
 const { getFile, buildFileCacheBuster } = require('./storage');
 const { normalizePhone, normalizedPhoneSql } = require('../utils/phone');
 const {
@@ -12,6 +12,28 @@ const {
 
 const LA_PAZ_TIMEZONE = 'America/La_Paz';
 const timezoneValidityCache = new Map();
+
+function formatPaymentAmount(amount, currency) {
+  const value = Number(amount);
+  if (!Number.isFinite(value)) return `${currency || ''}`.trim();
+  return value.toLocaleString(currency === 'USD' ? 'en-US' : 'es-BO', {
+    minimumFractionDigits: value % 1 === 0 ? 0 : 2,
+    maximumFractionDigits: 2,
+  });
+}
+
+function buildStripePaymentLinkMessage(profile) {
+  const currency = String(profile?.currency || 'USD').toUpperCase();
+  const amount = formatPaymentAmount(profile?.amount, currency);
+  return [
+    `Link de pago con tarjeta - ${currency} ${amount}`,
+    '',
+    '👉 Por favor realiza tu pago en este enlace:',
+    profile.url,
+    '',
+    'Gracias.',
+  ].join('\n');
+}
 
 function resolveTimeZone(timeZone) {
   const normalized = typeof timeZone === 'string' ? timeZone.trim() : '';
@@ -459,6 +481,8 @@ async function checkAndSendPaymentReminders({
          c.phone,
          c.first_name,
          c.fee,
+         c.fee_currency,
+         c.foreign_pricing_key,
          c.special_fee_enabled,
          c.country
        FROM payments p
@@ -544,68 +568,142 @@ async function checkAndSendPaymentReminders({
           ]
         );
 
-        // Send QR alongside the payment reminder (Bolivia clients only).
-        // Anti-dup: skip if a QR was already sent for this appointment in the last 24h.
+        let shouldAttemptQrInstruction = true;
         try {
-          const normalizedPhone = String(row.phone || '').replace(/\D/g, '');
-          const isBoliviaPhone = normalizedPhone.startsWith('591');
-          const rawClientCountry = String(row.country || '').trim();
-          const hasBoliviaCountrySignal = !!rawClientCountry && isBoliviaCountry(rawClientCountry);
-          if (isBoliviaPhone || hasBoliviaCountrySignal) {
-            const qrEventKey = `payment_qr_${row.appointment_id}`;
-            const [qrAlready] = await pool.query(
+          const stripeProfile = resolveForeignPricingProfile({ client: row, config: cfg });
+          const needsStripeLink = !!row.foreign_pricing_key
+            || String(row.fee_currency || 'BOB').toUpperCase() !== 'BOB';
+          if (stripeProfile) {
+            shouldAttemptQrInstruction = false;
+            const stripeEventKey = `payment_stripe_link_${row.appointment_id}`;
+            const [stripeAlready] = await pool.query(
               `SELECT id FROM webhooks_log
                WHERE tenant_id = ? AND event = ? AND status = 'enviado'
                  AND created_at > DATE_SUB(NOW(), INTERVAL 24 HOUR) LIMIT 1`,
-              [tenantId, qrEventKey]
+              [tenantId, stripeEventKey]
             );
-            if (qrAlready.length === 0) {
-              const fee = parseInt(row.fee, 10) || parseInt(row.amount, 10);
-              const qrKey = resolveQrKey({
-                client: { fee: row.fee, special_fee_enabled: row.special_fee_enabled, country: row.country },
-                fee,
-                config: cfg,
-              });
-              const qrFile = await getFile(tenantId, qrKey);
-              if (qrFile && tenantDomain) {
-                // WhatsApp Cloud API caches media by URL. Version by content hash
-                // so replacing a QR always changes the URL Meta fetches.
-                const qrVersion = buildFileCacheBuster(qrFile);
-                const qrUrl = `https://${tenantDomain}/api/config/qr/${qrKey}?v=${qrVersion}`;
-                const qrCaption = `QR de pago - Bs ${fee}\n\n👉 Por favor sube en este mismo chat el comprobante de tu pago.\nGracias.`;
-                const qrResult = await sendImageMessage(row.phone, qrUrl, qrCaption);
-                await pool.query(
-                  `INSERT INTO wa_conversations (tenant_id, client_id, client_phone, direction, message_type, content, wa_message_id)
-                   VALUES (?, ?, ?, 'outbound', 'auto_reply', ?, ?)`,
-                  [tenantId, row.client_id, row.phone, `QR de pago enviado (${qrKey})`, qrResult.messages?.[0]?.id || null]
-                );
-                await pool.query(
-                  `INSERT INTO webhooks_log (tenant_id, event, type, payload, status, client_phone, client_id, appointment_id)
-                   VALUES (?, ?, 'message_sent', ?, 'enviado', ?, ?, ?)`,
-                  [
-                    tenantId,
-                    qrEventKey,
-                    JSON.stringify({
-                      action: 'payment_qr_sent',
-                      source: 'payment_reminder',
-                      qr_key: qrKey,
-                      fee,
-                      qr_url: qrUrl,
-                      wa_message_id: qrResult.messages?.[0]?.id || null,
-                    }),
-                    row.phone,
-                    row.client_id,
-                    row.appointment_id,
-                  ]
-                );
-                console.log(`[payment-reminder] QR sent to ${row.phone}: ${qrKey}`);
-              } else {
-                console.log(`[payment-reminder] QR skipped for ${row.phone}: missing ${!qrFile ? 'qr_file' : 'tenant_domain'}`);
+            if (stripeAlready.length === 0) {
+              const stripeMessage = buildStripePaymentLinkMessage(stripeProfile);
+              const stripeResult = await sendTextMessage(row.phone, stripeMessage);
+              await pool.query(
+                `INSERT INTO wa_conversations (tenant_id, client_id, client_phone, direction, message_type, content, wa_message_id)
+                 VALUES (?, ?, ?, 'outbound', 'auto_reply', ?, ?)`,
+                [tenantId, row.client_id, row.phone, `Link de pago Stripe enviado (${stripeProfile.key})`, stripeResult.messages?.[0]?.id || null]
+              );
+              await pool.query(
+                `INSERT INTO webhooks_log (tenant_id, event, type, payload, status, client_phone, client_id, appointment_id)
+                 VALUES (?, ?, 'message_sent', ?, 'enviado', ?, ?, ?)`,
+                [
+                  tenantId,
+                  stripeEventKey,
+                  JSON.stringify({
+                    action: 'payment_stripe_link_sent',
+                    source: 'payment_reminder',
+                    profile_key: stripeProfile.key,
+                    amount: stripeProfile.amount,
+                    currency: stripeProfile.currency,
+                    url: stripeProfile.url,
+                    wa_message_id: stripeResult.messages?.[0]?.id || null,
+                  }),
+                  row.phone,
+                  row.client_id,
+                  row.appointment_id,
+                ]
+              );
+              console.log(`[payment-reminder] Stripe link sent to ${row.phone}: ${stripeProfile.key}`);
+            }
+          } else if (needsStripeLink) {
+            shouldAttemptQrInstruction = false;
+            const stripeEventKey = `payment_stripe_link_${row.appointment_id}`;
+            await pool.query(
+              `INSERT INTO webhooks_log (tenant_id, event, type, payload, status, client_phone, client_id, appointment_id)
+               VALUES (?, ?, 'message_sent', ?, 'error', ?, ?, ?)`,
+              [
+                tenantId,
+                stripeEventKey,
+                JSON.stringify({
+                  action: 'payment_stripe_link_missing_profile',
+                  source: 'payment_reminder',
+                  foreign_pricing_key: row.foreign_pricing_key || null,
+                  fee_currency: row.fee_currency || null,
+                  fee: row.fee || null,
+                }),
+                row.phone,
+                row.client_id,
+                row.appointment_id,
+              ]
+            ).catch(() => {});
+            console.log(`[payment-reminder] Stripe profile missing for ${row.phone}: ${row.foreign_pricing_key || row.fee_currency}`);
+          }
+        } catch (stripeErr) {
+          shouldAttemptQrInstruction = false;
+          console.error(`[payment-reminder] Stripe link send failed for ${row.phone} (non-fatal):`, stripeErr.message);
+        }
+
+        // Send QR alongside the payment reminder (Bolivia clients only).
+        // Anti-dup: skip if a QR was already sent for this appointment in the last 24h.
+        if (shouldAttemptQrInstruction) {
+          try {
+            const normalizedPhone = String(row.phone || '').replace(/\D/g, '');
+            const isBoliviaPhone = normalizedPhone.startsWith('591');
+            const rawClientCountry = String(row.country || '').trim();
+            const hasBoliviaCountrySignal = !!rawClientCountry && isBoliviaCountry(rawClientCountry);
+            if (isBoliviaPhone || hasBoliviaCountrySignal) {
+              const qrEventKey = `payment_qr_${row.appointment_id}`;
+              const [qrAlready] = await pool.query(
+                `SELECT id FROM webhooks_log
+                 WHERE tenant_id = ? AND event = ? AND status = 'enviado'
+                   AND created_at > DATE_SUB(NOW(), INTERVAL 24 HOUR) LIMIT 1`,
+                [tenantId, qrEventKey]
+              );
+              if (qrAlready.length === 0) {
+                const fee = parseInt(row.fee, 10) || parseInt(row.amount, 10);
+                const qrKey = resolveQrKey({
+                  client: { fee: row.fee, special_fee_enabled: row.special_fee_enabled, country: row.country },
+                  fee,
+                  config: cfg,
+                });
+                const qrFile = await getFile(tenantId, qrKey);
+                if (qrFile && tenantDomain) {
+                  // WhatsApp Cloud API caches media by URL. Version by content hash
+                  // so replacing a QR always changes the URL Meta fetches.
+                  const qrVersion = buildFileCacheBuster(qrFile);
+                  const qrUrl = `https://${tenantDomain}/api/config/qr/${qrKey}?v=${qrVersion}`;
+                  const qrCaption = `QR de pago - Bs ${fee}\n\n👉 Por favor sube en este mismo chat el comprobante de tu pago.\nGracias.`;
+                  const qrResult = await sendImageMessage(row.phone, qrUrl, qrCaption);
+                  await pool.query(
+                    `INSERT INTO wa_conversations (tenant_id, client_id, client_phone, direction, message_type, content, wa_message_id)
+                     VALUES (?, ?, ?, 'outbound', 'auto_reply', ?, ?)`,
+                    [tenantId, row.client_id, row.phone, `QR de pago enviado (${qrKey})`, qrResult.messages?.[0]?.id || null]
+                  );
+                  await pool.query(
+                    `INSERT INTO webhooks_log (tenant_id, event, type, payload, status, client_phone, client_id, appointment_id)
+                     VALUES (?, ?, 'message_sent', ?, 'enviado', ?, ?, ?)`,
+                    [
+                      tenantId,
+                      qrEventKey,
+                      JSON.stringify({
+                        action: 'payment_qr_sent',
+                        source: 'payment_reminder',
+                        qr_key: qrKey,
+                        fee,
+                        qr_url: qrUrl,
+                        wa_message_id: qrResult.messages?.[0]?.id || null,
+                      }),
+                      row.phone,
+                      row.client_id,
+                      row.appointment_id,
+                    ]
+                  );
+                  console.log(`[payment-reminder] QR sent to ${row.phone}: ${qrKey}`);
+                } else {
+                  console.log(`[payment-reminder] QR skipped for ${row.phone}: missing ${!qrFile ? 'qr_file' : 'tenant_domain'}`);
+                }
               }
             }
+          } catch (qrErr) {
+            console.error(`[payment-reminder] QR send failed for ${row.phone} (non-fatal):`, qrErr.message);
           }
-        } catch (qrErr) {
-          console.error(`[payment-reminder] QR send failed for ${row.phone} (non-fatal):`, qrErr.message);
         }
 
         sent++;

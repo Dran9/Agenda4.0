@@ -8,7 +8,7 @@ const { verifyWebhookSignatureFromReq } = require('../utils/webhookSignature');
 const { broadcast } = require('../services/adminEvents');
 const { extractIdentity, extractStatusIdentity, resolveIdentity } = require('../services/whatsappIdentity');
 const { ingestMetaWebhookPayload } = require('../services/metaHealth');
-const { isBoliviaCountry, resolveQrKey } = require('../services/clientPricing');
+const { isBoliviaCountry, resolveForeignPricingProfile, resolveQrKey } = require('../services/clientPricing');
 const { handleRecurringRescheduleButton } = require('../services/recurringReschedulePrompt');
 
 const router = Router();
@@ -154,6 +154,28 @@ function buildMismatchWhatsappMessage(firstName, problems) {
     '',
     'Por favor, revisa el comprobante y envíalo nuevamente.',
     '🤑 Si hubo un error de mi parte o consideras que la información sí es correcta, puedes escribirle a Daniel por aquí mismo.',
+  ].join('\n');
+}
+
+function formatPaymentAmount(amount, currency) {
+  const value = Number(amount);
+  if (!Number.isFinite(value)) return `${currency || ''}`.trim();
+  return value.toLocaleString(currency === 'USD' ? 'en-US' : 'es-BO', {
+    minimumFractionDigits: value % 1 === 0 ? 0 : 2,
+    maximumFractionDigits: 2,
+  });
+}
+
+function buildStripePaymentLinkMessage(profile) {
+  const currency = String(profile?.currency || 'USD').toUpperCase();
+  const amount = formatPaymentAmount(profile?.amount, currency);
+  return [
+    `Link de pago con tarjeta - ${currency} ${amount}`,
+    '',
+    '👉 Por favor realiza tu pago en este enlace:',
+    profile.url,
+    '',
+    'Gracias.',
   ].join('\n');
 }
 
@@ -491,13 +513,13 @@ router.post('/', async (req, res) => {
                   if (payload === 'CONFIRM_NOW') {
                     setTimeout(async () => {
                       const qrEventKey = `payment_qr_${confirmedAppointmentId || clientId || phone}`;
-                      const writeQrLog = async (status, payloadData) => {
+                      const writePaymentInstructionLog = async (eventKey, status, payloadData) => {
                         await pool.query(
                           `INSERT INTO webhooks_log (tenant_id, event, type, payload, status, client_phone, client_id, appointment_id)
                            VALUES (?, ?, 'message_sent', ?, ?, ?, ?, ?)`,
                           [
                             tenantId,
-                            qrEventKey,
+                            eventKey,
                             JSON.stringify(payloadData),
                             status,
                             phone,
@@ -506,6 +528,7 @@ router.post('/', async (req, res) => {
                           ]
                         ).catch(() => {});
                       };
+                      const writeQrLog = (status, payloadData) => writePaymentInstructionLog(qrEventKey, status, payloadData);
 
                       try {
                         if (!confirmedAppointmentId) {
@@ -518,7 +541,15 @@ router.post('/', async (req, res) => {
                         }
 
                         const [appointmentRows] = await pool.query(
-                          `SELECT a.phone, a.booking_context, c.phone AS client_phone, c.country AS client_country, c.fee, c.special_fee_enabled
+                          `SELECT
+                             a.phone,
+                             a.booking_context,
+                             c.phone AS client_phone,
+                             c.country AS client_country,
+                             c.fee,
+                             c.fee_currency,
+                             c.foreign_pricing_key,
+                             c.special_fee_enabled
                            FROM appointments a
                            JOIN clients c ON c.id = a.client_id
                            WHERE a.id = ? AND a.tenant_id = ?
@@ -527,6 +558,42 @@ router.post('/', async (req, res) => {
                         );
                         const appointment = appointmentRows[0];
                         if (!appointment) return;
+
+                        const stripeProfile = resolveForeignPricingProfile({ client: appointment, config: cfg });
+                        const needsStripeLink = !!appointment.foreign_pricing_key
+                          || String(appointment.fee_currency || 'BOB').toUpperCase() !== 'BOB';
+                        if (stripeProfile) {
+                          const stripeEventKey = `payment_stripe_link_${confirmedAppointmentId || clientId || phone}`;
+                          const stripeMessage = buildStripePaymentLinkMessage(stripeProfile);
+                          const stripeResult = await sendTextMessage(phone || { bsuid }, stripeMessage);
+                          await pool.query(
+                            `INSERT INTO wa_conversations (tenant_id, client_id, client_phone, direction, message_type, content, wa_message_id, bsuid)
+                             VALUES (?, ?, ?, 'outbound', 'auto_reply', ?, ?, ?)`,
+                            [tenantId, clientId, phone, `Link de pago Stripe enviado (${stripeProfile.key})`, stripeResult.messages?.[0]?.id, bsuid || null]
+                          );
+                          await writePaymentInstructionLog(stripeEventKey, 'enviado', {
+                            action: 'payment_stripe_link_sent',
+                            profile_key: stripeProfile.key,
+                            amount: stripeProfile.amount,
+                            currency: stripeProfile.currency,
+                            url: stripeProfile.url,
+                            wa_message_id: stripeResult.messages?.[0]?.id || null,
+                          });
+                          console.log(`[webhook] Stripe payment link sent to ${phone}: ${stripeProfile.key}`);
+                          return;
+                        }
+
+                        if (needsStripeLink) {
+                          const stripeEventKey = `payment_stripe_link_${confirmedAppointmentId || clientId || phone}`;
+                          console.log(`[webhook] Stripe payment profile missing for ${phone}: ${appointment.foreign_pricing_key || appointment.fee_currency}`);
+                          await writePaymentInstructionLog(stripeEventKey, 'error', {
+                            action: 'payment_stripe_link_missing_profile',
+                            foreign_pricing_key: appointment.foreign_pricing_key || null,
+                            fee_currency: appointment.fee_currency || null,
+                            fee: appointment.fee || null,
+                          });
+                          return;
+                        }
 
                         let bookingContext = appointment.booking_context || null;
                         if (bookingContext && typeof bookingContext === 'string') {

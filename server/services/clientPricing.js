@@ -28,11 +28,61 @@ function getSpecialFee(config = {}) {
   return parseInt(config?.special_fee, 10) || 150;
 }
 
+function normalizeCurrency(value) {
+  const normalized = String(value || 'USD').trim().toUpperCase();
+  return normalized === 'BOB' ? 'BOB' : 'USD';
+}
+
+function parseForeignPricingProfiles(raw) {
+  if (!raw) return [];
+  let parsed = raw;
+  if (typeof parsed === 'string') {
+    try {
+      parsed = JSON.parse(parsed);
+    } catch {
+      parsed = [];
+    }
+  }
+  if (!Array.isArray(parsed)) return [];
+
+  return parsed
+    .map((profile) => {
+      const key = String(profile?.key || '').trim().toLowerCase();
+      const amount = Number(profile?.amount);
+      const url = String(profile?.url || '').trim();
+      if (!key || !Number.isFinite(amount) || amount <= 0 || !url) return null;
+      return {
+        key,
+        name: String(profile?.name || profile?.label || key).trim().slice(0, 80),
+        amount: Math.round(amount * 100) / 100,
+        currency: normalizeCurrency(profile?.currency),
+        url,
+      };
+    })
+    .filter(Boolean);
+}
+
 function getAutomaticLocalFee({ city, country, config = {} }) {
   if (!isBoliviaCountry(country)) return null;
   return getCapitalCities(config).has(normalizeText(city))
     ? getCapitalFee(config)
     : getDefaultFee(config);
+}
+
+function resolveForeignPricingProfile({ client = null, config = {} }) {
+  const profiles = parseForeignPricingProfiles(config?.foreign_pricing_profiles);
+  const key = String(client?.foreign_pricing_key || '').trim().toLowerCase();
+  if (key) {
+    return profiles.find((profile) => profile.key === key) || null;
+  }
+
+  const currency = normalizeCurrency(client?.fee_currency || 'BOB');
+  const amount = Number(client?.fee);
+  if (currency === 'BOB' || !Number.isFinite(amount) || amount <= 0) return null;
+
+  return profiles.find((profile) => (
+    profile.currency === currency && Math.abs(Number(profile.amount) - amount) < 0.01
+  )) || null;
 }
 
 function resolveQrKey({ client = null, fee = null, config = {} }) {
@@ -47,6 +97,8 @@ function resolveQrKey({ client = null, fee = null, config = {} }) {
 
 module.exports = {
   getAutomaticLocalFee,
+  parseForeignPricingProfiles,
+  resolveForeignPricingProfile,
   getSpecialFee,
   isBoliviaCountry,
   resolveQrKey,

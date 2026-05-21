@@ -326,7 +326,62 @@ async function initializeDatabase() {
       )
     `);
 
-    // 9. deductions
+    // 9. bank_email_notifications (Gmail bank QR audit + idempotency)
+    await conn.query(`
+      CREATE TABLE IF NOT EXISTS bank_email_notifications (
+        id BIGINT AUTO_INCREMENT PRIMARY KEY,
+        tenant_id INT NOT NULL,
+        gmail_message_id VARCHAR(255) NOT NULL,
+        gmail_thread_id VARCHAR(255),
+        label_name VARCHAR(120),
+        email_from VARCHAR(255),
+        email_subject VARCHAR(500),
+        email_received_at DATETIME,
+        transaction_at DATETIME,
+        amount DECIMAL(10,2),
+        currency VARCHAR(10) DEFAULT 'BOB',
+        destination_account VARCHAR(40),
+        origin_account VARCHAR(40),
+        payer_name VARCHAR(255),
+        origin_bank VARCHAR(255),
+        concept VARCHAR(160),
+        notification_number VARCHAR(120),
+        matched_payment_id INT,
+        processed_status ENUM('processed','ignored','unmatched','ambiguous','error') DEFAULT 'processed',
+        notes VARCHAR(700),
+        raw_text TEXT,
+        payload JSON,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        UNIQUE KEY uniq_tenant_gmail_message (tenant_id, gmail_message_id),
+        KEY idx_tenant_created (tenant_id, created_at),
+        KEY idx_processed_status (tenant_id, processed_status, created_at),
+        KEY idx_transaction (tenant_id, transaction_at),
+        KEY idx_matched_payment (matched_payment_id),
+        FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE,
+        FOREIGN KEY (matched_payment_id) REFERENCES payments(id) ON DELETE SET NULL
+      )
+    `);
+
+    // 10. bank_email_watch_state (Gmail Pub/Sub cursor)
+    await conn.query(`
+      CREATE TABLE IF NOT EXISTS bank_email_watch_state (
+        tenant_id INT PRIMARY KEY,
+        email_address VARCHAR(255),
+        label_name VARCHAR(120),
+        label_id VARCHAR(120),
+        pubsub_topic VARCHAR(255),
+        last_history_id VARCHAR(80),
+        watch_expiration_at DATETIME,
+        last_watch_at DATETIME,
+        last_notification_at DATETIME,
+        last_error VARCHAR(500),
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE
+      )
+    `);
+
+    // 11. deductions
     await conn.query(`
       CREATE TABLE IF NOT EXISTS deductions (
         id INT AUTO_INCREMENT PRIMARY KEY,
@@ -340,7 +395,7 @@ async function initializeDatabase() {
       )
     `);
 
-    // 10. financial_goals
+    // 12. financial_goals
     await conn.query(`
       CREATE TABLE IF NOT EXISTS financial_goals (
         id INT AUTO_INCREMENT PRIMARY KEY,
@@ -357,7 +412,7 @@ async function initializeDatabase() {
       )
     `);
 
-    // 11. files (QR, receipts, logos — MySQL BLOB)
+    // 13. files (QR, receipts, logos — MySQL BLOB)
     await conn.query(`
       CREATE TABLE IF NOT EXISTS files (
         id INT AUTO_INCREMENT PRIMARY KEY,
@@ -375,7 +430,7 @@ async function initializeDatabase() {
       )
     `);
 
-    // 12. webhooks_log (activity + reminder dedup)
+    // 14. webhooks_log (activity + reminder dedup)
     await conn.query(`
       CREATE TABLE IF NOT EXISTS webhooks_log (
         id INT AUTO_INCREMENT PRIMARY KEY,
@@ -693,6 +748,8 @@ async function initializeDatabase() {
     await conn.query(`ALTER TABLE config ADD COLUMN IF NOT EXISTS foreign_pricing_profiles JSON`).catch(() => {});
     await conn.query(`ALTER TABLE config ADD COLUMN IF NOT EXISTS stripe_webhook_url VARCHAR(500)`).catch(() => {});
     await conn.query(`ALTER TABLE config ADD COLUMN IF NOT EXISTS stripe_webhook_secret VARCHAR(255)`).catch(() => {});
+    await conn.query(`ALTER TABLE bank_email_notifications MODIFY COLUMN processed_status ENUM('processed','ignored','unmatched','ambiguous','error') DEFAULT 'processed'`).catch(() => {});
+    await conn.query(`ALTER TABLE bank_email_notifications MODIFY COLUMN notes VARCHAR(700)`).catch(() => {});
     // files.updated_at — used as cache buster for QR URLs sent to WhatsApp (Meta caches by URL)
     await conn.query(`ALTER TABLE files ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP`).catch(() => {});
     await conn.query(`ALTER TABLE appointments MODIFY COLUMN status ENUM('Agendada','Confirmada','Reagendada','Cancelada','Completada','No-show') DEFAULT 'Agendada'`).catch(() => {});

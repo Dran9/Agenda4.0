@@ -167,6 +167,13 @@ function isEmailDelayAcceptable(parsed, emailReceivedAt, maxDelayMinutes) {
   return delayMs <= maxDelayMinutes * 60 * 1000;
 }
 
+function buildEmailDelayWarning(parsed, emailReceivedAt, maxDelayMinutes) {
+  if (!parsed?.transactionAt || !emailReceivedAt) return null;
+  if (isEmailDelayAcceptable(parsed, emailReceivedAt, maxDelayMinutes)) return null;
+  const delayMinutes = Math.round(Math.abs(emailReceivedAt.getTime() - parsed.transactionAt.getTime()) / 60000);
+  return `Email recibido ${delayMinutes} min después de la transacción; aceptable si el pago matchea por QR/pago pendiente`;
+}
+
 async function getGmailService() {
   return google.gmail({ version: 'v1', auth: getOAuthClient() });
 }
@@ -360,6 +367,20 @@ async function upsertNotificationRecord({
      )
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
      ON DUPLICATE KEY UPDATE
+       gmail_thread_id = VALUES(gmail_thread_id),
+       label_name = VALUES(label_name),
+       email_from = VALUES(email_from),
+       email_subject = VALUES(email_subject),
+       email_received_at = VALUES(email_received_at),
+       transaction_at = VALUES(transaction_at),
+       amount = VALUES(amount),
+       currency = VALUES(currency),
+       destination_account = VALUES(destination_account),
+       origin_account = VALUES(origin_account),
+       payer_name = VALUES(payer_name),
+       origin_bank = VALUES(origin_bank),
+       concept = VALUES(concept),
+       notification_number = VALUES(notification_number),
        matched_payment_id = VALUES(matched_payment_id),
        processed_status = VALUES(processed_status),
        notes = VALUES(notes),
@@ -441,7 +462,7 @@ async function processBankEmailMessage({ tenantId, gmail, messageId, labelName }
     return { status: 'ignored', reason: 'invalid_destination_account' };
   }
 
-  if (!isEmailDelayAcceptable(parsed, emailReceivedAt, maxDelayMinutes)) {
+  if (!parsed.transactionAt) {
     await upsertNotificationRecord({
       tenantId,
       message,
@@ -449,11 +470,13 @@ async function processBankEmailMessage({ tenantId, gmail, messageId, labelName }
       emailReceivedAt,
       parsed,
       processedStatus: 'ignored',
-      notes: `Email fuera de ventana de ${maxDelayMinutes} minutos respecto a la transacción`,
+      notes: 'Email sin fecha/hora de transacción legible',
       rawText,
     });
-    return { status: 'ignored', reason: 'stale_email' };
+    return { status: 'ignored', reason: 'missing_transaction_at' };
   }
+
+  const delayWarning = buildEmailDelayWarning(parsed, emailReceivedAt, maxDelayMinutes);
 
   const candidates = await findCandidatePayments({
     tenantId,
@@ -463,9 +486,10 @@ async function processBankEmailMessage({ tenantId, gmail, messageId, labelName }
 
   if (candidates.length !== 1) {
     const processedStatus = candidates.length === 0 ? 'unmatched' : 'ambiguous';
-    const notes = candidates.length === 0
+    const baseNotes = candidates.length === 0
       ? `Sin pago pendiente único para Bs ${parsed.amount}`
       : `Pago ambiguo: ${candidates.length} candidatos para Bs ${parsed.amount}`;
+    const notes = delayWarning ? `${baseNotes}. ${delayWarning}` : baseNotes;
     await upsertNotificationRecord({
       tenantId,
       message,
@@ -511,7 +535,9 @@ async function processBankEmailMessage({ tenantId, gmail, messageId, labelName }
     emailReceivedAt,
     parsed,
     processedStatus: 'processed',
-    notes: 'Pago confirmado automáticamente por email bancario',
+    notes: delayWarning
+      ? `Pago confirmado automáticamente por email bancario. ${delayWarning}`
+      : 'Pago confirmado automáticamente por email bancario',
     matchedPaymentId: payment.id,
     rawText,
   });
@@ -743,6 +769,7 @@ async function processBankEmailPubSubNotification({ tenantId = 1, body }) {
 module.exports = {
   collectMessageBody,
   collectHistoryMessageIds,
+  buildEmailDelayWarning,
   decodePubSubData,
   formatMysqlDateTime,
   parseMercantilQrEmail,

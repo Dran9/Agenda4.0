@@ -1,6 +1,7 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const {
+  buildEmailDelayWarning,
   collectHistoryMessageIds,
   parseMercantilQrEmail,
   parsePubSubNotification,
@@ -34,6 +35,23 @@ test('parseMercantilQrEmail: extracts QR bank notification fields', () => {
 
 test('parseMercantilQrEmail: returns null for unrelated email body', () => {
   assert.equal(parseMercantilQrEmail('hola mundo'), null);
+});
+
+test('buildEmailDelayWarning: warns but does not block late Gmail delivery', () => {
+  const parsed = parseMercantilQrEmail(sampleEmail);
+  const emailReceivedAt = new Date('2026-05-19T22:30:01.000Z');
+
+  const warning = buildEmailDelayWarning(parsed, emailReceivedAt, 5);
+
+  assert.match(warning, /18 min/);
+  assert.match(warning, /matchea por QR/);
+});
+
+test('buildEmailDelayWarning: returns null inside acceptable delay window', () => {
+  const parsed = parseMercantilQrEmail(sampleEmail);
+  const emailReceivedAt = new Date('2026-05-19T22:15:01.000Z');
+
+  assert.equal(buildEmailDelayWarning(parsed, emailReceivedAt, 5), null);
 });
 
 test('parsePubSubNotification: decodes Gmail history notification', () => {

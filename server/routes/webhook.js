@@ -157,6 +157,23 @@ function buildMismatchWhatsappMessage(firstName, problems) {
   ].join('\n');
 }
 
+function readBooleanEnv(value) {
+  if (value == null || value === '') return null;
+  const normalized = String(value).trim().toLowerCase();
+  if (['1', 'true', 'yes', 'on'].includes(normalized)) return true;
+  if (['0', 'false', 'no', 'off'].includes(normalized)) return false;
+  return null;
+}
+
+function isWhatsappReceiptOcrEnabled() {
+  const explicit = readBooleanEnv(process.env.WHATSAPP_RECEIPT_OCR_ENABLED);
+  if (explicit !== null) return explicit;
+  // While Gmail bank-email verification is active, WhatsApp OCR stays passive
+  // so a fuzzy receipt read cannot reject a payment that the bank can confirm.
+  if (process.env.GMAIL_QR_EMAIL_ENABLED === '1') return false;
+  return true;
+}
+
 // GET /api/webhook — Meta verification
 router.get('/', (req, res) => {
   const mode = req.query['hub.mode'];
@@ -699,7 +716,10 @@ router.post('/', async (req, res) => {
                 // ─── OCR + Auto-match payment by phone ──────────────
                 // Only process OCR if there's payment context in recent conversation
                 // (avoids wasting Vision API on random photos like wedding pics)
-                if (clientId && (mimeType.startsWith('image/') || msg.type === 'image' || mimeType === 'application/pdf')) {
+                const receiptOcrEnabled = isWhatsappReceiptOcrEnabled();
+                if (!receiptOcrEnabled) {
+                  console.log(`[webhook] OCR skipped for ${phone || bsuid}: bank-email/passive receipt mode active`);
+                } else if (clientId && (mimeType.startsWith('image/') || msg.type === 'image' || mimeType === 'application/pdf')) {
                   let hasPaymentContext = classification.contextType === 'payment';
                   try {
                     if (!hasPaymentContext) {

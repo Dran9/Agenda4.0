@@ -3,6 +3,9 @@ const assert = require('node:assert/strict');
 const {
   buildEmailDelayWarning,
   collectHistoryMessageIds,
+  filterCandidatePaymentsForBankEmail,
+  formatMysqlDateTime,
+  isRecipientNameValid,
   parseMercantilQrEmail,
   parsePubSubNotification,
 } = require('../server/services/bankEmail');
@@ -21,6 +24,7 @@ La transacción fue realizada el 19/05/2026 a las 06:12:01 pm.
 test('parseMercantilQrEmail: extracts QR bank notification fields', () => {
   const result = parseMercantilQrEmail(sampleEmail);
 
+  assert.equal(result.recipientName, 'MAC LEAN ESTRADA OSCAR DANIEL');
   assert.equal(result.concept, 'BMQRINDAGACIONC');
   assert.equal(result.destinationAccount, '1006628555');
   assert.equal(result.originAccount, '30151182874355');
@@ -35,6 +39,18 @@ test('parseMercantilQrEmail: extracts QR bank notification fields', () => {
 
 test('parseMercantilQrEmail: returns null for unrelated email body', () => {
   assert.equal(parseMercantilQrEmail('hola mundo'), null);
+});
+
+test('isRecipientNameValid: accepts the configured bank email recipient', () => {
+  assert.equal(isRecipientNameValid('MAC LEAN ESTRADA OSCAR DANIEL'), true);
+  assert.equal(isRecipientNameValid('OTRA PERSONA'), false);
+});
+
+test('formatMysqlDateTime: stores instants as Bolivia local DATETIME', () => {
+  assert.equal(
+    formatMysqlDateTime(new Date('2026-06-01T12:38:35.000Z')),
+    '2026-06-01 08:38:35'
+  );
 });
 
 test('buildEmailDelayWarning: warns but does not block late Gmail delivery', () => {
@@ -84,4 +100,73 @@ test('collectHistoryMessageIds: collects unique message ids from Gmail history',
   ]);
 
   assert.deepEqual(result.sort(), ['a', 'b', 'c']);
+});
+
+test('filterCandidatePaymentsForBankEmail: recent WhatsApp receipt wins over stale same-amount candidates', () => {
+  const result = filterCandidatePaymentsForBankEmail([
+    {
+      id: 273,
+      first_name: 'Camila',
+      last_name: 'Arze',
+      date_time: new Date('2026-06-01T21:00:00.000Z'),
+      qr_sent_at: new Date('2026-05-31T23:19:50.000Z'),
+      recent_receipt_at: new Date('2026-06-01T12:39:02.000Z'),
+    },
+    {
+      id: 251,
+      first_name: 'Margarita',
+      last_name: 'Paz',
+      date_time: new Date('2026-05-27T15:00:00.000Z'),
+      qr_sent_at: new Date('2026-05-26T22:36:00.000Z'),
+      recent_receipt_at: null,
+    },
+    {
+      id: 257,
+      first_name: 'Roger',
+      last_name: 'Echalar',
+      date_time: new Date('2026-05-27T12:00:00.000Z'),
+      qr_sent_at: new Date('2026-05-26T22:32:21.000Z'),
+      recent_receipt_at: null,
+    },
+    {
+      id: 270,
+      first_name: 'Roger',
+      last_name: 'Echalar',
+      date_time: new Date('2026-06-03T12:00:00.000Z'),
+      qr_sent_at: null,
+      recent_receipt_at: null,
+    },
+  ], {
+    transactionAt: new Date('2026-06-01T12:38:35.000Z'),
+    qrWindowHours: 12,
+  });
+
+  assert.deepEqual(result.map((row) => row.id), [273]);
+});
+
+test('filterCandidatePaymentsForBankEmail: drops unrelated old and far-future candidates', () => {
+  const result = filterCandidatePaymentsForBankEmail([
+    {
+      id: 273,
+      date_time: new Date('2026-06-01T21:00:00.000Z'),
+      qr_sent_at: null,
+      recent_receipt_at: null,
+    },
+    {
+      id: 251,
+      date_time: new Date('2026-05-27T15:00:00.000Z'),
+      qr_sent_at: null,
+      recent_receipt_at: null,
+    },
+    {
+      id: 262,
+      date_time: new Date('2026-06-08T15:00:00.000Z'),
+      qr_sent_at: null,
+      recent_receipt_at: null,
+    },
+  ], {
+    transactionAt: new Date('2026-06-01T12:38:35.000Z'),
+  });
+
+  assert.deepEqual(result.map((row) => row.id), [273]);
 });

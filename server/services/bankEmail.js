@@ -9,8 +9,11 @@ const DEFAULT_LABEL_NAME = 'QRterapia';
 const DEFAULT_LOOKBACK_DAYS = 7;
 const DEFAULT_MAX_RESULTS = 25;
 const DEFAULT_EMAIL_DELAY_MINUTES = 5;
-const DEFAULT_QR_MATCH_WINDOW_HOURS = 12;
+const DEFAULT_QR_MATCH_WINDOW_HOURS = 24;
 const DEFAULT_PAYMENT_LOOKBACK_DAYS = 14;
+const DEFAULT_RECEIPT_MATCH_WINDOW_MINUTES = 15;
+const DEFAULT_APPOINTMENT_PAST_HOURS = 24;
+const DEFAULT_APPOINTMENT_FUTURE_HOURS = 36;
 const BOLIVIA_OFFSET_MINUTES = -4 * 60;
 const PAYMENT_OK_MESSAGE = '✅ Pago recibido correctamente, ¡Gracias!';
 
@@ -31,6 +34,17 @@ function getValidDestinationAccounts() {
       ...(process.env.BANK_EMAIL_DESTINATION_ACCOUNTS || '').split(','),
     ]
       .map((value) => String(value || '').replace(/\D/g, ''))
+      .filter(Boolean)
+  );
+}
+
+function getValidRecipientNames() {
+  return new Set(
+    [
+      'MAC LEAN ESTRADA OSCAR DANIEL',
+      ...(process.env.BANK_EMAIL_RECIPIENT_NAMES || '').split(','),
+    ]
+      .map((value) => normalizeText(value).toUpperCase())
       .filter(Boolean)
   );
 }
@@ -114,13 +128,24 @@ function formatMysqlDateTime(date) {
   if (!date) return null;
   const parsed = date instanceof Date ? date : new Date(date);
   if (Number.isNaN(parsed.getTime())) return null;
-  return parsed.toISOString().slice(0, 19).replace('T', ' ');
+  const boliviaDate = new Date(parsed.getTime() + BOLIVIA_OFFSET_MINUTES * 60 * 1000);
+  const pad = (value) => String(value).padStart(2, '0');
+  return [
+    boliviaDate.getUTCFullYear(),
+    pad(boliviaDate.getUTCMonth() + 1),
+    pad(boliviaDate.getUTCDate()),
+  ].join('-') + ' ' + [
+    pad(boliviaDate.getUTCHours()),
+    pad(boliviaDate.getUTCMinutes()),
+    pad(boliviaDate.getUTCSeconds()),
+  ].join(':');
 }
 
 function parseMercantilQrEmail(rawText) {
   const text = normalizeText(rawText);
   if (!text) return null;
 
+  const recipientMatch = text.match(/Estimado\(a\)\s+([^,]+),/i);
   const transactionMatch = text.match(
     /Cr[eé]dito\s+Transferencia\s+QR,\s*por\s+concepto\s+de\s+([^,]+),\s*a\s+su\s+cuenta\s+(\d+)\s+de\s+la\s+cuenta\s+(\d+)\s+de\s+(.+?)\s+del\s+(.+?),\s*por\s+un\s+monto\s+de\s+Bs\.?\s*([\d.,]+)/i
   );
@@ -137,6 +162,7 @@ function parseMercantilQrEmail(rawText) {
     : null;
 
   return {
+    recipientName: recipientMatch?.[1]?.trim().replace(/\s+/g, ' ') || null,
     concept: transactionMatch[1].trim(),
     destinationAccount: String(transactionMatch[2]).replace(/\D/g, ''),
     originAccount: String(transactionMatch[3]).replace(/\D/g, ''),
@@ -159,6 +185,10 @@ function getHeader(message, name) {
 
 function isDestinationAccountValid(account) {
   return getValidDestinationAccounts().has(String(account || '').replace(/\D/g, ''));
+}
+
+function isRecipientNameValid(name) {
+  return getValidRecipientNames().has(normalizeText(name).toUpperCase());
 }
 
 function isEmailDelayAcceptable(parsed, emailReceivedAt, maxDelayMinutes) {
@@ -209,6 +239,70 @@ function parsePubSubNotification(body) {
     historyId: data?.historyId ? String(data.historyId) : null,
     raw: data,
   };
+}
+
+function parseDateValue(value) {
+  if (!value) return null;
+  const parsed = value instanceof Date ? value : new Date(value);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
+function isWithinFutureWindow(anchor, value, windowMs) {
+  const date = parseDateValue(value);
+  if (!anchor || !date) return false;
+  const diffMs = date.getTime() - anchor.getTime();
+  return diffMs >= 0 && diffMs <= windowMs;
+}
+
+function isWithinCenteredWindow(anchor, value, windowMs) {
+  const date = parseDateValue(value);
+  if (!anchor || !date) return false;
+  return Math.abs(date.getTime() - anchor.getTime()) <= windowMs;
+}
+
+function isAppointmentNearTransaction(row, transactionAt, { pastHours, futureHours }) {
+  const appointmentAt = parseDateValue(row.date_time);
+  if (!transactionAt || !appointmentAt) return false;
+  const diffMs = appointmentAt.getTime() - transactionAt.getTime();
+  return diffMs >= -pastHours * 60 * 60 * 1000 && diffMs <= futureHours * 60 * 60 * 1000;
+}
+
+function filterCandidatePaymentsForBankEmail(rows, {
+  transactionAt,
+  qrWindowHours = DEFAULT_QR_MATCH_WINDOW_HOURS,
+  receiptWindowMinutes = DEFAULT_RECEIPT_MATCH_WINDOW_MINUTES,
+  appointmentPastHours = DEFAULT_APPOINTMENT_PAST_HOURS,
+  appointmentFutureHours = DEFAULT_APPOINTMENT_FUTURE_HOURS,
+} = {}) {
+  const txAt = parseDateValue(transactionAt);
+  if (!txAt) return [];
+
+  const qrWindowMs = qrWindowHours * 60 * 60 * 1000;
+  const receiptWindowMs = receiptWindowMinutes * 60 * 1000;
+  const scoped = rows
+    .map((row) => {
+      const hasRecentReceipt = isWithinCenteredWindow(txAt, row.recent_receipt_at, receiptWindowMs);
+      const hasRecentQr = isWithinFutureWindow(parseDateValue(row.qr_sent_at), txAt, qrWindowMs);
+      const hasNearAppointment = isAppointmentNearTransaction(row, txAt, {
+        pastHours: appointmentPastHours,
+        futureHours: appointmentFutureHours,
+      });
+      return {
+        row,
+        hasRecentReceipt,
+        hasRecentQr,
+        hasNearAppointment,
+      };
+    })
+    .filter((item) => item.hasRecentReceipt || item.hasRecentQr || item.hasNearAppointment);
+
+  const withReceipt = scoped.filter((item) => item.hasRecentReceipt);
+  if (withReceipt.length > 0) return withReceipt.map((item) => item.row);
+
+  const withQrContext = scoped.filter((item) => item.hasRecentQr);
+  if (withQrContext.length > 0) return withQrContext.map((item) => item.row);
+
+  return scoped.map((item) => item.row);
 }
 
 async function getWatchState(tenantId) {
@@ -266,6 +360,9 @@ async function upsertWatchState({
 async function findCandidatePayments({ tenantId, amount, transactionAt }) {
   const qrWindowHours = Math.max(1, Number(process.env.BANK_EMAIL_QR_MATCH_WINDOW_HOURS || DEFAULT_QR_MATCH_WINDOW_HOURS));
   const paymentLookbackDays = Math.max(1, Number(process.env.BANK_EMAIL_PAYMENT_LOOKBACK_DAYS || DEFAULT_PAYMENT_LOOKBACK_DAYS));
+  const receiptWindowMinutes = Math.max(1, Number(process.env.BANK_EMAIL_RECEIPT_MATCH_WINDOW_MINUTES || DEFAULT_RECEIPT_MATCH_WINDOW_MINUTES));
+  const appointmentPastHours = Math.max(1, Number(process.env.BANK_EMAIL_APPOINTMENT_PAST_HOURS || DEFAULT_APPOINTMENT_PAST_HOURS));
+  const appointmentFutureHours = Math.max(1, Number(process.env.BANK_EMAIL_APPOINTMENT_FUTURE_HOURS || DEFAULT_APPOINTMENT_FUTURE_HOURS));
   const transactionSql = formatMysqlDateTime(transactionAt);
   if (!tenantId || !amount || !transactionSql) return [];
 
@@ -285,7 +382,8 @@ async function findCandidatePayments({ tenantId, amount, transactionAt }) {
        c.first_name,
        c.last_name,
        c.phone,
-       qr.created_at AS qr_sent_at
+       qr.created_at AS qr_sent_at,
+       receipt.recent_receipt_at
      FROM payments p
      JOIN appointments a ON a.id = p.appointment_id AND a.tenant_id = p.tenant_id
      JOIN clients c ON c.id = p.client_id AND c.tenant_id = p.tenant_id
@@ -295,6 +393,16 @@ async function findCandidatePayments({ tenantId, amount, transactionAt }) {
       AND qr.type = 'message_sent'
       AND qr.status = 'enviado'
       AND qr.event = CONCAT('payment_qr_', p.appointment_id)
+     LEFT JOIN (
+       SELECT tenant_id, client_id, MAX(created_at) AS recent_receipt_at
+       FROM wa_conversations
+       WHERE direction = 'inbound'
+         AND message_type IN ('image','document')
+         AND created_at BETWEEN DATE_SUB(?, INTERVAL ? MINUTE) AND DATE_ADD(?, INTERVAL ? MINUTE)
+       GROUP BY tenant_id, client_id
+     ) receipt
+       ON receipt.tenant_id = p.tenant_id
+      AND receipt.client_id = p.client_id
      WHERE p.tenant_id = ?
        AND p.status IN ('Pendiente', 'Mismatch')
        AND UPPER(COALESCE(NULLIF(p.currency, ''), 'BOB')) = 'BOB'
@@ -307,18 +415,29 @@ async function findCandidatePayments({ tenantId, amount, transactionAt }) {
        ABS(TIMESTAMPDIFF(SECOND, qr.created_at, ?)),
        ABS(TIMESTAMPDIFF(SECOND, a.date_time, ?)),
        p.id DESC`,
-    [tenantId, amount, amount, transactionSql, transactionSql, paymentLookbackDays, transactionSql, transactionSql]
+    [
+      transactionSql,
+      receiptWindowMinutes,
+      transactionSql,
+      receiptWindowMinutes,
+      tenantId,
+      amount,
+      amount,
+      transactionSql,
+      transactionSql,
+      paymentLookbackDays,
+      transactionSql,
+      transactionSql,
+    ]
   );
 
-  const withQrContext = rows.filter((row) => {
-    if (!row.qr_sent_at) return false;
-    const qrSentAt = new Date(row.qr_sent_at);
-    const txAt = new Date(transactionAt);
-    const diffMs = txAt.getTime() - qrSentAt.getTime();
-    return diffMs >= 0 && diffMs <= qrWindowHours * 60 * 60 * 1000;
+  return filterCandidatePaymentsForBankEmail(rows, {
+    transactionAt,
+    qrWindowHours,
+    receiptWindowMinutes,
+    appointmentPastHours,
+    appointmentFutureHours,
   });
-
-  return withQrContext.length > 0 ? withQrContext : rows;
 }
 
 async function updateGCalPaymentPrefix(payment) {
@@ -460,6 +579,20 @@ async function processBankEmailMessage({ tenantId, gmail, messageId, labelName }
       rawText,
     });
     return { status: 'ignored', reason: 'invalid_destination_account' };
+  }
+
+  if (!isRecipientNameValid(parsed.recipientName)) {
+    await upsertNotificationRecord({
+      tenantId,
+      message,
+      labelName,
+      emailReceivedAt,
+      parsed,
+      processedStatus: 'ignored',
+      notes: `Destinatario bancario no permitido: ${parsed.recipientName || 'sin destinatario'}`,
+      rawText,
+    });
+    return { status: 'ignored', reason: 'invalid_recipient_name' };
   }
 
   if (!parsed.transactionAt) {
@@ -771,7 +904,9 @@ module.exports = {
   collectHistoryMessageIds,
   buildEmailDelayWarning,
   decodePubSubData,
+  filterCandidatePaymentsForBankEmail,
   formatMysqlDateTime,
+  isRecipientNameValid,
   parseMercantilQrEmail,
   parsePubSubNotification,
   pollBankPaymentEmails,

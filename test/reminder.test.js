@@ -5,6 +5,7 @@ const {
   getTargetDateKeyForTimezone,
   getEventDateKeyInTimeZone,
   getTimeKeyInTimeZone,
+  hasRecentPaymentProof,
   isReminderDueForTimezone,
 } = require('../server/services/reminder');
 
@@ -50,4 +51,10 @@ test('Madrid Monday appointment is due Sunday 18:30 Madrid, not Saturday 18:30 B
     reminderTime: '18:30',
     now: sundayReminderRun,
   }), true);
+});
+
+test('hasRecentPaymentProof: skips payment reminders after a received receipt', () => {
+  assert.equal(hasRecentPaymentProof(new Date('2026-06-08T21:04:55.000Z')), true);
+  assert.equal(hasRecentPaymentProof('2026-06-08 17:04:55'), true);
+  assert.equal(hasRecentPaymentProof(null), false);
 });

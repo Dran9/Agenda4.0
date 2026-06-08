@@ -170,3 +170,24 @@ test('filterCandidatePaymentsForBankEmail: drops unrelated old and far-future ca
 
   assert.deepEqual(result.map((row) => row.id), [273]);
 });
+
+test('filterCandidatePaymentsForBankEmail: recent receipt does not pull a far-future payment from the same client', () => {
+  const result = filterCandidatePaymentsForBankEmail([
+    {
+      id: 290,
+      date_time: new Date('2026-06-08T23:00:00.000Z'),
+      qr_sent_at: new Date('2026-06-08T21:02:51.000Z'),
+      recent_receipt_at: new Date('2026-06-08T21:04:55.000Z'),
+    },
+    {
+      id: 281,
+      date_time: new Date('2026-06-12T23:00:00.000Z'),
+      qr_sent_at: null,
+      recent_receipt_at: new Date('2026-06-08T21:04:55.000Z'),
+    },
+  ], {
+    transactionAt: new Date('2026-06-08T21:04:16.000Z'),
+  });
+
+  assert.deepEqual(result.map((row) => row.id), [290]);
+});

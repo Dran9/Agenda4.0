@@ -297,7 +297,17 @@ function filterCandidatePaymentsForBankEmail(rows, {
     .filter((item) => item.hasRecentReceipt || item.hasRecentQr || item.hasNearAppointment);
 
   const withReceipt = scoped.filter((item) => item.hasRecentReceipt);
-  if (withReceipt.length > 0) return withReceipt.map((item) => item.row);
+  if (withReceipt.length > 0) {
+    const withReceiptAndQr = withReceipt.filter((item) => item.hasRecentQr);
+    if (withReceiptAndQr.length > 0) return withReceiptAndQr.map((item) => item.row);
+
+    const withReceiptAndNearAppointment = withReceipt.filter((item) => item.hasNearAppointment);
+    if (withReceiptAndNearAppointment.length > 0) {
+      return withReceiptAndNearAppointment.map((item) => item.row);
+    }
+
+    return withReceipt.map((item) => item.row);
+  }
 
   const withQrContext = scoped.filter((item) => item.hasRecentQr);
   if (withQrContext.length > 0) return withQrContext.map((item) => item.row);

@@ -11,6 +11,7 @@ const {
 } = require('./recurring');
 
 const LA_PAZ_TIMEZONE = 'America/La_Paz';
+const RECENT_PAYMENT_PROOF_WINDOW_MINUTES = 30;
 const timezoneValidityCache = new Map();
 
 function formatPaymentAmount(amount, currency) {
@@ -33,6 +34,10 @@ function buildStripePaymentLinkMessage(profile) {
     '',
     'Gracias.',
   ].join('\n');
+}
+
+function hasRecentPaymentProof(value) {
+  return !!value;
 }
 
 function resolveTimeZone(timeZone) {
@@ -447,7 +452,11 @@ async function checkAndSendPaymentReminders({
     }
 
     const leadHours = Math.max(1, parseInt(cfg.payment_reminder_hours, 10) || 2);
-    const params = [tenantId];
+    const recentProofWindowMinutes = Math.max(
+      1,
+      Number(process.env.PAYMENT_REMINDER_RECENT_PROOF_WINDOW_MINUTES || RECENT_PAYMENT_PROOF_WINDOW_MINUTES)
+    );
+    const params = [recentProofWindowMinutes, tenantId];
     const filters = [
       `p.tenant_id = ?`,
       `p.status = 'Pendiente'`,
@@ -484,10 +493,21 @@ async function checkAndSendPaymentReminders({
          c.fee_currency,
          c.foreign_pricing_key,
          c.special_fee_enabled,
-         c.country
+         c.country,
+         proof.recent_payment_proof_at
        FROM payments p
        JOIN appointments a ON a.id = p.appointment_id AND a.tenant_id = p.tenant_id
        JOIN clients c ON c.id = p.client_id AND c.tenant_id = p.tenant_id
+       LEFT JOIN (
+         SELECT tenant_id, client_id, MAX(created_at) AS recent_payment_proof_at
+         FROM wa_conversations
+         WHERE direction = 'inbound'
+           AND message_type IN ('image','document')
+           AND created_at > DATE_SUB(NOW(), INTERVAL ? MINUTE)
+         GROUP BY tenant_id, client_id
+       ) proof
+         ON proof.tenant_id = p.tenant_id
+        AND proof.client_id = p.client_id
        WHERE ${filters.join('\n         AND ')}
        ORDER BY a.date_time ASC`,
       params
@@ -505,6 +525,12 @@ async function checkAndSendPaymentReminders({
     for (const row of rows) {
       if (targeted) targetFound = true;
       const eventKey = `payment_reminder:${row.payment_id}`;
+
+      if (hasRecentPaymentProof(row.recent_payment_proof_at)) {
+        skipped++;
+        console.log(`[payment-reminder] Skipped ${row.phone}: recent payment proof received`);
+        continue;
+      }
 
       if (!force) {
         const [alreadySent] = await pool.query(
@@ -754,6 +780,7 @@ async function checkAndSendPaymentReminders({
 module.exports = {
   checkAndSendReminders,
   checkAndSendPaymentReminders,
+  hasRecentPaymentProof,
   getDateKeyInTimeZone,
   getTimeKeyInTimeZone,
   getTargetDateKeyForTimezone,

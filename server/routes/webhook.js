@@ -198,20 +198,37 @@ async function processReceiptOcrForPayment({
     `SELECT p.id, p.amount, p.appointment_id, p.status,
             a.date_time, a.gcal_event_id, a.status as appointment_status,
             c.first_name, c.last_name, c.phone as client_phone, c.fee,
-            qr.created_at AS qr_sent_at
+            qr.qr_sent_at,
+            ctx.payment_context_at
      FROM payments p
      JOIN appointments a ON p.appointment_id = a.id
      JOIN clients c ON p.client_id = c.id
-     LEFT JOIN webhooks_log qr
+     LEFT JOIN (
+       SELECT tenant_id, appointment_id, MAX(created_at) AS qr_sent_at
+       FROM webhooks_log
+       WHERE type = 'message_sent'
+         AND status = 'enviado'
+         AND event REGEXP '^payment_qr_'
+       GROUP BY tenant_id, appointment_id
+     ) qr
        ON qr.tenant_id = p.tenant_id
       AND qr.appointment_id = p.appointment_id
-      AND qr.type = 'message_sent'
-      AND qr.status = 'enviado'
-      AND qr.event = CONCAT('payment_qr_', p.appointment_id)
+     LEFT JOIN (
+       SELECT tenant_id, client_id, appointment_id, MAX(created_at) AS payment_context_at
+       FROM webhooks_log
+       WHERE type = 'message_sent'
+         AND status = 'enviado'
+         AND (event REGEXP '^payment_qr_' OR event REGEXP '^payment_reminder:')
+       GROUP BY tenant_id, client_id, appointment_id
+     ) ctx
+       ON ctx.tenant_id = p.tenant_id
+      AND ctx.client_id = p.client_id
+      AND ctx.appointment_id = p.appointment_id
      WHERE p.client_id = ? AND p.tenant_id = ?
        AND p.status IN ('Pendiente', 'Mismatch')
        AND a.status IN ('Agendada','Confirmada','Reagendada','Completada')
-     LIMIT 10`,
+     ORDER BY COALESCE(ctx.payment_context_at, qr.qr_sent_at, a.date_time) DESC
+     LIMIT 20`,
     [clientId, tenantId]
   );
 

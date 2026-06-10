@@ -32,6 +32,52 @@ test('parseBolivianReceipt: accepts BNB masked destination account with trusted 
   assert.equal(result.destVerificationLevel, 'masked_account_with_name');
 });
 
+test('parseBolivianReceipt: accepts current BNB receipt masked Mercantil destination account', () => {
+  const text = [
+    'BNB',
+    'Comprobante Electronico',
+    'Transferencia interbancaria',
+    'Referencia:',
+    'indagacionC',
+    'Fecha de la',
+    'transaccion:',
+    '10/06/2026',
+    'Hora de la',
+    'transaccion:',
+    '08:07:23',
+    'Nombre del',
+    'originante:',
+    'NAVA CLAUDIA M.',
+    'Se debito de su',
+    'caja de ahorro:',
+    '350****856',
+    'Nombre del',
+    'destinatario:',
+    'OSCAR DANIEL MAC LEAN ESTRADA',
+    'Banco destino:',
+    'BANCO MERCANTIL SANTA CRUZ',
+    'Se acredito a la',
+    'cuenta:',
+    '100****555',
+    'La suma de Bs.:',
+    '250',
+    'Bancarizacion:',
+    '3P40367096',
+  ].join('\n');
+
+  const result = parseBolivianReceipt(text);
+
+  assert.equal(result.amount, 250);
+  assert.equal(result.date, '10/06/2026');
+  assert.equal(result.reference, '3P40367096');
+  assert.equal(result.bank, 'Mercantil Santa Cruz');
+  assert.equal(result.destAccount, '100****555');
+  assert.equal(result.destAccountVerified, true);
+  assert.equal(result.destNameVerified, true);
+  assert.equal(result.destVerified, true);
+  assert.equal(result.destVerificationLevel, 'masked_account_with_name');
+});
+
 test('parseBolivianReceipt: rejects masked destination account when recipient name is not trusted', () => {
   const result = parseBolivianReceipt(buildBnbReceipt('Cliente Equivocado'));
 

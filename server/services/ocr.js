@@ -101,6 +101,7 @@ async function extractPdfWithGoogleVision(pdfBuffer, apiKey) {
  * Tested with: Mercantil Santa Cruz, BCP, BISA, BancoSol, Banco Ganadero, BNB, Banco Union
  *
  * Valid destination accounts:
+ * - 1006628555
  * - 30151182874355
  * - 6896894011
  * - 3501136408
@@ -109,7 +110,7 @@ function parseBolivianReceipt(text) {
   const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
   const fullText = text;
   const VALID_DESTINATION_ACCOUNTS = new Set(
-    ['30151182874355', '6896894011', '3501136408', ...(process.env.VALID_DESTINATION_ACCOUNTS || '').split(',')]
+    ['1006628555', '30151182874355', '6896894011', '3501136408', ...(process.env.VALID_DESTINATION_ACCOUNTS || '').split(',')]
       .map(value => String(value || '').replace(/\D/g, ''))
       .filter(Boolean)
   );

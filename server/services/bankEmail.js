@@ -21,6 +21,10 @@ function isGmailPubSubEnabled() {
   return process.env.GMAIL_PUBSUB_ENABLED === '1';
 }
 
+function isBankEmailEnabled() {
+  return process.env.GMAIL_QR_EMAIL_ENABLED === '1';
+}
+
 function getGmailPubSubTopicName() {
   return String(process.env.GMAIL_PUBSUB_TOPIC || process.env.GMAIL_PUBSUB_TOPIC_NAME || '').trim();
 }
@@ -694,7 +698,7 @@ async function processBankEmailMessage({ tenantId, gmail, messageId, labelName }
 }
 
 async function pollBankPaymentEmails({ tenantId = 1, force = false } = {}) {
-  if (process.env.GMAIL_QR_EMAIL_ENABLED !== '1' && !force) {
+  if (!isBankEmailEnabled() && !force) {
     return { enabled: false, processed: 0, ignored: 0, unmatched: 0, ambiguous: 0, errors: 0, skipped: 0 };
   }
 
@@ -733,6 +737,9 @@ async function pollBankPaymentEmails({ tenantId = 1, force = false } = {}) {
 }
 
 async function watchBankPaymentEmails({ tenantId = 1, force = false } = {}) {
+  if (!isBankEmailEnabled() && !force) {
+    return { enabled: false, watched: false, reason: 'GMAIL_QR_EMAIL_ENABLED no está activo' };
+  }
   if (!isGmailPubSubEnabled() && !force) {
     return { enabled: false, watched: false, reason: 'GMAIL_PUBSUB_ENABLED no está activo' };
   }
@@ -818,7 +825,7 @@ async function listHistoryMessageIds({ gmail, startHistoryId, labelId }) {
 }
 
 async function processBankEmailPubSubNotification({ tenantId = 1, body }) {
-  if (!isGmailPubSubEnabled()) {
+  if (!isBankEmailEnabled() || !isGmailPubSubEnabled()) {
     return { enabled: false, processed: 0, ignored: 0, unmatched: 0, ambiguous: 0, errors: 0, skipped: 0 };
   }
 

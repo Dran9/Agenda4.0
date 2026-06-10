@@ -10,9 +10,11 @@ const { extractIdentity, extractStatusIdentity, resolveIdentity } = require('../
 const { ingestMetaWebhookPayload } = require('../services/metaHealth');
 const { isBoliviaCountry, resolveForeignPricingProfile, resolveQrKey } = require('../services/clientPricing');
 const { handleRecurringRescheduleButton } = require('../services/recurringReschedulePrompt');
+const { selectBestPendingPaymentForOcr } = require('../services/receiptPaymentMatcher');
 
 const router = Router();
 const CALENDAR_ID = () => process.env.CALENDAR_ID || process.env.GOOGLE_CALENDAR_ID || 'danielmacleann@gmail.com';
+const DEFAULT_RECEIPT_OCR_FALLBACK_DELAY_MINUTES = 5;
 
 const verifyWebhookSignature = verifyWebhookSignatureFromReq;
 
@@ -155,6 +157,176 @@ function buildMismatchWhatsappMessage(firstName, problems) {
     'Por favor, revisa el comprobante y envíalo nuevamente.',
     '🤑 Si hubo un error de mi parte o consideras que la información sí es correcta, puedes escribirle a Daniel por aquí mismo.',
   ].join('\n');
+}
+
+function getReceiptOcrFallbackDelayMs() {
+  const minutes = Math.max(
+    1,
+    Number(
+      process.env.WHATSAPP_RECEIPT_OCR_FALLBACK_DELAY_MINUTES
+      || process.env.BANK_EMAIL_MAX_DELAY_MINUTES
+      || DEFAULT_RECEIPT_OCR_FALLBACK_DELAY_MINUTES
+    )
+  );
+  return minutes * 60 * 1000;
+}
+
+function isReceiptMediaSupported(mimeType, messageType) {
+  return String(mimeType || '').startsWith('image/')
+    || messageType === 'image'
+    || mimeType === 'application/pdf';
+}
+
+async function processReceiptOcrForPayment({
+  tenantId,
+  clientId,
+  phone,
+  buffer,
+  mimeType,
+  fileKey,
+  now = new Date(),
+}) {
+  if (!clientId || !buffer || !fileKey) return { status: 'skipped', reason: 'missing_context' };
+
+  const { extractReceiptData } = require('../services/ocr');
+  const ocrResult = await extractReceiptData(buffer, mimeType);
+  if (!ocrResult?.amount) return { status: 'skipped', reason: 'ocr_without_amount', ocrResult };
+
+  console.log(`[webhook] OCR: ${ocrResult.name}, Bs ${ocrResult.amount}, ${ocrResult.date}, ref: ${ocrResult.reference}, destVerified: ${ocrResult.destVerified}, destLevel: ${ocrResult.destVerificationLevel || 'n/a'}`);
+
+  const [pendingPayments] = await pool.query(
+    `SELECT p.id, p.amount, p.appointment_id, p.status,
+            a.date_time, a.gcal_event_id, a.status as appointment_status,
+            c.first_name, c.last_name, c.phone as client_phone, c.fee,
+            qr.created_at AS qr_sent_at
+     FROM payments p
+     JOIN appointments a ON p.appointment_id = a.id
+     JOIN clients c ON p.client_id = c.id
+     LEFT JOIN webhooks_log qr
+       ON qr.tenant_id = p.tenant_id
+      AND qr.appointment_id = p.appointment_id
+      AND qr.type = 'message_sent'
+      AND qr.status = 'enviado'
+      AND qr.event = CONCAT('payment_qr_', p.appointment_id)
+     WHERE p.client_id = ? AND p.tenant_id = ?
+       AND p.status IN ('Pendiente', 'Mismatch')
+       AND a.status IN ('Agendada','Confirmada','Reagendada','Completada')
+     LIMIT 10`,
+    [clientId, tenantId]
+  );
+
+  const bestMatch = selectBestPendingPaymentForOcr(pendingPayments, ocrResult, { now });
+  if (!bestMatch) {
+    console.log(`[webhook] OCR detected Bs ${ocrResult.amount} but no unresolved payment for client ${clientId}`);
+    return { status: 'skipped', reason: 'no_unresolved_payment', ocrResult };
+  }
+
+  const problems = [];
+  if (ocrResult.destVerified !== true) {
+    problems.push({ type: 'destinatario' });
+  }
+
+  const expectedAmount = parseInt(bestMatch.fee, 10) || parseInt(bestMatch.amount, 10);
+  if (expectedAmount && Number(ocrResult.amount) !== expectedAmount) {
+    problems.push({ type: 'monto', expectedAmount, receivedAmount: ocrResult.amount });
+  }
+
+  if (ocrResult.date && bestMatch.date_time) {
+    const receiptDateKey = parseReceiptDateKey(ocrResult.date);
+    const paymentContextDateKey = await getLatestPaymentContextDateKey({
+      tenantId,
+      clientId,
+      phone,
+    });
+
+    if (receiptDateKey && paymentContextDateKey && receiptDateKey < paymentContextDateKey) {
+      problems.push({
+        type: 'fecha_pasada',
+        receiptDate: ocrResult.date,
+        contextDate: paymentContextDateKey,
+      });
+    }
+  }
+
+  if (problems.length === 0) {
+    await pool.query(
+      `UPDATE payments SET status = 'Confirmado', confirmed_at = NOW(),
+       settled_amount = ?, settled_currency = 'BOB', settled_source = 'OCR',
+       receipt_file_key = ?, ocr_extracted_amount = ?, ocr_extracted_ref = ?,
+       ocr_extracted_date = ?, ocr_extracted_dest_name = ?,
+       notes = NULL
+       WHERE id = ? AND tenant_id = ?`,
+      [
+        ocrResult.amount,
+        fileKey,
+        ocrResult.amount,
+        ocrResult.reference,
+        sanitizeReceiptDate(ocrResult.date),
+        sanitizeReceiptDestName(ocrResult.destName),
+        bestMatch.id,
+        tenantId,
+      ]
+    );
+
+    try {
+      const calendarId = CALENDAR_ID();
+      if (calendarId && bestMatch.gcal_event_id) {
+        const { updateEventSummary } = require('../services/calendar');
+        const currentSummary = `Terapia ${bestMatch.first_name} ${bestMatch.last_name || ''} - ${bestMatch.client_phone}`.trim();
+        await updateEventSummary(
+          calendarId,
+          bestMatch.gcal_event_id,
+          buildCalendarSummary(currentSummary, {
+            confirmed: ['Confirmada', 'Completada'].includes(bestMatch.appointment_status),
+            paid: true,
+          })
+        );
+        console.log(`[webhook] GCal updated with 💰 for payment ${bestMatch.id}`);
+      }
+    } catch (gcalErr) {
+      console.error(`[webhook] GCal 💰 update failed (non-fatal):`, gcalErr.message);
+    }
+
+    try {
+      const { sendTextMessage } = require('../services/whatsapp');
+      await sendTextMessage(phone, '✅ Pago recibido correctamente, ¡Gracias!');
+    } catch (replyErr) {
+      console.error(`[webhook] Payment reply failed:`, replyErr.message);
+    }
+
+    broadcast('payment:change', { id: bestMatch.id, action: 'confirmed', source: 'ocr' }, tenantId);
+    console.log(`[webhook] Payment ${bestMatch.id} auto-confirmed via OCR for client ${clientId}`);
+    return { status: 'confirmed', paymentId: bestMatch.id, ocrResult };
+  }
+
+  await pool.query(
+    `UPDATE payments SET status = 'Mismatch', receipt_file_key = ?,
+     ocr_extracted_amount = ?, ocr_extracted_ref = ?, ocr_extracted_date = ?, ocr_extracted_dest_name = ?,
+     settled_amount = NULL, settled_currency = NULL, settled_source = NULL,
+     notes = ?
+     WHERE id = ? AND tenant_id = ?`,
+    [
+      fileKey,
+      ocrResult.amount,
+      ocrResult.reference,
+      sanitizeReceiptDate(ocrResult.date),
+      sanitizeReceiptDestName(ocrResult.destName),
+      buildMismatchNotes(problems),
+      bestMatch.id,
+      tenantId,
+    ]
+  );
+
+  try {
+    const { sendTextMessage } = require('../services/whatsapp');
+    await sendTextMessage(phone, buildMismatchWhatsappMessage(bestMatch.first_name, problems));
+  } catch (replyErr) {
+    console.error(`[webhook] Payment mismatch reply failed:`, replyErr.message);
+  }
+
+  broadcast('payment:change', { id: bestMatch.id, action: 'mismatch', source: 'ocr' }, tenantId);
+  console.log(`[webhook] Payment ${bestMatch.id} MISMATCH: ${buildMismatchNotes(problems)}`);
+  return { status: 'mismatch', paymentId: bestMatch.id, ocrResult, problems };
 }
 
 function formatPaymentAmount(amount, currency) {
@@ -785,8 +957,23 @@ router.post('/', async (req, res) => {
                 // (avoids wasting Vision API on random photos like wedding pics)
                 const receiptOcrEnabled = isWhatsappReceiptOcrEnabled();
                 if (!receiptOcrEnabled) {
-                  console.log(`[webhook] OCR skipped for ${phone || bsuid}: bank-email/passive receipt mode active`);
-                } else if (clientId && (mimeType.startsWith('image/') || msg.type === 'image' || mimeType === 'application/pdf')) {
+                  const fallbackDelayMs = getReceiptOcrFallbackDelayMs();
+                  console.log(`[webhook] OCR deferred for ${phone || bsuid}: bank-email/passive receipt mode active`);
+                  if (clientId && isReceiptMediaSupported(mimeType, msg.type)) {
+                    setTimeout(() => {
+                      processReceiptOcrForPayment({
+                        tenantId,
+                        clientId,
+                        phone,
+                        buffer,
+                        mimeType,
+                        fileKey,
+                      }).catch((ocrErr) => {
+                        console.error(`[webhook] Deferred OCR processing failed (non-fatal):`, ocrErr.message);
+                      });
+                    }, fallbackDelayMs);
+                  }
+                } else if (clientId && isReceiptMediaSupported(mimeType, msg.type)) {
                   let hasPaymentContext = classification.contextType === 'payment';
                   try {
                     if (!hasPaymentContext) {
@@ -820,163 +1007,15 @@ router.post('/', async (req, res) => {
                   if (!hasPaymentContext) {
                     console.log(`[webhook] Image from ${phone} ignored — no payment context`);
                   } else try {
-                    const { extractReceiptData } = require('../services/ocr');
-                    ocrResult = await extractReceiptData(buffer, mimeType);
-
-                    if (ocrResult && ocrResult.amount) {
-                      console.log(`[webhook] OCR: ${ocrResult.name}, Bs ${ocrResult.amount}, ${ocrResult.date}, ref: ${ocrResult.reference}, destVerified: ${ocrResult.destVerified}, destLevel: ${ocrResult.destVerificationLevel || 'n/a'}`);
-
-                      // Find unresolved payment for this client.
-                      // Keep mismatch retryable so a second valid receipt can fix the same appointment.
-                      const [pendingPayments] = await pool.query(
-                        `SELECT p.id, p.amount, p.appointment_id, p.status,
-                                a.date_time, a.gcal_event_id, a.status as appointment_status,
-                                c.first_name, c.last_name, c.phone as client_phone, c.fee
-                         FROM payments p
-                         JOIN appointments a ON p.appointment_id = a.id
-                         JOIN clients c ON p.client_id = c.id
-                         WHERE p.client_id = ? AND p.tenant_id = ?
-                           AND p.status IN ('Pendiente', 'Mismatch')
-                         ORDER BY
-                           CASE p.status
-                             WHEN 'Mismatch' THEN 0
-                             WHEN 'Pendiente' THEN 1
-                             ELSE 2
-                           END,
-                           p.updated_at DESC,
-                           a.date_time ASC
-                         LIMIT 5`,
-                        [clientId, tenantId]
-                      );
-
-                      if (pendingPayments.length > 0) {
-                        // Find best match: amount matches fee, or closest upcoming appointment
-                        let bestMatch = pendingPayments[0];
-                        for (const pp of pendingPayments) {
-                          if (parseInt(pp.fee) === ocrResult.amount || parseInt(pp.amount) === ocrResult.amount) {
-                            bestMatch = pp;
-                            break;
-                          }
-                        }
-
-                        // ─── 3 validations: destinatario, monto, fecha ───
-                        const problems = [];
-
-                        // 1. Destinatario: exact account, or masked account plus trusted recipient name.
-                        const recipientMismatch = ocrResult.destVerified !== true;
-                        if (recipientMismatch) {
-                          problems.push({ type: 'destinatario' });
-                        }
-
-                        // 2. Monto: OCR amount must match client fee or payment amount
-                        const expectedAmount = parseInt(bestMatch.fee) || parseInt(bestMatch.amount);
-                        if (expectedAmount && ocrResult.amount !== expectedAmount) {
-                          problems.push({ type: 'monto', expectedAmount, receivedAmount: ocrResult.amount });
-                        }
-
-                        // 3. Fecha: receipt date must not be older than the latest payment context
-                        if (ocrResult.date && bestMatch.date_time) {
-                          const receiptDateKey = parseReceiptDateKey(ocrResult.date);
-                          const paymentContextDateKey = await getLatestPaymentContextDateKey({
-                            tenantId,
-                            clientId,
-                            phone,
-                          });
-
-                          if (receiptDateKey && paymentContextDateKey && receiptDateKey < paymentContextDateKey) {
-                            problems.push({
-                              type: 'fecha_pasada',
-                              receiptDate: ocrResult.date,
-                              contextDate: paymentContextDateKey,
-                            });
-                          }
-                        }
-
-                        if (problems.length === 0) {
-                          // All validations passed → Confirmado
-                          await pool.query(
-                            `UPDATE payments SET status = 'Confirmado', confirmed_at = NOW(),
-                             settled_amount = ?, settled_currency = 'BOB', settled_source = 'OCR',
-                             receipt_file_key = ?, ocr_extracted_amount = ?, ocr_extracted_ref = ?,
-                             ocr_extracted_date = ?, ocr_extracted_dest_name = ?,
-                             notes = NULL
-                             WHERE id = ? AND tenant_id = ?`,
-                            [
-                              ocrResult.amount,
-                              fileKey,
-                              ocrResult.amount,
-                              ocrResult.reference,
-                              sanitizeReceiptDate(ocrResult.date),
-                              sanitizeReceiptDestName(ocrResult.destName),
-                              bestMatch.id,
-                              tenantId,
-                            ]
-                          );
-
-                          // Update GCal with ✅ 💰 prefix
-                          try {
-                            const calendarId = CALENDAR_ID();
-                            if (calendarId && bestMatch.gcal_event_id) {
-                              const { updateEventSummary } = require('../services/calendar');
-                              const currentSummary = `Terapia ${bestMatch.first_name} ${bestMatch.last_name || ''} - ${bestMatch.client_phone}`.trim();
-                              await updateEventSummary(
-                                calendarId,
-                                bestMatch.gcal_event_id,
-                                buildCalendarSummary(currentSummary, {
-                                  confirmed: ['Confirmada', 'Completada'].includes(bestMatch.appointment_status),
-                                  paid: true,
-                                })
-                              );
-                              console.log(`[webhook] GCal updated with 💰 for payment ${bestMatch.id}`);
-                            }
-                          } catch (gcalErr) {
-                            console.error(`[webhook] GCal 💰 update failed (non-fatal):`, gcalErr.message);
-                          }
-
-                          // Send confirmation reply
-                          try {
-                            const { sendTextMessage } = require('../services/whatsapp');
-                            const paymentOkMessage = '✅ Pago recibido correctamente, ¡Gracias!';
-                            await sendTextMessage(phone, paymentOkMessage);
-                          } catch (replyErr) {
-                            console.error(`[webhook] Payment reply failed:`, replyErr.message);
-                          }
-
-                          broadcast('payment:change', { id: bestMatch.id, action: 'confirmed', source: 'ocr' }, tenantId);
-                          console.log(`[webhook] Payment ${bestMatch.id} auto-confirmed via OCR for client ${clientId}`);
-                        } else {
-                          // Validation failed → Mismatch
-                          await pool.query(
-                            `UPDATE payments SET status = 'Mismatch', receipt_file_key = ?,
-                             ocr_extracted_amount = ?, ocr_extracted_ref = ?, ocr_extracted_date = ?, ocr_extracted_dest_name = ?,
-                             settled_amount = NULL, settled_currency = NULL, settled_source = NULL,
-                             notes = ?
-                             WHERE id = ? AND tenant_id = ?`,
-                            [
-                              fileKey,
-                              ocrResult.amount,
-                              ocrResult.reference,
-                              sanitizeReceiptDate(ocrResult.date),
-                              sanitizeReceiptDestName(ocrResult.destName),
-                              buildMismatchNotes(problems),
-                              bestMatch.id,
-                              tenantId,
-                            ]
-                          );
-                          try {
-                            const { sendTextMessage } = require('../services/whatsapp');
-                            await sendTextMessage(phone, buildMismatchWhatsappMessage(bestMatch.first_name, problems));
-                          } catch (replyErr) {
-                            console.error(`[webhook] Payment mismatch reply failed:`, replyErr.message);
-                          }
-
-                          broadcast('payment:change', { id: bestMatch.id, action: 'mismatch', source: 'ocr' }, tenantId);
-                          console.log(`[webhook] Payment ${bestMatch.id} MISMATCH: ${buildMismatchNotes(problems)}`);
-                        }
-                      } else {
-                        console.log(`[webhook] OCR detected Bs ${ocrResult.amount} but no unresolved payment for client ${clientId}`);
-                      }
-                    }
+                    const ocrOutcome = await processReceiptOcrForPayment({
+                      tenantId,
+                      clientId,
+                      phone,
+                      buffer,
+                      mimeType,
+                      fileKey,
+                    });
+                    ocrResult = ocrOutcome.ocrResult || null;
                   } catch (ocrErr) {
                     console.error(`[webhook] OCR processing failed (non-fatal):`, ocrErr.message);
                   }

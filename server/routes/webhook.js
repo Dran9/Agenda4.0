@@ -11,6 +11,7 @@ const { ingestMetaWebhookPayload } = require('../services/metaHealth');
 const { resolveQrKey } = require('../services/clientPricing');
 const { handleRecurringRescheduleButton } = require('../services/recurringReschedulePrompt');
 const { selectBestPendingPaymentForOcr } = require('../services/receiptPaymentMatcher');
+const { isWhatsappReceiptOcrEnabled } = require('../services/receiptOcrConfig');
 const {
   buildAttendanceConfirmationReply,
   resolveAttendancePaymentInstruction,
@@ -18,7 +19,6 @@ const {
 
 const router = Router();
 const CALENDAR_ID = () => process.env.CALENDAR_ID || process.env.GOOGLE_CALENDAR_ID || 'danielmacleann@gmail.com';
-const DEFAULT_RECEIPT_OCR_FALLBACK_DELAY_MINUTES = 5;
 
 const verifyWebhookSignature = verifyWebhookSignatureFromReq;
 
@@ -161,18 +161,6 @@ function buildMismatchWhatsappMessage(firstName, problems) {
     'Por favor, revisa el comprobante y envíalo nuevamente.',
     '🤑 Si hubo un error de mi parte o consideras que la información sí es correcta, puedes escribirle a Daniel por aquí mismo.',
   ].join('\n');
-}
-
-function getReceiptOcrFallbackDelayMs() {
-  const minutes = Math.max(
-    1,
-    Number(
-      process.env.WHATSAPP_RECEIPT_OCR_FALLBACK_DELAY_MINUTES
-      || process.env.BANK_EMAIL_MAX_DELAY_MINUTES
-      || DEFAULT_RECEIPT_OCR_FALLBACK_DELAY_MINUTES
-    )
-  );
-  return minutes * 60 * 1000;
 }
 
 function isReceiptMediaSupported(mimeType, messageType) {
@@ -370,23 +358,6 @@ function buildStripePaymentLinkMessage(profile) {
     '',
     'Gracias.',
   ].join('\n');
-}
-
-function readBooleanEnv(value) {
-  if (value == null || value === '') return null;
-  const normalized = String(value).trim().toLowerCase();
-  if (['1', 'true', 'yes', 'on'].includes(normalized)) return true;
-  if (['0', 'false', 'no', 'off'].includes(normalized)) return false;
-  return null;
-}
-
-function isWhatsappReceiptOcrEnabled() {
-  const explicit = readBooleanEnv(process.env.WHATSAPP_RECEIPT_OCR_ENABLED);
-  if (explicit !== null) return explicit;
-  // While Gmail bank-email verification is active, WhatsApp OCR stays passive
-  // so a fuzzy receipt read cannot reject a payment that the bank can confirm.
-  if (process.env.GMAIL_QR_EMAIL_ENABLED === '1') return false;
-  return true;
 }
 
 // GET /api/webhook — Meta verification
@@ -726,9 +697,8 @@ router.post('/', async (req, res) => {
                     [tenantId, clientId, phone, replyText, result.messages?.[0]?.id, bsuid || null]
                   );
 
-                  // Send QR payment image after confirmation (delayed 60s to feel natural)
+                  // Send payment instruction immediately while the webhook request is alive.
                   if (payload === 'CONFIRM_NOW') {
-                    setTimeout(async () => {
                       const qrEventKey = `payment_qr_${confirmedAppointmentId || clientId || phone}`;
                       const writePaymentInstructionLog = async (eventKey, status, payloadData) => {
                         await pool.query(
@@ -884,7 +854,6 @@ router.post('/', async (req, res) => {
                           message: qrErr.message,
                         });
                       }
-                    }, 15000); // 15 second delay
                   }
                 } catch (waErr) {
                   console.error(`[webhook] Auto-reply failed for ${phone}:`, waErr.message);
@@ -971,22 +940,7 @@ router.post('/', async (req, res) => {
                 // (avoids wasting Vision API on random photos like wedding pics)
                 const receiptOcrEnabled = isWhatsappReceiptOcrEnabled();
                 if (!receiptOcrEnabled) {
-                  const fallbackDelayMs = getReceiptOcrFallbackDelayMs();
-                  console.log(`[webhook] OCR deferred for ${phone || bsuid}: bank-email/passive receipt mode active`);
-                  if (clientId && isReceiptMediaSupported(mimeType, msg.type)) {
-                    setTimeout(() => {
-                      processReceiptOcrForPayment({
-                        tenantId,
-                        clientId,
-                        phone,
-                        buffer,
-                        mimeType,
-                        fileKey,
-                      }).catch((ocrErr) => {
-                        console.error(`[webhook] Deferred OCR processing failed (non-fatal):`, ocrErr.message);
-                      });
-                    }, fallbackDelayMs);
-                  }
+                  console.log(`[webhook] OCR skipped for ${phone || bsuid}: WHATSAPP_RECEIPT_OCR_ENABLED is disabled`);
                 } else if (clientId && isReceiptMediaSupported(mimeType, msg.type)) {
                   let hasPaymentContext = classification.contextType === 'payment';
                   try {

@@ -8,9 +8,13 @@ const { verifyWebhookSignatureFromReq } = require('../utils/webhookSignature');
 const { broadcast } = require('../services/adminEvents');
 const { extractIdentity, extractStatusIdentity, resolveIdentity } = require('../services/whatsappIdentity');
 const { ingestMetaWebhookPayload } = require('../services/metaHealth');
-const { isBoliviaCountry, resolveForeignPricingProfile, resolveQrKey } = require('../services/clientPricing');
+const { resolveQrKey } = require('../services/clientPricing');
 const { handleRecurringRescheduleButton } = require('../services/recurringReschedulePrompt');
 const { selectBestPendingPaymentForOcr } = require('../services/receiptPaymentMatcher');
+const {
+  buildAttendanceConfirmationReply,
+  resolveAttendancePaymentInstruction,
+} = require('../services/confirmationReply');
 
 const router = Router();
 const CALENDAR_ID = () => process.env.CALENDAR_ID || process.env.GOOGLE_CALENDAR_ID || 'danielmacleann@gmail.com';
@@ -667,13 +671,37 @@ router.post('/', async (req, res) => {
             // Auto-reply based on config
             if (payload && clientId) {
               const [cfgRows] = await pool.query('SELECT * FROM config WHERE tenant_id = ?', [tenantId]);
-              const cfg = cfgRows[0];
+              const cfg = cfgRows[0] || {};
               const { sendTextMessage, sendImageMessage } = require('../services/whatsapp');
 
               let replyText = null;
               if (payload === 'CONFIRM_NOW') {
-                const nombre = clientFirstName || '';
-                replyText = `\ud83d\udc4f Perfecto ${nombre}, te esperamos para darle un giro a tu vida.\n\nEn un momento te mandamos el *QR* o _enlace_ para pago adelantado por favor.`;
+                let confirmationInstruction = { kind: 'none' };
+                if (confirmedAppointmentId) {
+                  const [confirmationRows] = await pool.query(
+                    `SELECT
+                       a.phone,
+                       a.booking_context,
+                       c.phone AS client_phone,
+                       c.country AS client_country,
+                       c.fee,
+                       c.fee_currency,
+                       c.foreign_pricing_key,
+                       c.special_fee_enabled,
+                       p.status AS payment_status
+                     FROM appointments a
+                     JOIN clients c ON c.id = a.client_id AND c.tenant_id = a.tenant_id
+                     LEFT JOIN payments p ON p.appointment_id = a.id AND p.tenant_id = a.tenant_id
+                     WHERE a.id = ? AND a.tenant_id = ?
+                     LIMIT 1`,
+                    [confirmedAppointmentId, tenantId]
+                  );
+                  confirmationInstruction = resolveAttendancePaymentInstruction({
+                    appointment: confirmationRows[0] || null,
+                    config: cfg,
+                  });
+                }
+                replyText = buildAttendanceConfirmationReply(clientFirstName, confirmationInstruction);
               } else if (payload === 'REAGEN_NOW') {
                 const nombre = clientFirstName || '';
                 const domain = (await pool.query('SELECT domain FROM tenants WHERE id = ?', [tenantId]))[0]?.[0]?.domain || '';
@@ -738,9 +766,11 @@ router.post('/', async (req, res) => {
                              c.fee,
                              c.fee_currency,
                              c.foreign_pricing_key,
-                             c.special_fee_enabled
+                             c.special_fee_enabled,
+                             p.status AS payment_status
                            FROM appointments a
-                           JOIN clients c ON c.id = a.client_id
+                           JOIN clients c ON c.id = a.client_id AND c.tenant_id = a.tenant_id
+                           LEFT JOIN payments p ON p.appointment_id = a.id AND p.tenant_id = a.tenant_id
                            WHERE a.id = ? AND a.tenant_id = ?
                            LIMIT 1`,
                           [confirmedAppointmentId, tenantId]
@@ -748,10 +778,18 @@ router.post('/', async (req, res) => {
                         const appointment = appointmentRows[0];
                         if (!appointment) return;
 
-                        const stripeProfile = resolveForeignPricingProfile({ client: appointment, config: cfg });
-                        const needsStripeLink = !!appointment.foreign_pricing_key
-                          || String(appointment.fee_currency || 'BOB').toUpperCase() !== 'BOB';
-                        if (stripeProfile) {
+                        const paymentInstruction = resolveAttendancePaymentInstruction({ appointment, config: cfg });
+                        if (paymentInstruction.kind === 'paid') {
+                          console.log(`[webhook] Skipping payment instruction for ${phone}: payment already confirmed`);
+                          await writeQrLog('skipped', {
+                            action: 'payment_instruction_skipped',
+                            reason: 'payment_already_confirmed',
+                          });
+                          return;
+                        }
+
+                        if (paymentInstruction.kind === 'stripe') {
+                          const stripeProfile = paymentInstruction.stripeProfile;
                           const stripeEventKey = `payment_stripe_link_${confirmedAppointmentId || clientId || phone}`;
                           const stripeMessage = buildStripePaymentLinkMessage(stripeProfile);
                           const stripeResult = await sendTextMessage(phone || { bsuid }, stripeMessage);
@@ -772,7 +810,7 @@ router.post('/', async (req, res) => {
                           return;
                         }
 
-                        if (needsStripeLink) {
+                        if (paymentInstruction.kind === 'missing_stripe') {
                           const stripeEventKey = `payment_stripe_link_${confirmedAppointmentId || clientId || phone}`;
                           console.log(`[webhook] Stripe payment profile missing for ${phone}: ${appointment.foreign_pricing_key || appointment.fee_currency}`);
                           await writePaymentInstructionLog(stripeEventKey, 'error', {
@@ -784,52 +822,11 @@ router.post('/', async (req, res) => {
                           return;
                         }
 
-                        let bookingContext = appointment.booking_context || null;
-                        if (bookingContext && typeof bookingContext === 'string') {
-                          try {
-                            bookingContext = JSON.parse(bookingContext);
-                          } catch (_) {
-                            bookingContext = null;
-                          }
-                        }
-
-                        const normalizedPhone = String(appointment.client_phone || appointment.phone || phone || '').replace(/\D/g, '');
-                        const isBoliviaPhone = normalizedPhone.startsWith('591');
-                        const ipCountryCode = String(bookingContext?.ip_country_code || '').toUpperCase();
-                        const locationCountryCode = String(bookingContext?.location_country_code || '').toUpperCase();
-                        const rawClientCountry = String(appointment.client_country || '').trim();
-                        const clientCountry = rawClientCountry.toUpperCase();
-                        const hasClientCountrySignal = !!rawClientCountry && isBoliviaCountry(rawClientCountry);
-                        const locationConfirmedManually = !!bookingContext?.location_confirmed_manually;
-                        const hasBoliviaSignal =
-                          locationCountryCode === 'BO'
-                          || ipCountryCode === 'BO'
-                          || clientCountry === 'BO'
-                          || clientCountry === 'BOLIVIA'
-                          || hasClientCountrySignal;
-                        const hasAnyLocationSignal = !!(
-                          locationCountryCode
-                          || ipCountryCode
-                          || locationConfirmedManually
-                          || clientCountry
-                        );
-                        // Older/manual bookings may have no booking_context at all.
-                        // In that case, a Bolivian phone is the best available signal and should not block the QR.
-                        const shouldFallbackToPhoneOnly = isBoliviaPhone && !hasAnyLocationSignal;
-                        const shouldSendBoliviaQr = hasBoliviaSignal || shouldFallbackToPhoneOnly;
-
-                        if (!shouldSendBoliviaQr) {
-                          console.log(
-                            `[webhook] Skipping automatic Bolivian QR for ${phone}: phone_prefix=${isBoliviaPhone ? 'BO' : 'other'}, ip=${ipCountryCode || 'unknown'}, location=${locationCountryCode || 'unknown'}, client_country=${clientCountry || 'unknown'}, manual_confirm=${locationConfirmedManually}`
-                          );
+                        if (paymentInstruction.kind !== 'qr') {
+                          console.log(`[webhook] Skipping automatic payment instruction for ${phone}: instruction=${paymentInstruction.kind}`);
                           await writeQrLog('skipped', {
-                            action: 'payment_qr_skipped',
-                            reason: 'non_bolivia_context',
-                            phone_prefix_bolivia: isBoliviaPhone,
-                            ip_country_code: ipCountryCode || null,
-                            location_country_code: locationCountryCode || null,
-                            client_country: clientCountry || null,
-                            location_confirmed_manually: locationConfirmedManually,
+                            action: 'payment_instruction_skipped',
+                            reason: paymentInstruction.kind,
                           });
                           return;
                         }
